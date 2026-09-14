@@ -10,6 +10,7 @@ import { useI18n } from '@/composables/useI18n'
 import { initOfflineSync, getQueueSize } from '@/utils/offlineQueue'
 import { chunkedUpload, shouldUseChunkedUpload } from '@/utils/chunkedUpload'
 import { logger } from '@/utils/logger'
+import { useSyncLog } from '@/composables/useSyncLog'
 import {
   items,
   filteredItems,
@@ -220,6 +221,10 @@ export function useClipboard() {
   async function handleClipboardEvent(payload: any) {
     try {
       if (Date.now() < skipPollUntil) return
+      // 设备页同步日志：本机采集/上传 = 上行
+      try {
+        useSyncLog().pushLocal(payload)
+      } catch { /* 日志尽力而为 */ }
 
       const contentType = payload?.contentType as string | undefined
 

@@ -368,9 +368,6 @@ async function handleChangePassword() {
   border-radius: var(--radius-md);
   gap: 16px;
 }
-.sg-row:hover {
-  background: var(--bg-hover);
-}
 .sg-label {
   flex: 1;
   min-width: 0;

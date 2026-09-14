@@ -13,13 +13,25 @@ export function renderMarkdown(text: string): string {
   if (!text) return ''
   try {
     // Custom renderer: add id to headings for TOC anchor links
+    const seenIds = new Set<string>()
     const renderer = new marked.Renderer()
     renderer.heading = function ({ text, depth }: { text: string; depth: number }) {
-      const raw = String(text).replace(/<[^>]+>/g, '')
-      const id = raw
+      // 与 extractToc 同源归一：去内联标记/HTML 标签 → 解基础实体 → 同一套 slug，
+      // 再做同样的去重后缀，保证目录项 id 与正文锚点一一对应
+      const raw = String(text)
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;|&lt;|&gt;|&quot;|&#39;/g, (s) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" })[s] || s)
+        .replace(/[*_`]/g, '')
+      let id = raw
         .toLowerCase()
         .replace(/[^\w\u4e00-\u9fff]+/g, '-')
         .replace(/^-|-$/g, '')
+      if (seenIds.has(id)) {
+        let n = 1
+        while (seenIds.has(`${id}-${n}`)) n++
+        id = `${id}-${n}`
+      }
+      seenIds.add(id)
       return `<h${depth} id="${id}">${text}</h${depth}>`
     }
     return marked.parse(text, { renderer }) as string
@@ -201,8 +213,11 @@ export interface TocItem {
 }
 export function extractToc(markdown: string): TocItem[] {
   const items: TocItem[] = []
-  const lines = markdown.split('\n')
+  // 先归一换行：JS 正则里 `.` 不匹配 \r 且 `$` 不匹配 \r 之前，
+  // Windows CRLF 文档按 \n 切行后每行尾残留 \r 会让标题匹配全部落空（目录恒为空）
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
   let inCodeBlock = false
+  const seenIds = new Set<string>()
   for (const line of lines) {
     // Track fenced code blocks (``` or ~~~)
     if (/^```/.test(line) || /^~~~/.test(line)) {
@@ -216,10 +231,16 @@ export function extractToc(markdown: string): TocItem[] {
     if (match) {
       const depth = match[1].length
       const text = match[2].replace(/[*_`]/g, '')
-      const id = text
+      let id = text
         .toLowerCase()
         .replace(/[^\w\u4e00-\u9fff]+/g, '-')
         .replace(/^-|-$/g, '')
+      if (seenIds.has(id)) {
+        let n = 1
+        while (seenIds.has(`${id}-${n}`)) n++
+        id = `${id}-${n}`
+      }
+      seenIds.add(id)
       items.push({ id, text, depth })
     }
   }

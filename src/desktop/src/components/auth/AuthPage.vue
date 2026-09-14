@@ -1196,8 +1196,9 @@ const isRegisterView = computed(() => authView.value === 'register')
 <style scoped>
 /* ===== Page layout ===== */
 .auth-page {
-  height: 100vh;
-  height: 100dvh;
+  /* decorations:false 后顶部有 42px 自定义标题栏（App.vue 挂载），这里让出其高度 */
+  height: calc(100vh - 42px);
+  height: calc(100dvh - 42px);
   background: var(--bg-base);
   overflow: hidden;
 }

@@ -116,15 +116,19 @@ onMounted(loadSubscription)
 
 <style scoped>
 .settings-view {
-  padding: 24px;
-  max-width: 720px;
+  padding: 20px 28px 48px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  box-sizing: border-box;
   overflow-y: auto;
   flex: 1;
 }
 .sv-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 24px;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 18px;
+  letter-spacing: 0.2px;
 }
 .sg-header {
   font-size: 12px;
@@ -142,15 +146,26 @@ onMounted(loadSubscription)
 }
 .sub-stat-card {
   flex: 1;
-  padding: 16px;
+  padding: 18px 16px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   text-align: center;
+  transition:
+    transform 0.18s var(--ease),
+    box-shadow 0.18s var(--ease),
+    border-color 0.18s;
+}
+.sub-stat-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-elevated);
 }
 .stat-value {
-  font-size: 24px;
+  font-family: var(--font-content);
+  font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .stat-label {
   font-size: 11px;
@@ -160,8 +175,8 @@ onMounted(loadSubscription)
 .plan-card {
   padding: 24px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
   max-width: 320px;
 }
 .plan-name {
@@ -170,8 +185,10 @@ onMounted(loadSubscription)
   margin-bottom: 8px;
 }
 .plan-price {
-  font-size: 32px;
+  font-family: var(--font-content);
+  font-size: 30px;
   font-weight: 700;
+  letter-spacing: -0.02em;
   margin-bottom: 16px;
 }
 .plan-loading {

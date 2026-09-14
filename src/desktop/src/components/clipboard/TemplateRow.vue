@@ -73,6 +73,9 @@ function fmtTime(iso: string): string {
   border-bottom: 1px solid var(--border-default);
   transition: background 0.12s;
 }
+.tpl-row {
+  transition: background 160ms var(--ease);
+}
 .tpl-row:hover {
   background: var(--bg-hover);
 }
@@ -87,7 +90,8 @@ function fmtTime(iso: string): string {
   margin-bottom: 4px;
 }
 .tpl-preview {
-  font-size: 13px;
+  font-family: var(--font-content);
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.5;
   overflow: hidden;
@@ -108,10 +112,10 @@ function fmtTime(iso: string): string {
   flex-wrap: wrap;
 }
 .var-chip {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 8px;
+  font-family: var(--font-content);
+  font-size: 10.5px;
+  padding: 2px 9px;
+  border-radius: 999px;
   border: 1px solid transparent;
 }
 .var-builtin {
@@ -125,7 +129,8 @@ function fmtTime(iso: string): string {
   border-color: var(--border-default);
 }
 .tpl-time {
-  font-size: 11px;
+  font-family: var(--font-content);
+  font-size: 10.5px;
   color: var(--text-muted);
 }
 .tpl-actions {
@@ -133,6 +138,14 @@ function fmtTime(iso: string): string {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+/* v2 hover 浮出:删除键默认隐藏 */
+.tpl-del {
+  opacity: 0;
+  transition: opacity 160ms var(--ease);
+}
+.tpl-row:hover .tpl-del {
+  opacity: 1;
 }
 .tpl-del:hover {
   color: var(--destructive);

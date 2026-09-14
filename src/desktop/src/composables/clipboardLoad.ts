@@ -19,6 +19,7 @@ import {
   searchQuery,
   maxHistoryCap,
   type ClipItem,
+  clipViewSeg,
 } from './clipboardState'
 import { getCachedContent, cacheContent } from './clipboardCache'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
@@ -111,6 +112,10 @@ function formatBytesSafe(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
+// 请求序号：视图/分段/筛选快速切换时，先发出的请求可能后返回，
+// 过期响应一律丢弃，避免旧视图数据覆盖新视图（如「仅收藏」被时间流结果冲掉）。
+let loadSeq = 0
+
 export async function loadClipboardItems(opts?: {
   page?: number
   append?: boolean
@@ -120,13 +125,15 @@ export async function loadClipboardItems(opts?: {
   /** 覆盖每页条数（收藏页按 pageSize 分页，不再一次性拉 200 条） */
   limit?: number
 }) {
+  const seq = ++loadSeq
   const page = opts?.page ?? 1
   const append = opts?.append ?? false
   const loadAll = opts?.all ?? false
-  const loadFavorites = opts?.favorite ?? false
-  // 视图：归档视图(view=archive)只拉 archived=TRUE 的条目；默认沿用 currentView，
-  // 保证分类切换/加载更多时不丢失归档上下文。
-  const view = opts?.view || currentView.value
+  // 分段感知默认值：显式传入 favorite/view 的调用（收藏页、归档深链）不受全局分段影响；
+  // 未传的调用（轮询、同步刷新、分类/搜索切换、加载更多）继承当前分段。
+  const seg = clipViewSeg.value
+  const loadFavorites = opts?.favorite ?? (opts?.view ? false : seg === 'fav')
+  const view = opts?.view || (opts?.favorite ? 'all' : seg === 'archive' ? 'archive' : currentView.value)
   currentView.value = view
   if (!append) currentPage.value = page
   if (append) loadingMore.value = true
@@ -157,6 +164,11 @@ export async function loadClipboardItems(opts?: {
       `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}${searchParam}`,
     )
     console.log(`[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`)
+    if (seq !== loadSeq) {
+      // 已有更新的请求在途/完成：丢弃本响应，不触碰 items/total/loadError 状态
+      console.log(`[Clipboard] loadClipboardItems: stale response (seq=${seq}) dropped, current=${loadSeq}`)
+      return true
+    }
     if (res.ok && Array.isArray(res.data?.items)) {
       // 成功响应即推进删除感知同步点（含 append 空页分支，均为有效同步时刻）
       touchLastSyncAt()

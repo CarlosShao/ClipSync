@@ -2,9 +2,8 @@
 import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
-  PanelLeftClose,
   PanelLeftOpen,
-  Clipboard,
+  ClipboardList,
   Monitor,
   FileText,
   User,
@@ -13,8 +12,6 @@ import {
   Settings,
   LogOut,
   Bell,
-  Archive,
-  Sparkles,
   ExternalLink,
   Megaphone,
 } from 'lucide-vue-next'
@@ -24,6 +21,7 @@ import { useNotifications } from '@/composables/useNotifications'
 import { useMenuAccess } from '@/composables/useMenuAccess'
 import { useUser } from '@/composables/useUser'
 import { useConfigStore } from '@/stores/configStore'
+import { useDevice } from '@/composables/useDevice'
 import { api } from '@/api/client'
 import { openUrl } from '@/lib/tauri'
 import { useAnnouncements } from '@/composables/useAnnouncements'
@@ -37,6 +35,9 @@ const { can } = useMenuAccess()
 // MA-06：管理控制台外链仅超管可见（roleKey === 'super_admin'，决策记录 2026-09-07）
 const { isSuperAdmin, fetchUser } = useUser()
 const configStore = useConfigStore()
+// Clearline：导航页脚「同步脉搏」——在线设备数（模块级单例 composable，HomeView 挂载时已 loadDevices）
+const device = useDevice()
+const onlineDeviceCount = computed(() => device.devices.value.filter((d) => d.online).length)
 // 挂载即拉取当前用户 RBAC 角色（内部单飞去重，AI 面板等处复用同一份用户态）
 fetchUser()
 // 超管徽标在模板内联判定：roleKey=super_admin 显示「超级管理员」而非套餐名（"免费版"太误导）
@@ -49,14 +50,12 @@ const props = defineProps<{
   userPlan: string
   userEmail?: string
   userAvatarUrl?: string
-  settingsDialogOpen?: boolean
   aiOpen?: boolean
 }>()
 
 const emit = defineEmits<{
   toggle: []
   navigate: [sub: string]
-  'open-settings-dialog': []
   'open-ai': []
   logout: []
 }>()
@@ -85,20 +84,14 @@ function setFooterRef(el: HTMLElement | null) {
     })
 }
 
-// Navigation items — single source of truth for both expanded and collapsed views
+// Navigation items — Clearline IA：归档并入剪贴板页视图分段；个人/订阅/通知收进
+// 标题栏铃铛与用户菜单，侧栏只保留业务五项（剪贴板/收藏/模板/设备 + 系统:设置）。
+// kbd 键位与 HomeView 的 Ctrl+1..4 全局快捷键一一对应（纯提示，不改行为）。
 const mainNavItems = computed(() => [
-  { key: 'clipboard', label: t('nav_clipboard'), badge: String(props.itemsCount) },
-  { key: 'favorites', label: t('nav_favorites'), badge: '' },
-  { key: 'archive', label: t('nav_archive'), badge: '' },
-  { key: 'templates', label: t('nav_templates'), badge: '' },
-  { key: 'devices', label: t('nav_devices'), badge: '' },
-])
-
-const accountNavItems = computed(() => [
-  { key: 'profile', label: t('nav_profile'), badge: '' },
-  // enable_subscription 关闭时隐藏订阅入口（服务端按 Free 配额强制，页面无意义）
-  ...(can('nav.subscription') ? [{ key: 'subscription', label: t('nav_subscription'), badge: '' }] : []),
-  // Settings archived to backups/old-settings-v1/ — replaced by SettingsDialog
+  { key: 'clipboard', label: t('nav_clipboard'), badge: String(props.itemsCount), kbd: 'Ctrl 1' },
+  { key: 'favorites', label: t('nav_favorites'), badge: '', kbd: 'Ctrl 2' },
+  { key: 'templates', label: t('nav_templates'), badge: '', kbd: 'Ctrl 3' },
+  { key: 'devices', label: t('nav_devices'), badge: '', kbd: 'Ctrl 4' },
 ])
 
 // MA-06：管理控制台外链地址。
@@ -150,105 +143,56 @@ async function openAdminConsole() {
 
 <template>
   <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]" role="navigation" :aria-label="t('app_name')">
-    <!-- ===== Header ===== -->
-    <div class="sb-header" :class="{ 'sb-header--clickable': isCollapsed }" @click="emit('toggle')">
-      <!-- Expanded: logo + name + toggle -->
-      <div v-show="!isCollapsed" class="sb-brand">
-        <div class="sb-logo">C</div>
-        <span class="sb-name">{{ t('app_name') }}</span>
+    <!-- ===== Header（折叠开关已上移标题栏；折叠态点 logo 展开） ===== -->
+    <div v-show="isCollapsed" class="sb-header sb-header--clickable" @click="emit('toggle')">
+      <div class="sb-logo-wrap">
+        <PanelLeftOpen :size="15" stroke-width="2" class="sb-collapse-hint" />
       </div>
-      <!-- Collapsed: centered logo + expand hint -->
-      <div v-show="isCollapsed" class="sb-logo-wrap">
-        <div class="sb-logo sb-logo--sm">C</div>
-        <PanelLeftOpen :size="14" stroke-width="2" class="sb-collapse-hint" />
-      </div>
-      <!-- Toggle button (expanded only) — shadcn standard: PanelLeftClose -->
-      <Button
-        v-show="!isCollapsed"
-        variant="ghost"
-        size="icon"
-        class="sb-toggle"
-        :title="t('nav_collapse')"
-        @click.stop="emit('toggle')"
-      >
-        <PanelLeftClose :size="16" stroke-width="2" />
-      </Button>
     </div>
+    <div v-show="!isCollapsed" class="sb-header" />
 
     <!-- ===== Main Navigation ===== -->
     <nav class="sb-nav" :aria-label="t('nav_main')">
-      <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_main') }}</div>
       <template v-for="item in mainNavItems" :key="item.key">
         <button
-          :class="['sb-item', { active: !settingsDialogOpen && currentSub === item.key }]"
+          :class="['sb-item', { active: currentSub === item.key }]"
           :title="isCollapsed ? item.label : undefined"
           :aria-current="currentSub === item.key ? 'page' : undefined"
           @click="emit('navigate', item.key)"
         >
-          <Clipboard v-if="item.key === 'clipboard'" :size="20" :stroke-width="1.8" />
-          <Star v-else-if="item.key === 'favorites'" :size="20" :stroke-width="1.8" />
-          <Archive v-else-if="item.key === 'archive'" :size="20" :stroke-width="1.8" />
-          <FileText v-else-if="item.key === 'templates'" :size="20" :stroke-width="1.8" />
-          <Monitor v-else-if="item.key === 'devices'" :size="20" :stroke-width="1.8" />
+          <ClipboardList v-if="item.key === 'clipboard'" :size="19" :stroke-width="1.8" />
+          <Star v-else-if="item.key === 'favorites'" :size="19" :stroke-width="1.8" />
+          <FileText v-else-if="item.key === 'templates'" :size="19" :stroke-width="1.8" />
+          <Monitor v-else-if="item.key === 'devices'" :size="19" :stroke-width="1.8" />
           <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
           <span v-if="item.badge && !isCollapsed" class="sb-badge">{{ item.badge }}</span>
+          <kbd v-if="item.kbd && !isCollapsed && !item.badge" class="sb-kbd">{{ item.kbd }}</kbd>
         </button>
       </template>
-
-      <!-- AI Agent entry: 面板开关而非路由视图。
-           开启态只做弱强调（图标/文字转 accent），不占用“当前视图”的胶囊+左条选中语言，
-           避免与主导航当前项形成双选中。
-           enable_ai_agent 关闭时整个入口隐藏（含折叠态图标），WS 推送即时生效。 -->
-      <button
-        v-if="can('nav.ai')"
-        class="sb-item sb-item--toggle"
-        :class="{ 'toggle-on': props.aiOpen }"
-        :title="isCollapsed ? t('nav_ai') : undefined"
-        :aria-expanded="props.aiOpen"
-        @click="emit('open-ai')"
-      >
-        <Sparkles :size="18" :stroke-width="1.8" />
-        <span v-show="!isCollapsed" class="sb-label">{{ t('nav_ai') }}</span>
-      </button>
     </nav>
 
-    <!-- ===== Account Navigation ===== -->
-    <nav class="sb-nav sb-nav--account">
-      <template v-for="(item, idx) in accountNavItems" :key="item.key">
-        <div v-if="idx === 0 && !isCollapsed" class="sb-sect-label">{{ t('nav_account') }}</div>
-        <button
-          :class="['sb-item', { active: !settingsDialogOpen && currentSub === item.key }]"
-          :title="isCollapsed ? item.label : undefined"
-          @click="emit('navigate', item.key)"
-        >
-          <User v-if="item.key === 'profile'" :size="20" :stroke-width="1.8" />
-          <Crown v-else-if="item.key === 'subscription'" :size="20" :stroke-width="1.8" />
-          <span v-show="!isCollapsed" class="sb-label">{{ item.label }}</span>
-        </button>
-      </template>
-      <!-- MA-06：管理控制台外链（仅超管）。外部浏览器打开，不参与 currentSub 选中语义 -->
+    <!-- ===== System ===== -->
+    <nav class="sb-nav sb-nav--system">
+      <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_section_system', '系统') }}</div>
       <button
-        v-if="isSuperAdmin"
         class="sb-item"
-        :title="isCollapsed ? t('nav_admin_console') : undefined"
-        @click="openAdminConsole"
-      >
-        <ExternalLink :size="20" :stroke-width="1.8" />
-        <span v-show="!isCollapsed" class="sb-label">{{ t('nav_admin_console') }}</span>
-      </button>
-      <!-- Settings Dialog entry (replaces archived SettingsView) -->
-      <button
-        class="sb-item sb-item--new"
+        :class="{ active: currentSub === 'settings' }"
         :title="isCollapsed ? t('nav_settings') : undefined"
-        @click="emit('open-settings-dialog')"
+        :aria-current="currentSub === 'settings' ? 'page' : undefined"
+        @click="emit('navigate', 'settings')"
       >
-        <Settings :size="20" :stroke-width="1.8" />
+        <Settings :size="19" :stroke-width="1.8" />
         <span v-show="!isCollapsed" class="sb-label">{{ t('nav_settings') }}</span>
+        <kbd v-if="!isCollapsed" class="sb-kbd">Ctrl ,</kbd>
       </button>
     </nav>
 
-    <!-- ===== Footer (expanded only: user chip + popover menu) ===== -->
+    <!-- ===== Footer: 同步脉搏 + user chip + popover menu ===== -->
     <div v-show="!isCollapsed" :ref="setFooterRef as any" class="sb-footer">
+      <div class="sync-pill" :title="t('nav_sync_pill', { n: onlineDeviceCount })">
+        <i class="pulse" aria-hidden="true" />
+        <span>{{ t('nav_sync_pill', { n: onlineDeviceCount }) }}</span>
+      </div>
       <!-- User chip — click toggles menu -->
       <div
         class="user-chip"
@@ -274,7 +218,7 @@ async function openAdminConsole() {
           }}</div>
         </div>
       </div>
-      <!-- Popover menu (profile + logout) -->
+      <!-- Popover menu (profile + subscription + notifications + admin + logout) -->
       <Transition name="user-menu-fade">
         <div v-if="showUserMenu" class="user-menu">
           <button
@@ -288,6 +232,19 @@ async function openAdminConsole() {
           >
             <User :size="14" />
             <span>{{ t('nav_profile') || '个人资料' }}</span>
+          </button>
+          <button
+            v-if="can('nav.subscription')"
+            class="user-menu-item"
+            @click="
+              () => {
+                emit('navigate', 'subscription')
+                closeUserMenu()
+              }
+            "
+          >
+            <Crown :size="14" />
+            <span>{{ t('nav_subscription') || '订阅' }}</span>
           </button>
           <button
             class="user-menu-item"
@@ -308,6 +265,11 @@ async function openAdminConsole() {
             <span v-if="announcementUnreadCount > 0" class="user-menu-badge">
               {{ announcementUnreadCount > 99 ? '99+' : announcementUnreadCount }}
             </span>
+          </button>
+          <!-- MA-06：管理控制台外链（仅超管），外部浏览器打开 -->
+          <button v-if="isSuperAdmin" class="user-menu-item" @click="openAdminConsole">
+            <ExternalLink :size="14" />
+            <span>{{ t('nav_admin_console') || '管理控制台' }}</span>
           </button>
           <div class="user-menu-divider" />
           <button
@@ -346,9 +308,8 @@ async function openAdminConsole() {
 
 <style scoped>
 /* ================================================================
- * Sidebar — VS Code / Notion style: expanded(220px) ↔ collapsed(56px)
- * Single element, CSS transition on width.
- * Collapsed shows icon-only rail with hover tooltips.
+ * Clearline Sidebar — expanded(220px) ↔ collapsed(56px)
+ * 5 项导航 + 系统分组 + 同步脉搏页脚；选中态 = accent-soft 底 + 蓝左条。
  * ================================================================ */
 
 /* ---- Container ---- */
@@ -360,7 +321,7 @@ async function openAdminConsole() {
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-default);
   overflow: hidden;
-  transition: width 280ms cubic-bezier(0.4, 0 0.2, 1);
+  transition: width 280ms var(--ease);
 }
 .sidebar--collapsed {
   width: 56px;
@@ -370,11 +331,10 @@ async function openAdminConsole() {
 .sb-header {
   display: flex;
   align-items: center;
-  height: 48px;
+  height: 40px;
   flex-shrink: 0;
-  padding: 0 12px;
+  padding: 0 10px;
   gap: 8px;
-  border-bottom: 1px solid var(--border-default);
   position: relative;
 }
 .sidebar--collapsed .sb-header {
@@ -382,41 +342,10 @@ async function openAdminConsole() {
   padding: 0;
 }
 
-.sb-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .sb-logo-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.sb-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-bg);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.sb-logo--sm {
-  width: 30px;
-  height: 30px;
-  font-size: 13px;
-  border-radius: 8px;
-}
-
-.sb-name {
-  font-weight: 700;
-  font-size: 14px;
-  white-space: nowrap;
 }
 
 /* Toggle button — override shadcn ghost defaults to match sidebar */
@@ -441,13 +370,6 @@ async function openAdminConsole() {
   background: var(--bg-hover);
 }
 
-/* Small chevron hint next to collapsed logo */
-.sb-logo-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-}
 .sb-collapse-hint {
   opacity: 0.4;
   transition: opacity 150ms;
@@ -460,27 +382,24 @@ async function openAdminConsole() {
 .sb-nav {
   display: flex;
   flex-direction: column;
-  padding: 10px 10px 6px;
-  gap: 3px;
+  padding: 6px 10px;
+  gap: 2px;
 }
 .sidebar--collapsed .sb-nav {
-  padding: 8px 0;
+  padding: 6px 0;
   align-items: center;
 }
 
-.sb-nav--account {
-  margin-top: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
+.sb-nav--system {
+  margin-top: 8px;
+  padding-top: 4px;
 }
 
 .sb-sect-label {
   font-size: 11px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-tertiary);
-  padding: 6px 10px 8px;
+  padding: 6px 10px 6px;
   white-space: nowrap;
 }
 
@@ -489,8 +408,8 @@ async function openAdminConsole() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px 12px;
-  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -501,9 +420,8 @@ async function openAdminConsole() {
   width: 100%;
   white-space: nowrap;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
+    background 160ms var(--ease),
+    color 160ms var(--ease);
   position: relative;
 }
 .sidebar--collapsed .sb-item {
@@ -511,13 +429,14 @@ async function openAdminConsole() {
   width: 40px;
   height: 40px;
   padding: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 /* Muted icon color for inactive items — icon stays secondary until hover/active */
 .sb-item :deep(svg) {
   color: var(--text-tertiary);
   transition: color 0.15s ease;
+  flex-shrink: 0;
 }
 .sb-item:hover :deep(svg) {
   color: var(--text-primary);
@@ -536,21 +455,19 @@ async function openAdminConsole() {
   outline-offset: -2px;
 }
 
-/* Active: visible pill background + left accent indicator (shadcn-style) */
+/* Active: accent-soft pill + left accent bar (Clearline 选中语言) */
 .sb-item.active {
-  background: var(--accent-bg);
+  background: var(--accent-light);
   color: var(--accent);
   font-weight: 600;
-  /* Subtle shadow to lift from surface like shadcn docs */
-  box-shadow: var(--shadow-card);
 }
 /* Left 2px accent bar on active item (expanded only) */
 .sidebar:not(.sidebar--collapsed) .sb-item.active::after {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 9px;
-  bottom: 9px;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
   width: 2.5px;
   border-radius: 9999px;
   background: var(--accent);
@@ -580,14 +497,60 @@ async function openAdminConsole() {
   padding: 1px 7px;
   border-radius: 10px;
   line-height: 1.4;
+  font-family: var(--font-content);
+}
+.sb-kbd {
+  margin-left: auto;
+  font-family: var(--font-content);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+}
+.sb-item.active .sb-kbd {
+  color: var(--accent);
+  opacity: 0.7;
 }
 
 /* ---- Footer (expanded) ---- */
 .sb-footer {
   position: relative;
   margin-top: auto;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--border-default);
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* 同步脉搏（v2 nav-foot）：常驻同步状态可见性 */
+.sync-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+  animation: sync-pulse 2.4s ease-in-out infinite;
+}
+@keyframes sync-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px transparent;
+  }
 }
 
 .user-chip {
@@ -595,7 +558,7 @@ async function openAdminConsole() {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   transition: background 0.15s ease;
   padding: 6px 4px;
   margin-bottom: 0;
@@ -617,7 +580,7 @@ async function openAdminConsole() {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: var(--z-dropdown);
   overflow: hidden;
@@ -667,7 +630,7 @@ async function openAdminConsole() {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
-  color: var(--text-inverse);
+  color: #ffffff;
   background: var(--danger);
   border-radius: 9999px;
 }
@@ -767,18 +730,5 @@ async function openAdminConsole() {
   justify-content: center;
   padding: 10px 0 8px;
   margin-top: auto;
-}
-
-/* ---- Settings Dialog entry ---- */
-.sb-item--new {
-  margin-top: 4px;
-}
-/* AI 入口：面板开关语义——开启时仅图标与文字转 accent（无胶囊底、无左侧指示条），
-   与“当前视图”选中态（.sb-item.active）视觉分层，避免双高亮歧义。 */
-.sb-item--toggle.toggle-on {
-  color: var(--accent);
-}
-.sb-item--toggle.toggle-on :deep(svg) {
-  color: var(--accent);
 }
 </style>

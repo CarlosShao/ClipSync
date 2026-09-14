@@ -3,10 +3,7 @@ import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useClipItemDisplay, detectContentType } from '@/composables/useClipItemDisplay'
 import type { ClipItem } from '@/composables/useClipboard'
-import { TableRow, TableCell } from '@/components/ui/table'
 import Button from '@/components/ui/button/Button.vue'
-import Badge from '@/components/ui/badge/Badge.vue'
-import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import FavoriteStarCell from '@/components/clipboard/FavoriteStarCell.vue'
 import {
   Copy,
@@ -15,7 +12,7 @@ import {
   ExternalLink,
   FileText,
   Folder,
-  Star,
+  Star as _Star,
   Archive,
   ArchiveRestore,
   Trash2,
@@ -23,6 +20,11 @@ import {
   Clock,
   MoreHorizontal,
   History,
+  Type,
+  Link2,
+  Code2,
+  Sparkles,
+  Pin,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -30,10 +32,12 @@ const props = defineProps<{
   focused: boolean
   isArchive: boolean
   moreOpenId: string | null
+  selecting: boolean
 }>()
 
 const emit = defineEmits<{
   focus: []
+  click: [item: ClipItem]
   dblclick: [item: ClipItem]
   contextmenu: [item: ClipItem, e: MouseEvent]
   preview: [item: ClipItem]
@@ -48,6 +52,8 @@ const emit = defineEmits<{
   'archive-toggle': [item: ClipItem]
   'expiry-from-dropdown': [item: ClipItem, e: MouseEvent]
   'toggle-select': [item: ClipItem, selected: boolean]
+  ai: [item: ClipItem]
+  'pin-toggle': [item: ClipItem]
 }>()
 
 const { t } = useI18n()
@@ -61,72 +67,109 @@ const isLocalOnlyFile = computed(
   () => props.item.type === 'file' && props.item.metadata?.localOnly === true,
 )
 
+// v2 原型：type-tile 图标 + 徽标类型映射
+const isLink = computed(
+  () => props.item.type === 'link' || detectContentType(display.displayContent(props.item)) === 'url',
+)
+const isCode = computed(
+  () => props.item.type !== 'file' && !isLink.value && detectContentType(display.displayContent(props.item)) === 'code',
+)
+const tileClass = computed(() => {
+  if (props.item.type === 'image') return 't-image'
+  if (props.item.type === 'file') return 't-file'
+  if (isLink.value) return 't-link'
+  if (isCode.value) return 't-code'
+  return 't-text'
+})
+const badgeClass = computed(() => {
+  if (props.item.type === 'image') return 'b-image'
+  if (props.item.type === 'file') return 'b-file'
+  if (isLink.value) return 'b-link'
+  if (isCode.value) return 'b-code'
+  return 'b-text'
+})
+const badgeLabel = computed(() => display.getTypeLabel(props.item.type))
+
+// 原型：批量选择模式下点击条目 = 切换选中；否则聚焦
+function onRowClick() {
+  if (props.selecting) emit('toggle-select', props.item, !props.item.selected)
+  else if (props.item.type === 'file') emit('preview', props.item)
+  // 文件类型沿用原文件预览弹窗（md 左目录右内容）；其余走详情抽屉
+  else emit('click', props.item)
+}
+
 // 键盘 ↑↓ 移动焦点行时必须把它滚进可视区，否则焦点跑到视口外，
 // 用户看到的是"高亮消失"，按 Enter 复制的是看不见的条目。
-const rowRef = ref<{ $el?: HTMLElement } | null>(null)
+const rowRef = ref<HTMLElement | null>(null)
 watch(
   () => props.focused,
   (isFocused) => {
     if (!isFocused) return
     nextTick(() => {
-      rowRef.value?.$el?.scrollIntoView({ block: 'nearest' })
+      rowRef.value?.scrollIntoView({ block: 'nearest' })
     })
   },
 )
 </script>
 
 <template>
-  <TableRow
+  <!-- v2 原型卡片行：type-tile + clip-body(内容+meta) + hover 悬浮操作列 -->
+  <div
     ref="rowRef"
-    :data-state="item.selected ? 'selected' : undefined"
-    :class="{ focused }"
+    class="clip-item"
+    :class="{ focused, selected: item.selected, selecting }"
     @mouseenter="emit('focus')"
-    @click="emit('focus')"
+    @click="onRowClick"
     @dblclick="emit('dblclick', item)"
     @contextmenu.prevent="emit('contextmenu', item, $event)"
   >
-    <TableCell class="w-12">
-      <Checkbox
-        :model-value="item.selected"
-        @update:model-value="(v: boolean | string) => emit('toggle-select', item, v === true)"
-      />
-    </TableCell>
-    <TableCell class="cell-content">
-      <div class="cell-content-inner">
-        <!-- 条目级密码保护遮罩：受保护且未解锁/超时时覆盖所有内容 -->
-        <template v-if="!display.isItemVisible(item)">
-          <div class="cell-protected-mask">
-            <Lock :size="14" />
-            <span>{{ t('item_protected_mask') }}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              class="h-7 px-3 text-[11px] rounded-md"
-              @click.stop="emit('open-protection', item)"
-              >{{ t('item_unlock') }}</Button
-            >
+    <!-- 原型：复选框仅批量选择模式渲染且恒显 -->
+    <input
+      v-if="selecting"
+      type="checkbox"
+      class="cbx"
+      :checked="item.selected"
+      :aria-label="t('select_item', '选择此条')"
+      @click.stop
+      @change="emit('toggle-select', item, ($event.target as HTMLInputElement).checked)"
+    />
+
+    <!-- 条目级密码保护遮罩：受保护且未解锁/超时时覆盖所有内容 -->
+    <template v-if="!display.isItemVisible(item)">
+      <div class="type-tile t-file"><Lock :size="16" /></div>
+      <div class="clip-body">
+        <div class="cell-protected-mask">
+          <span>{{ t('item_protected_mask') }}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-7 px-3 text-[11px] rounded-md"
+            @click.stop="emit('open-protection', item)"
+            >{{ t('item_unlock') }}</Button
+          >
+        </div>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="type-tile" :class="tileClass">
+        <ImageIcon v-if="item.type === 'image'" :size="16" />
+        <FileText v-else-if="item.type === 'file'" :size="16" />
+        <Link2 v-else-if="isLink" :size="16" />
+        <Code2 v-else-if="isCode" :size="16" />
+        <Type v-else :size="16" />
+      </div>
+
+      <div class="clip-body">
+        <!-- 图片预览 -->
+        <template v-if="item.type === 'image'">
+          <div class="clip-thumb">
+            <img v-if="item.preview && item.preview !== 'loading'" :src="item.preview" alt="" />
+            <span v-else class="thumb-placeholder"><ImageIcon :size="16" /></span>
           </div>
         </template>
-        <!-- 图片预览 -->
-        <span v-else-if="item.type === 'image'" class="cell-img-preview">
-          <img v-if="item.preview && item.preview !== 'loading'" :src="item.preview" alt="" class="cell-thumb" />
-          <div v-else class="cell-thumb cell-thumb-placeholder">
-            <ImageIcon :size="14" style="opacity: 0.4" />
-          </div>
-        </span>
-        <!-- URL 链接样式 -->
-        <span
-          v-else-if="item.type === 'link' || detectContentType(display.displayContent(item)) === 'url'"
-          class="cell-link-preview"
-        >
-          <ExternalLink :size="12" class="cell-link-icon" />
-          <span class="cell-link-content">
-            <span class="cell-link-text">{{ display.displayContent(item) }}</span>
-            <span class="cell-link-domain">{{ display.extractDomain(display.displayContent(item)) }}</span>
-          </span>
-        </span>
         <!-- 文件类型（必须在 code/url 检测之前，否则 JSON 路径数组会被误判为 code） -->
-        <span v-else-if="item.type === 'file'" class="cell-text">
+        <div v-else-if="item.type === 'file'" class="clip-text" style="white-space: nowrap">
           <span v-if="item.id.startsWith('local-') || item.id.startsWith('file-')" class="syncing-label">
             <span class="syncing-dot" /> {{ display.formatContent(item) }}
           </span>
@@ -135,107 +178,83 @@ watch(
           <span v-if="isLocalOnlyFile" class="local-only-badge" :title="t('file_local_only_hint')">
             {{ t('file_local_only') }}
           </span>
-        </span>
+        </div>
         <!-- 代码样式 -->
-        <span v-else-if="detectContentType(display.displayContent(item)) === 'code'" class="cell-code-preview">
-          <code>{{ display.displayContent(item) }}</code>
-        </span>
-        <!-- 普通文本（表格/HTML 仅详情弹窗优化展示，主列表保持 plain text，避免撑大单元格） -->
-        <span v-else class="cell-text">
-          {{ display.formatContent(item) }}
-        </span>
+        <div v-else-if="isCode" class="clip-text code">{{ display.displayContent(item) }}</div>
+        <!-- 链接 / 普通文本 -->
+        <div v-else class="clip-text" :class="{ code: false }">{{ display.formatContent(item) }}</div>
+
+        <div class="clip-meta">
+          <span class="badge" :class="badgeClass">{{ badgeLabel }}</span>
+          <span>{{ item.source || 'Desktop' }}</span>
+          <span class="mono">{{ display.timeAgo(item.timestamp) }}</span>
+          <span
+            v-if="item.expiresAt"
+            class="cell-expiry"
+            :title="t('exp_label') + ': ' + new Date(item.expiresAt).toLocaleString()"
+          >
+            <Clock :size="10" />{{ display.formatExpiryShort(item.expiresAt) }}
+          </span>
+        </div>
       </div>
-    </TableCell>
-    <TableCell class="cell-source">{{ item.source || 'Desktop' }}</TableCell>
-    <TableCell>
-      <Badge variant="outline" class="type-badge-new" :data-type="item.type">
-        <span class="type-dot" />
-        {{ display.getTypeLabel(item.type) }}
-      </Badge>
-    </TableCell>
-    <TableCell class="cell-time">
-      <span>{{ display.timeAgo(item.timestamp) }}</span>
-      <span
-        v-if="item.expiresAt"
-        class="cell-expiry"
-        :title="t('exp_label') + ': ' + new Date(item.expiresAt).toLocaleString()"
-      >
-        <Clock :size="11" />{{ display.formatExpiryShort(item.expiresAt) }}
-      </span>
-    </TableCell>
-    <TableCell>
-      <div class="cell-actions">
-        <!-- 常驻：预览（按类型路由，与右键菜单共用 preview 事件） -->
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          class="btn-action-hide"
-          :title="t('preview')"
-          @click="emit('preview', item)"
-        >
-          <ImageIcon v-if="item.type === 'image'" :size="14" />
-          <ExternalLink v-else-if="item.type === 'link'" :size="14" />
-          <FileText v-else :size="14" />
-        </Button>
 
-        <!-- 回收站视图：恢复（取消归档） + 删除（永久清空），仅此三项 -->
+      <div class="clip-acts">
+        <!-- 回收站视图：恢复（取消归档） + 更多，仅此两项 -->
         <template v-if="isArchive">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="btn-action-hide"
-            :title="t('unarchive_action')"
-            @click="emit('unarchive', item)"
-          >
+          <button type="button" class="pl-icon-btn" :title="t('unarchive_action')" @click.stop="emit('unarchive', item)">
             <ArchiveRestore :size="14" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="btn-action-hide danger"
-            :title="t('delete')"
-            @click="emit('delete', item)"
-          >
-            <Trash2 :size="14" />
-          </Button>
-        </template>
-
-        <!-- 主列表视图：复制 / 收藏 / 删除 / 更多 -->
-        <template v-else>
-          <Button
-            v-if="item.type !== 'file' || display.hasLocalPath(item)"
-            variant="ghost"
-            size="icon-sm"
-            class="btn-action-hide"
-            :title="t('copy')"
-            @click="emit('copy', item)"
-          >
-            <Copy :size="14" />
-          </Button>
-          <!-- 常驻：收藏（含收藏夹 popover） -->
-          <FavoriteStarCell :item="item" />
-          <!-- 常驻：删除 -->
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            class="btn-action-hide danger"
-            :title="t('delete')"
-            @click="emit('delete', item)"
-          >
-            <Trash2 :size="14" />
-          </Button>
-          <!-- 更多下拉：分享 / 文件夹 / 保护 / 归档 / 过期（与右键菜单逐类型对齐） -->
+          </button>
           <div class="more-wrap">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="btn-action-hide"
+            <button
+              type="button"
+              class="pl-icon-btn"
               :title="t('more_actions')"
               @click.stop="emit('toggle-more', item)"
             >
               <MoreHorizontal :size="14" />
-            </Button>
+            </button>
             <div v-if="moreOpenId === item.id" class="more-dropdown" @click.stop>
+              <button type="button" class="more-item" @click="emit('archive-toggle', item)">
+                <Archive :size="14" />{{ t('unarchive_action') }}
+              </button>
+              <div class="more-sep" />
+              <button
+                type="button"
+                class="more-item more-item--accent"
+                @click="emit('expiry-from-dropdown', item, $event)"
+              >
+                <Clock :size="14" />{{ t('exp_set') }}…
+              </button>
+              <div class="more-sep" />
+              <button type="button" class="more-item more-item--danger" @click="emit('delete', item)">
+                <Trash2 :size="14" />{{ t('delete') }}
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 主列表视图：原型动作列 = 收藏 / AI / 更多（复制与删除收进更多，保持一行紧凑） -->
+        <template v-else>
+          <!-- 常驻：收藏（含收藏夹 popover） -->
+          <FavoriteStarCell :item="item" />
+          <!-- 常驻：AI 处理（呼出 AI dock 并附带条目内容） -->
+          <button type="button" class="pl-icon-btn" :title="t('row_ai_hint', '用 AI 处理这条')" @click.stop="emit('ai', item)">
+            <Sparkles :size="14" />
+          </button>
+          <!-- 更多下拉：复制 / 分享 / 文件夹 / 保护 / 归档 / 过期 / 删除 -->
+          <div class="more-wrap">
+            <button
+              type="button"
+              class="pl-icon-btn"
+              :title="t('more_actions')"
+              @click.stop="emit('toggle-more', item)"
+            >
+              <MoreHorizontal :size="14" />
+            </button>
+            <div v-if="moreOpenId === item.id" class="more-dropdown" @click.stop>
+              <button type="button" class="more-item" @click="emit('copy', item)">
+                <Copy :size="14" />{{ t('copy') }}
+              </button>
               <button type="button" class="more-item" @click="emit('share', item)">
                 <Link :size="14" />{{ t('shared_link') }}
               </button>
@@ -260,7 +279,10 @@ watch(
                 <History :size="14" />{{ t('modal_versions') }}
               </button>
               <button type="button" class="more-item" @click="emit('archive-toggle', item)">
-                <Archive :size="14" />{{ isArchive ? t('unarchive_action') : t('archive_action') }}
+                <Archive :size="14" />{{ t('archive_action') }}
+              </button>
+              <button type="button" class="more-item" @click="emit('pin-toggle', item)">
+                <Pin :size="14" />{{ item.pinned ? t('unpin_item', '取消置顶') : t('pin_item', '置顶') }}
               </button>
               <div class="more-sep" />
               <button
@@ -270,36 +292,29 @@ watch(
               >
                 <Clock :size="14" />{{ t('exp_set') }}…
               </button>
+              <div class="more-sep" />
+              <button type="button" class="more-item more-item--danger" @click="emit('delete', item)">
+                <Trash2 :size="14" />{{ t('delete') }}
+              </button>
             </div>
           </div>
         </template>
       </div>
-    </TableCell>
-  </TableRow>
+    </template>
+  </div>
 </template>
 
 <style scoped>
-/* Cell styles */
-.cell-content {
-  overflow: hidden;
-  max-width: 0;
-}
-.cell-content-inner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* 受保护条目遮罩 */
 .cell-protected-mask {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-  border: 1px dashed color-mix(in srgb, var(--color-primary) 40%, transparent);
-  border-radius: var(--radius-md);
-  font-size: 13px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
   color: var(--text-secondary);
 }
 .cell-protected-mask :deep(button) {
@@ -338,7 +353,7 @@ watch(
   flex-shrink: 0;
   padding: 1px 6px;
   margin-left: 6px;
-  border-radius: var(--radius-sm);
+  border-radius: 5px;
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
   font-size: 10px;
@@ -347,190 +362,31 @@ watch(
   vertical-align: middle;
 }
 
-/* 普通文本 */
-.cell-text {
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text-primary);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  word-break: break-word;
-}
-
-/* 图片预览 */
-.cell-img-preview {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  position: relative;
-}
-.cell-thumb {
-  width: 48px;
-  height: 34px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-subtle);
-}
-.cell-thumb-placeholder {
-  width: 48px;
-  height: 34px;
+.thumb-placeholder {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-hover);
-  border-radius: var(--radius-sm);
-}
-
-/* URL 链接样式 */
-.cell-link-preview {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 5px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  transition: background 0.15s;
-}
-.cell-link-preview:hover {
-  background: var(--bg-active);
-}
-.cell-link-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--info);
-}
-.cell-link-content {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.cell-link-text {
-  font-size: 13px;
-  color: var(--info);
-  word-break: break-all;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-}
-.cell-link-domain {
-  font-size: 11px;
   color: var(--text-tertiary);
+  opacity: 0.5;
 }
 
-/* 代码样式 */
-.cell-code-preview {
-  display: block;
-  width: 100%;
-  padding: 5px 9px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-all;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.cell-source {
-  color: var(--text-secondary);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-/* Type badge (shadcn Badge + colored dot) */
-.type-badge-new {
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding-left: 8px;
-  padding-right: 9px;
-}
-.type-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--text-tertiary);
-  flex-shrink: 0;
-}
-.type-badge-new[data-type='image'] .type-dot {
-  background: var(--success);
-}
-.type-badge-new[data-type='link'] .type-dot {
-  background: var(--info);
-}
-.type-badge-new[data-type='file'] .type-dot {
-  background: var(--warning);
-}
-.type-badge-new[data-type='text'] .type-dot {
-  background: var(--text-tertiary);
-}
-
-.cell-time {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  white-space: nowrap;
-}
 .cell-expiry {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-left: 6px;
   padding: 1px 5px;
-  border-radius: var(--radius-sm);
+  border-radius: 5px;
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
   font-size: 10px;
   white-space: nowrap;
 }
 
-/* Action buttons (always visible) */
-.cell-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  justify-content: flex-end;
-}
-.cell-actions .btn-action-hide {
-  opacity: 1;
-  color: var(--text-tertiary);
-  border-radius: var(--radius-sm);
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-.cell-actions .btn-action-hide:hover {
-  background: var(--bg-active);
-  color: var(--text-primary);
-}
-.cell-actions .btn-action-hide.danger {
+.pl-icon-btn.act-danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
-}
-.cell-actions .btn-action-hide.danger:hover {
-  background: var(--danger-bg);
-}
-.cell-actions .btn-action-hide.sensitive-locked {
-  color: var(--danger);
-}
-.cell-actions .btn-action-hide.sensitive-locked:hover {
-  background: var(--danger-bg);
 }
 
 /* 「更多」操作下拉 */
@@ -582,6 +438,12 @@ watch(
 }
 .more-item--accent svg {
   color: var(--accent);
+}
+.more-item--danger {
+  color: var(--danger);
+}
+.more-item--danger svg {
+  color: var(--danger);
 }
 .more-sep {
   height: 1px;

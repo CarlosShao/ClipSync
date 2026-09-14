@@ -134,9 +134,6 @@ const FONT_FAMILIES = [
   border-radius: var(--radius-md);
   gap: 16px;
 }
-.sg-row:hover {
-  background: var(--bg-hover);
-}
 .sg-row--clickable {
   cursor: pointer;
 }

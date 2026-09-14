@@ -539,6 +539,16 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                   {{ roleKey }}
                 </span>
               </div>
+              <!-- Clearline 上下文感知 chip：把已有的 viewContext 显性化（v2 §5）——
+                   面板顶条常驻「当前上下文 · {页面}」，用户可直接针对当前页提问 -->
+              <span
+                v-if="viewContextText"
+                class="ai-ctx-chip"
+                :title="t('ai_ctx_chip_tip', 'AI 感知你所在的页面，可直接针对当前页提问')"
+              >
+                <span class="ai-ctx-dot" aria-hidden="true" />
+                {{ t('ai_ctx_prefix', '当前上下文') }} · {{ viewContextText }}
+              </span>
             </div>
             <div class="ai-header-right">
               <Button
@@ -832,6 +842,42 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+/* Clearline 上下文感知 chip（v2 §5）：accent-soft 底 + 呼吸点 */
+.ai-ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+.ai-ctx-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: ai-ctx-breathe 2.4s ease-in-out infinite;
+}
+@keyframes ai-ctx-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 /* 角色徽章（#217 / RBAC） */

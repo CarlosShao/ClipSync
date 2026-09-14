@@ -484,6 +484,11 @@ router.delete('/tags/:tag', apiLimiter, async (req, res) => {
          AND metadata->'tags' ? $2`,
       [req.userId, tag]
     );
+    try {
+      await pool.query(`DELETE FROM favorite_tag_presets WHERE user_id = $1 AND name = $2`, [req.userId, req.params.tag]);
+    } catch (e) {
+      /* 预设表可能尚未创建 */
+    }
     res.json({ message: 'Tag deleted', deleted: result.rowCount });
   } catch (err) {
     logger.error('Delete tag error:', { error: err.message });

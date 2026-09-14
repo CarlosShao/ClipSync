@@ -14,6 +14,20 @@ export function fetchClips() {
   return api<{ items: ServerClipItem[] }>('GET', '/api/clipboard')
 }
 
+export interface ClipboardStats {
+  today: number
+  yesterday: number
+  week: number
+  favorites: number
+  pinned: number
+}
+
+/** 页头统计卡：今日/昨日/本周/收藏/置顶（服务端聚合） */
+export async function getClipboardStats(): Promise<ClipboardStats | null> {
+  const res = await api<ClipboardStats>('GET', '/api/clipboard/stats')
+  return res.ok ? (res.data ?? null) : null
+}
+
 export function uploadClip(content: string, type: string, preview?: string) {
   return api('POST', '/api/clipboard', { content, type, preview: preview || content.slice(0, 5000) })
 }

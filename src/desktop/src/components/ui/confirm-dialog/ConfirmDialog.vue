@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { Button } from '@/components/ui/button'
+import { useI18n } from '@/composables/useI18n'
 
 type BtnVariant = 'default' | 'outline' | 'destructive'
 
@@ -18,12 +19,17 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   title: '',
   message: '',
-  confirmText: '确认',
-  cancelText: '取消',
+  confirmText: '',
+  cancelText: '',
   confirmVariant: 'destructive',
   secondaryText: '',
   secondaryVariant: 'outline',
 })
+
+const { t } = useI18n()
+// 未显式传文案时走词典（修复英文界面弹出「取消」的硬编码问题）
+const confirmLabel = computed(() => props.confirmText || t('confirm', '确认'))
+const cancelLabel = computed(() => props.cancelText || t('cancel', '取消'))
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -64,7 +70,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <p v-if="message" class="confirm-dialog-message">{{ message }}</p>
       <div class="confirm-dialog-actions">
         <Button variant="outline" size="default" class="min-w-[100px] rounded-md" @click="onCancel">{{
-          cancelText
+          cancelLabel
         }}</Button>
         <Button
           v-if="secondaryText"
@@ -75,7 +81,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           >{{ secondaryText }}</Button
         >
         <Button :variant="confirmVariant" size="default" class="min-w-[100px] rounded-md" @click="onConfirm">{{
-          confirmText
+          confirmLabel
         }}</Button>
       </div>
     </div>

@@ -292,9 +292,6 @@ watch(maxHistoryCeiling, (ceiling) => {
   gap: 16px;
 }
 
-.sg-row:hover {
-  background: var(--bg-hover);
-}
 
 /* 服务器地址：输入框 + 操作按钮需要纵向排布 */
 .sg-row--stack {
