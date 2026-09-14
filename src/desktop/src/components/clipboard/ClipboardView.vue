@@ -759,8 +759,13 @@ onUnmounted(() => {
 .clip-list {
   display: block;
 }
-/* A1 内联 AI 结果卡：与工具栏留出间距（左右居中由 .clipboard-view > * 统一负责） */
-.today-summary-card {
+/* A1 内联 AI 结果卡：与工具栏留出间距。
+   注意：通用规则 .clipboard-view > * 的 28px 内边距会被卡片自带背景画出
+   （与批量条当年同坑），这里用双类名提权覆盖为 1024 可视宽度，与列表卡片对齐 */
+.clipboard-view > .today-summary-card.today-summary-card {
+  max-width: 1024px;
+  padding-left: 0;
+  padding-right: 0;
   margin-top: 10px;
 }
 /* 与工具栏 page-inner 对齐：同一 1080 栅格 */
