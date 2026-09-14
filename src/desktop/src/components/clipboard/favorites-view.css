@@ -918,8 +918,8 @@
   gap: 1px;
   padding: 2px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
-  backdrop-filter: blur(6px);
+  /* 同 .clip-acts：去掉 backdrop-filter，改用 97% 纯色（收藏卡片操作条） */
+  background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-card);
   opacity: 0;

@@ -453,8 +453,10 @@
   align-items: center;
   gap: 2px;
   padding: 3px;
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  backdrop-filter: blur(6px);
+  /* 用 97% 纯色替代 backdrop-filter: blur(6px)：胶囊底色本就 92% 不透明，
+     模糊一层近乎纯色的背景实测 0 像素差异，却让每个胶囊各提升为一个合成层
+     （全页 37 个 backdrop 层，是 GPU 进程 ~46% 单核的主因）。 */
+  background: color-mix(in srgb, var(--bg-surface) 97%, transparent);
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
   box-shadow: var(--shadow-pop);
