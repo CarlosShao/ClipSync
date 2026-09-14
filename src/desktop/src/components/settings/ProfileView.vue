@@ -5,6 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useUser } from '@/composables/useUser'
 import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
+import { api } from '@/api/client'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Avatar from '@/components/ui/avatar/Avatar.vue'
@@ -12,7 +13,7 @@ import AvatarImageComp from '@/components/ui/avatar/AvatarImage.vue'
 import AvatarFallbackComp from '@/components/ui/avatar/AvatarFallback.vue'
 import Label from '@/components/ui/label/Label.vue'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const configStore = useConfigStore()
 const toast = useSonner()
 const { isSuperAdmin } = useUser()
@@ -46,10 +47,8 @@ async function saveDisplayName() {
     editingName.value = false
     toast.show(t('profile_saved'), 'success')
   } else {
-    configStore.user.name = trimmed
-    editingName.value = false
-    localStorage.setItem('clipsync-display-name', trimmed)
-    toast.show(t('profile_saved'), 'success')
+    // 保存失败：不改本地 state、不退出编辑态，如实报错
+    toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
   }
 }
 
@@ -79,28 +78,15 @@ async function saveEmail() {
     return
   }
 
-  try {
-    const res = await fetch(`${configStore.serverUrl}/api/auth/profile`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${configStore.config.token}`,
-      },
-      body: JSON.stringify({ email: trimmed }),
-    })
-    if (res.ok) {
-      configStore.user.email = trimmed
-      editingEmail.value = false
-      toast.show(t('profile_saved'), 'success')
-    } else {
-      configStore.user.email = trimmed
-      editingEmail.value = false
-      toast.show(t('profile_saved'), 'success')
-    }
-  } catch {
+  // 走统一封装（带鉴权/CSRF/超时/401 刷新），以 res.ok 判定真实结果
+  const res = await api('PUT', '/api/auth/profile', { email: trimmed })
+  if (res.ok) {
     configStore.user.email = trimmed
     editingEmail.value = false
     toast.show(t('profile_saved'), 'success')
+  } else {
+    // 保存失败：不改本地 email、不退出编辑态，如实报错
+    toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
   }
 }
 
@@ -140,7 +126,9 @@ async function handleAvatarUpload(e: Event) {
 
     const ok = await configStore.updateUserProfile({ avatarUrl: dataUrl })
     if (!ok) {
+      // 本地预览保留，但服务端未保存成功必须如实告知
       console.warn('[Profile] Avatar upload failed, using local-only')
+      toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
     } else {
       toast.show(t('avatar_saved') || '头像已更新', 'success')
     }
