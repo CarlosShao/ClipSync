@@ -62,6 +62,9 @@ services:
     build:
       context: ./src/server
       dockerfile: Dockerfile
+      # 见 docker-compose.prod.yml 同处注释：src/shared 需经附加上下文传入
+      additional_contexts:
+        shared: ./src/shared
     container_name: clipsync-api-1
     restart: always
     environment:
@@ -106,6 +109,9 @@ services:
     build:
       context: ./src/server
       dockerfile: Dockerfile
+      # 见 docker-compose.prod.yml 同处注释：src/shared 需经附加上下文传入
+      additional_contexts:
+        shared: ./src/shared
     container_name: clipsync-api-2
     restart: always
     environment:

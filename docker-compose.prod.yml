@@ -68,6 +68,13 @@ services:
     build:
       context: ./src/server
       dockerfile: Dockerfile
+      # 修复：src/shared/domains.js 被 routes/auth.js、utils/pdf-invoice.js 以
+      # ../../../shared/domains.js 引用（容器内解析为 /shared/domains.js），
+      # 但 ./src/server 构建上下文够不到仓库根的 src/shared。
+      # 用命名附加上下文传进构建，Dockerfile 中 COPY --from=shared。
+      # 缺此项时 api 容器启动即 ERR_MODULE_NOT_FOUND 崩溃重启。
+      additional_contexts:
+        shared: ./src/shared
     container_name: clipsync-api-prod
     restart: always
     environment:

@@ -42,6 +42,15 @@ COPY --from=builder /app/src ./src
 COPY --from=builder /app/views ./views
 COPY --from=builder /app/public ./public
 
+# 跨端共享模块（src/shared）——server 侧（routes/auth.js、utils/pdf-invoice.js）
+# 以 ../../../shared/domains.js 引用，容器内解析为 /shared/domains.js，
+# 故必须落在镜像根的 /shared。
+# 构建上下文是 ./src/server，够不到仓库根的 src/shared，
+# 因此 compose 用 additional_contexts 把该目录传进来（见 docker-compose.prod.yml）。
+# 缺这一步的后果：api 容器启动即 ERR_MODULE_NOT_FOUND 崩溃重启
+# （2026-09-15 生产部署实测踩到）。
+COPY --from=shared . /shared
+
 # Create upload directories
 RUN mkdir -p uploads/images/thumbnails uploads/files && \
     chown -R clipsync:clipsync /app
@@ -49,11 +58,14 @@ RUN mkdir -p uploads/images/thumbnails uploads/files && \
 USER clipsync
 
 # Expose port
-EXPOSE 3001
+# 注意：compose 的 docker-compose.prod.yml 显式设 PORT=3000，
+# 故此处必须与之一致——曾因 Dockerfile 写 3001 而 compose 用 3000，
+# 导致 HEALTHCHECK 恒失败（容器显示 unhealthy 但接口实际正常）。
+EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
 
 # Start server
 CMD ["node", "src/index.js"]
