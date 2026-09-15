@@ -397,6 +397,35 @@ router.get('/stats', apiLimiter, async (req, res) => {
   }
 });
 
+// GET /api/clipboard/stats - 今日/昨日/本周/收藏/置顶 汇总（剪贴板页头统计卡）
+router.get('/stats', apiLimiter, async (req, res) => {
+  try {
+    const count = async (sql) => {
+      const r = await pool.query(sql, [req.userId]);
+      return r.rows[0]?.n || 0;
+    };
+    const today = await count(
+      `SELECT COUNT(*)::int AS n FROM clipboard_items WHERE user_id = $1 AND created_at >= date_trunc('day', NOW())`
+    );
+    const yesterday = await count(
+      `SELECT COUNT(*)::int AS n FROM clipboard_items WHERE user_id = $1 AND created_at >= date_trunc('day', NOW()) - interval '1 day' AND created_at < date_trunc('day', NOW())`
+    );
+    const week = await count(
+      `SELECT COUNT(*)::int AS n FROM clipboard_items WHERE user_id = $1 AND created_at >= date_trunc('week', NOW())`
+    );
+    const favorites = await count(
+      `SELECT COUNT(*)::int AS n FROM clipboard_items WHERE user_id = $1 AND is_favorite = true`
+    );
+    const pinned = await count(
+      `SELECT COUNT(*)::int AS n FROM clipboard_items WHERE user_id = $1 AND COALESCE(metadata->>'pinned', 'false') = 'true'`
+    );
+    res.json({ today, yesterday, week, favorites, pinned });
+  } catch (err) {
+    logger.error('Clipboard stats error:', { error: err.message });
+    res.status(500).json({ error: 'Failed to load clipboard stats' });
+  }
+});
+
 // GET /api/clipboard/:id - Get a single clipboard item (including encrypted content)
 router.get('/:id', apiLimiter, async (req, res) => {
   try {
