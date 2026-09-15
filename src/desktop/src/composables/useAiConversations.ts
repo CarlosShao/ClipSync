@@ -71,7 +71,12 @@ export function useAiConversations() {
       thinkingEnabled: options.thinkingEnabled || false,
     })
     if (!res.ok || !res.data?.conversation) {
-      console.error('[useAiConversations] createConversation failed:', res.status, res.error)
+      console.error(
+        '[useAiConversations] createConversation failed:',
+        `status=${res.status}`,
+        `error=${res.error}`,
+        `data=${JSON.stringify(res.data)}`,
+      )
       return null
     }
     const conv = res.data.conversation

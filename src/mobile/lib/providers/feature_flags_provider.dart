@@ -102,6 +102,21 @@ const Map<String, MenuCapability> kMenuCapabilities =
 /// （CO-21：refresh() 顺带拉 `/api/app/maintenance`，WS
 /// `maintenance.updated` 经全局钩子直达 [applyMaintenance]）。
 class FeatureFlagsProvider extends ChangeNotifier {
+  /// E2E 端到端加密的套餐特性位键（B9，协议 §5 双闸门之一；subscription_plans
+  /// features JSON 三档全 true）。与桌面端对齐：任一闸门不满足 → 走旧明文路径。
+  static const String planFeatureE2eEncryption = 'e2e_encryption';
+
+  /// 当前活动实例（B9）：main() 创建唯一实例后，无依赖注入通道的后台服务
+  /// （ClipboardCaptureService 单例）经 [maybeActive] 只读访问套餐特性快照；
+  /// 未创建 / 测试环境为 null，调用方应 fail-open（与 _hasPlanFeature 一致）。
+  static FeatureFlagsProvider? _active;
+
+  static FeatureFlagsProvider? get maybeActive => _active;
+
+  FeatureFlagsProvider() {
+    _active = this;
+  }
+
   Map<String, bool> _flags = {};
   bool _loaded = false;
   bool _loading = false;
@@ -204,6 +219,11 @@ class FeatureFlagsProvider extends ChangeNotifier {
     final v = _planFeatures[featureKey];
     return v == null ? true : v;
   }
+
+  /// E2E 端到端加密套餐闸门（B9，协议 §5 双闸门之一）：
+  /// plan.features['e2e_encryption']。快照未拉取 / 键未知时 fail-open
+  /// 放行（三档套餐该位全 true，客户端基础设施异常不阻断加密上传）。
+  bool get e2eEncryptionAllowed => _hasPlanFeature(planFeatureE2eEncryption);
 
   /// WS 推送直达：无网络往返，管理台切换后全端即时生效。
   void applyFlags(Map<String, dynamic>? flags) {

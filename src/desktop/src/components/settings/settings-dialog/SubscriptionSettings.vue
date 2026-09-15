@@ -59,9 +59,6 @@ const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
 .sg-row--clickable {
   cursor: pointer;
 }
-.sg-row--clickable:hover {
-  background: var(--bg-hover);
-}
 .sg-label {
   flex: 1;
   min-width: 0;

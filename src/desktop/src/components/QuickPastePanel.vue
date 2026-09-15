@@ -157,9 +157,10 @@ function truncate(str: string, max: number): string {
   color: var(--text-tertiary);
   background: var(--bg-hover);
   border: 1px solid var(--border-default);
-  border-radius: 3px;
+  border-bottom-width: 2px;
+  border-radius: 5px;
   padding: 1px 5px;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-content);
 }
 .qp-list {
   max-height: 300px;
@@ -172,9 +173,14 @@ function truncate(str: string, max: number): string {
   padding: 8px 16px;
   cursor: pointer;
 }
+.qp-item {
+  border-left: 2.5px solid transparent;
+  transition: background 120ms var(--ease);
+}
 .qp-item:hover,
 .qp-item.sel {
-  background: var(--bg-selected);
+  background: var(--accent-light);
+  border-left-color: var(--accent);
 }
 .qp-type-indicator {
   flex-shrink: 0;
@@ -182,13 +188,15 @@ function truncate(str: string, max: number): string {
 }
 .qp-text {
   flex: 1;
-  font-size: 13px;
+  font-family: var(--font-content);
+  font-size: 12.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .qp-time {
-  font-size: 11px;
+  font-family: var(--font-content);
+  font-size: 10.5px;
   color: var(--text-tertiary);
   flex-shrink: 0;
 }

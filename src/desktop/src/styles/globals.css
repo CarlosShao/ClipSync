@@ -636,6 +636,101 @@ html.theme-arc.dark {
   --shadow-modal: 0 28px 72px rgba(0, 0, 0, 0.6);
 }
 
+/* ===== CLEARLINE 澄明 — Office-Comfortable Default (v2 redesign) =====
+   Design contract: ui-prototype/glm/v2/_design/design-contract.md
+   长时间常驻桌角的工具：低饱和、大留白、柔和中性色、轻阴影、一条澄明蓝主线。
+   浅色为默认（Paper 白），深色同理念（柔黑非纯黑）。 */
+html.theme-clearline.light {
+  --bg-base: #f4f5f7;
+  --bg-sidebar: #fbfbfc;
+  --bg-surface: #ffffff;
+  --bg-hover: #eef0f3;
+  --bg-active: #e5e8ee;
+  --bg-selected: rgba(58, 107, 224, 0.08);
+  --bg-modal-overlay: rgba(16, 24, 40, 0.4);
+  --border-default: #e4e6eb;
+  --border-subtle: #eceef1;
+  --border-strong: #cbd0d8;
+  --border-focus: #3a6be0;
+  --text-primary: #20242b;
+  --text-secondary: #5f6672;
+  --text-tertiary: #9aa1ac;
+  --text-inverse: #ffffff;
+  --accent: #3a6be0;
+  --accent-rgb: 58 107 224;
+  --accent-hover: #2f5bcc;
+  --accent-light: rgba(58, 107, 224, 0.1);
+  --accent-bg: #eaf0fd;
+  --gradient-accent: linear-gradient(135deg, #3a6be0 0%, #5b8aef 100%);
+  --logo-gradient: linear-gradient(135deg, #3a6be0 0%, #5b8aef 100%);
+  --success: #2e9e6b;
+  --success-bg: #e7f6ef;
+  --warning: #d98a16;
+  --warning-bg: #fdf4e3;
+  --danger: #d94a3a;
+  --danger-bg: #fdecea;
+  --info: #3a6be0;
+  --info-bg: #e9effc;
+  /* 剪贴内容类型色（v2 §3：文本/链接/代码/图片/文件） */
+  --clip-text: #3a6be0;
+  --clip-link: #2e9e6b;
+  --clip-code: #0d9488;
+  --clip-image: #d97706;
+  --clip-file: #7a8494;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-elevated: 0 12px 32px rgba(16, 24, 40, 0.1), 0 1px 3px rgba(16, 24, 40, 0.04);
+  --shadow-dropdown: 0 12px 32px rgba(16, 24, 40, 0.1), 0 0 0 1px rgba(16, 24, 40, 0.03);
+  --shadow-modal: 0 24px 64px rgba(16, 24, 40, 0.16);
+  --icon-stroke: 1.75;
+}
+
+html.theme-clearline.dark {
+  --bg-base: #16181c;
+  --bg-sidebar: #1a1d22;
+  --bg-surface: #1f2228;
+  --bg-hover: #282c34;
+  --bg-active: #2e333c;
+  --bg-selected: rgba(110, 147, 255, 0.14);
+  --bg-modal-overlay: rgba(8, 10, 14, 0.65);
+  --border-default: #2c3038;
+  --border-subtle: #262a31;
+  --border-strong: #3a404b;
+  --border-focus: #6e93ff;
+  --text-primary: #e8eaee;
+  --text-secondary: #a6acb8;
+  --text-tertiary: #7a818d;
+  --text-inverse: #10152b;
+  --accent: #6e93ff;
+  --accent-rgb: 110 147 255;
+  --accent-hover: #86a5ff;
+  --accent-light: rgba(110, 147, 255, 0.14);
+  --accent-bg: rgba(110, 147, 255, 0.14);
+  --gradient-accent: linear-gradient(135deg, #6e93ff 0%, #4a72e8 100%);
+  --logo-gradient: linear-gradient(135deg, #6e93ff 0%, #4a72e8 100%);
+  --success: #4cc38a;
+  --success-bg: rgba(76, 195, 138, 0.12);
+  --warning: #e8b04b;
+  --warning-bg: rgba(232, 176, 75, 0.12);
+  --danger: #e5685a;
+  --danger-bg: rgba(229, 104, 90, 0.12);
+  --info: #6e93ff;
+  --info-bg: rgba(110, 147, 255, 0.12);
+  --clip-text: #7fa3ff;
+  --clip-link: #4cc38a;
+  --clip-code: #2dd4bf;
+  --clip-image: #f0a24b;
+  --clip-file: #98a2b3;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 12px 32px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-dropdown: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
 /* ============================================================
    SHADCN-COMPATIBLE VARIABLE ALIASES
    Maps our custom variables to shadcn standard names
@@ -710,6 +805,16 @@ html.dark {
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
+  /* Clearline 动效纪律：全局统一缓动曲线（hover 160ms / 面板 260ms / dock 280ms） */
+  --ease: cubic-bezier(0.25, 0.8, 0.3, 1);
+  /* 内容等宽轨（v1/v2 共识）：剪贴内容、时间戳、键帽、版本号一律 mono，与界面 chrome 区分 */
+  --font-content: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  /* 剪贴内容类型色兜底（clearline 主题块内按明暗覆写） */
+  --clip-text: #3a6be0;
+  --clip-link: #2e9e6b;
+  --clip-code: #0d9488;
+  --clip-image: #d97706;
+  --clip-file: #7a8494;
   /* Shadow ladder (S7) — light-mode base; dark themes override below.
      Legacy --shadow-dropdown stays per-theme as a compat alias. */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -930,4 +1035,149 @@ html.app-font-kai body code,
 html.app-font-kai body kbd,
 html.app-font-kai body samp {
   font-family: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace !important;
+}
+
+/* ============================================================
+   CLEARLINE 页载 reveal：子项错峰上浮（30ms 步进，上限 8 项）。
+   仅 opacity/transform；reduce-motion（设置开关或系统偏好）全禁。
+   ============================================================ */
+@keyframes clearline-reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal-stagger > * {
+  animation: clearline-reveal-up 0.32s var(--ease) backwards;
+}
+.reveal-stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.reveal-stagger > *:nth-child(2) {
+  animation-delay: 30ms;
+}
+.reveal-stagger > *:nth-child(3) {
+  animation-delay: 60ms;
+}
+.reveal-stagger > *:nth-child(4) {
+  animation-delay: 90ms;
+}
+.reveal-stagger > *:nth-child(5) {
+  animation-delay: 120ms;
+}
+.reveal-stagger > *:nth-child(6) {
+  animation-delay: 150ms;
+}
+.reveal-stagger > *:nth-child(7) {
+  animation-delay: 180ms;
+}
+.reveal-stagger > *:nth-child(8) {
+  animation-delay: 210ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-stagger > * {
+    animation: none;
+  }
+}
+
+/* ===== Clearline 细滚动条：替换系统老式宽滚动条 ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong, #cbd0d8);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary, #9aa1ac);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ============================================================
+   Clearline toast（vue-sonner 覆盖）
+   右下角堆叠 · 卡面化（surface+细边+投影）· 入场从右缘滑入
+   ============================================================ */
+[data-sonner-toaster][data-x-position='right'] [data-sonner-toast] {
+  /* 入场起点：右侧屏外（原版是下方 100%），mounted 后过渡回 0 = 从右向左滑入 */
+  --y: translateX(110%);
+}
+[data-sonner-toaster][data-x-position='right'] [data-sonner-toast][data-mounted='true'] {
+  --y: translateX(0);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  padding: 11px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  font-size: 12.5px;
+  gap: 9px;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-title] {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-description] {
+  color: var(--text-secondary);
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button] {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  box-shadow: none;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  color: var(--text-primary);
+}
+/* 类型accent：图标着色 + 极浅同色底（rich-colors 的高 Specificity 覆盖） */
+[data-sonner-toaster] [data-rich-colors='true'][data-sonner-toast][data-styled='true'][data-type='success'] {
+  background: color-mix(in srgb, var(--success, #2e9e6b) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--success, #2e9e6b) 32%, transparent);
+}
+[data-sonner-toaster] [data-rich-colors='true'][data-sonner-toast][data-styled='true'][data-type='error'] {
+  background: color-mix(in srgb, var(--danger, #d5484d) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--danger, #d5484d) 32%, transparent);
+}
+[data-sonner-toaster] [data-rich-colors='true'][data-sonner-toast][data-styled='true'][data-type='warning'] {
+  background: color-mix(in srgb, var(--warning, #d97706) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--warning, #d97706) 32%, transparent);
+}
+[data-sonner-toaster] [data-rich-colors='true'][data-sonner-toast][data-styled='true'][data-type='info'] {
+  background: color-mix(in srgb, var(--accent, #4f6bed) 8%, var(--bg-surface));
+  border-color: color-mix(in srgb, var(--accent, #4f6bed) 32%, transparent);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-rich-colors='true'][data-type='success'] [data-icon] {
+  color: var(--success, #2e9e6b);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-rich-colors='true'][data-type='error'] [data-icon] {
+  color: var(--danger, #d5484d);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-rich-colors='true'][data-type='warning'] [data-icon] {
+  color: var(--warning, #d97706);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='info'] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-rich-colors='true'][data-type='info'] [data-icon] {
+  color: var(--accent, #4f6bed);
 }

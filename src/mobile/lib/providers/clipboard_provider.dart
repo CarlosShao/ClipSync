@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/clipboard_item.dart';
 import '../services/api_service.dart';
 import '../services/app_exception.dart';
+import '../services/e2e_crypto.dart';
 import '../services/item_actions_api_service.dart';
 import '../services/search_history_api_service.dart';
 import '../services/token_store.dart';
@@ -25,6 +30,10 @@ import '../utils/performance.dart';
 /// - 高级筛选（C2/G5）：[filterDateRange]（today/week/month/custom，custom 档
 ///   配 [filterCustomFrom] / [filterCustomTo]）/ [filterDeviceId]（[applyFilters] /
 ///   [resetAdvancedFilters]），应用即重置分页重拉；[activeFilterCount] 供徽标
+/// - E2E 接收解密（B10，协议 docs/plans/e2e-protocol.md）：WS 新条目
+///   ([handleNewItem]) 与分页拉取 ([_fetchPage]) 对 metadata.e2e 条目先经
+///   E2eCrypto 解密再入列表（成功明文 / 失败 '[E2E]' 占位）；复制
+///   ([resolveCopyText]) 只出解密明文，解不出返回空串由 UI 提示，绝不写密文
 class ClipboardProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   final SearchHistoryApiService _searchHistoryApi = SearchHistoryApiService();
@@ -74,6 +83,183 @@ class ClipboardProvider extends ChangeNotifier {
   // G3：过期过滤的假空态保护——整页被过滤清空时自动续拉的最大页数
   // （上限防环：服务端分页异常/时钟偏差下不无限请求）
   static const int _kMaxExpiredSkipPages = 5;
+
+  // ---------------------------------------------------------------------------
+  // E2E 接收解密（B10，协议契约 docs/plans/e2e-protocol.md §2/§3）
+  //
+  // 判定：metadata.e2e 存在即 E2E 条目（服务端对 E2E 条目 contentPreview 恒
+  // 为 '[E2E]' 占位，且列表/WS 广播均不含密文本体 content_encrypted）。
+  // 解密 = 拉取 GET /api/clipboard/:id/content 的密文 + metadata.e2e 信封
+  // → E2eCrypto.decrypt(envelope + content_encrypted, 本机 deviceId) → utf8。
+  // - 成功：明文回填 fullContent/contentPreview（原密文与信封仍留在 metadata，
+  //   不改服务端数据）；
+  // - 失败（本设备不在 keys / 私钥缺失 / 认证失败 / 网络）：条目内容置 '[E2E]'
+  //   占位，绝不把密文当内容展示或复制。
+  // ---------------------------------------------------------------------------
+
+  /// E2E 占位串（协议 §2：服务端 content_preview 恒为 '[E2E]'）
+  static const String kE2ePlaceholder = '[E2E]';
+
+  /// 明文预览回填长度上限（与服务端列表 contentPreview 的 5000 字符截断对齐）
+  static const int _kPreviewMaxChars = 5000;
+
+  /// 单条 E2E 内容拉取/解密超时（内容接口的 http.get 自身无超时参数）
+  static const Duration _e2eDecryptTimeout = Duration(seconds: 20);
+
+  /// 本机设备 id 的 secure storage 键。与 AuthProvider._keyDeviceId 同一存储
+  /// 约定（AuthProvider 未提供依赖注入入口，此处按同一键只读访问；设备 id
+  /// 由设备注册流程写入）。
+  static const String _kDeviceIdStorageKey = 'auth_device_id';
+
+  static const FlutterSecureStorage _deviceIdStorage = FlutterSecureStorage();
+
+  /// 本机设备 id 进程内缓存（每条 E2E 解密都要用，避免反复读安全存储）
+  String? _cachedDeviceId;
+
+  /// 已解密明文缓存：itemId → 明文。列表刷新/复制/详情复用，不重复拉取解密。
+  final Map<String, String> _e2ePlaintextCache = <String, String>{};
+
+  /// 条目是否 E2E 加密（协议 §2 判定规则：metadata.e2e 存在；与桌面端
+  /// isE2eItem 同口径。明文存量条目的 e2eLegacy 标记不算）。
+  static bool _isE2eItem(ClipboardItem item) => item.metadata['e2e'] != null;
+
+  /// 解析本机设备 id（内存 → secure storage；与 AuthProvider 同一存储键）。
+  /// 未注册设备 / 读取失败返回 null（调用方按占位态处理）。
+  Future<String?> _resolveMyDeviceId() async {
+    final cached = _cachedDeviceId;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+    try {
+      final stored = await _deviceIdStorage.read(key: _kDeviceIdStorageKey);
+      if (stored != null && stored.isNotEmpty) {
+        _cachedDeviceId = stored;
+        return stored;
+      }
+    } on Object catch (e) {
+      debugPrint('[ClipboardProvider] e2e: read local device id failed: $e');
+    }
+    return null;
+  }
+
+  /// 拉取密文并解密 E2E 条目 → 明文。
+  ///
+  /// 返回 null 的情形（调用方一律按占位态处理，不得把密文当内容使用）：
+  /// - metadata.e2e 缺失/畸形；
+  /// - 本机设备 id 不可得（未注册成功）；
+  /// - 内容接口失败/超时/返回空；
+  /// - [E2eCryptoException]（含本设备不在信封 keys 列表、私钥缺失、认证失败）。
+  Future<String?> _decryptE2eItem(ClipboardItem item) async {
+    final cached = _e2ePlaintextCache[item.id];
+    if (cached != null) {
+      return cached;
+    }
+
+    final dynamic envelopeRaw = item.metadata['e2e'];
+    final Map<dynamic, dynamic> envelope;
+    if (envelopeRaw is Map) {
+      envelope = envelopeRaw;
+    } else if (envelopeRaw is String && envelopeRaw.isNotEmpty) {
+      // 兼容 metadata 双重 JSON 编码的边缘数据
+      try {
+        final decoded = jsonDecode(envelopeRaw);
+        if (decoded is! Map) {
+          return null;
+        }
+        envelope = decoded;
+      } on Object catch (_) {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    final myDeviceId = await _resolveMyDeviceId();
+    if (myDeviceId == null) {
+      debugPrint(
+          '[ClipboardProvider] e2e: no local device id, placeholder for ${item.id}');
+      return null;
+    }
+
+    try {
+      // 列表与 WS 广播载荷均不含密文本体（content_encrypted 列），必须拉内容接口
+      final token = await _resolveToken();
+      final ciphertext = await _api
+          .getItemContent(token, item.id)
+          .timeout(_e2eDecryptTimeout);
+      if (ciphertext == null || ciphertext.isEmpty) {
+        debugPrint('[ClipboardProvider] e2e: empty ciphertext for ${item.id}');
+        return null;
+      }
+
+      // 完整信封 = metadata.e2e（v/alg/epk/iv/keys）+ 密文本体。
+      // e2eDecrypt 按 ciphertext / ciphertextB64 / content_encrypted 之一取密文，
+      // 这里以协议列名 content_encrypted 注入。
+      final combined = Map<dynamic, dynamic>.from(envelope);
+      combined['content_encrypted'] = ciphertext;
+      final plainBytes = await E2eCrypto.instance
+          .decrypt(combined, myDeviceId)
+          .timeout(_e2eDecryptTimeout);
+      final plain = utf8.decode(plainBytes, allowMalformed: true);
+      _e2ePlaintextCache[item.id] = plain;
+      return plain;
+    } on E2eCryptoException catch (e) {
+      // 本设备不在 keys / 私钥缺失 / 认证失败 → 占位态。
+      // 同时失效设备 id 缓存：设备重注册后下次尝试用新 id 重读存储。
+      _cachedDeviceId = null;
+      debugPrint('[ClipboardProvider] e2e: decrypt failed (placeholder) '
+          'for ${item.id}: $e');
+      return null;
+    } on Exception catch (e) {
+      debugPrint('[ClipboardProvider] e2e: fetch/decrypt error for '
+          '${item.id}: $e');
+      return null;
+    } on Object catch (e) {
+      // 非 Exception 的异步错误同样不允许炸掉列表/复制链路
+      debugPrint('[ClipboardProvider] e2e: unexpected error for ${item.id}: $e');
+      return null;
+    }
+  }
+
+  /// 解密成功 → 明文回填条目：fullContent = 全量明文；文本类 contentPreview =
+  /// 明文预览（卡片预览列的数据源）；图片条目明文为 dataUrl，预览置空让卡片
+  /// 回退「（图片）」占位标签（列表缩略图走 /api/media/:id/preview，E2E 条目
+  /// 无媒体文件必 404，见报告的图片链路说明）。metadata（含密文信封）原样保留。
+  ClipboardItem _withE2ePlaintext(ClipboardItem item, String plain) {
+    if (item.isImage) {
+      return item.copyWith(fullContent: plain, contentPreview: '');
+    }
+    final preview = plain.length > _kPreviewMaxChars
+        ? plain.substring(0, _kPreviewMaxChars)
+        : plain;
+    return item.copyWith(fullContent: plain, contentPreview: preview);
+  }
+
+  /// 解密失败 → 占位态：fullContent 同步置 '[E2E]'。除卡片预览外，详情页
+  /// （screens，B10 不可改）在 hasFullContent 时直接展示 fullContent——置占位
+  /// 可防止其回退去内容接口把密文当正文展示。
+  ClipboardItem _withE2ePlaceholder(ClipboardItem item) =>
+      item.copyWith(fullContent: kE2ePlaceholder);
+
+  /// 页内条目后处理：G3 过期过滤 + B10 页内 E2E 条目解密（成功明文回填 /
+  /// 失败 '[E2E]' 占位）。单条解密失败只影响该条，不拖垮整页。
+  Future<List<ClipboardItem>> _preparePageItems(List<ClipboardItem> raw) async {
+    final visible = _filterExpired(raw);
+    final e2eItems = visible.where(_isE2eItem).toList();
+    if (e2eItems.isEmpty) {
+      return visible;
+    }
+    final resolved = await Future.wait(e2eItems.map((item) async {
+      final plain = await _decryptE2eItem(item);
+      return plain != null
+          ? _withE2ePlaintext(item, plain)
+          : _withE2ePlaceholder(item);
+    }));
+    final byId = <String, ClipboardItem>{
+      for (final ClipboardItem r in resolved) r.id: r,
+    };
+    return <ClipboardItem>[for (final item in visible) byId[item.id] ?? item];
+  }
 
   List<ClipboardItem> get items => _items;
   bool get isLoading => _isLoading;
@@ -189,7 +375,8 @@ class ClipboardProvider extends ChangeNotifier {
           );
 
       ClipboardPage result = await fetchPage(page);
-      List<ClipboardItem> newItems = _filterExpired(result.items);
+      // B10：页内条目后处理 = G3 过期过滤 + E2E 条目解密（明文回填/占位）
+      List<ClipboardItem> newItems = await _preparePageItems(result.items);
 
       // 假空态保护：本页可见条目为 0 且还有下一页 → 自动续拉一页
       int fetchedPage = page;
@@ -200,7 +387,7 @@ class ClipboardProvider extends ChangeNotifier {
         skippedPages++;
         fetchedPage = page + skippedPages;
         result = await fetchPage(fetchedPage);
-        newItems = _filterExpired(result.items);
+        newItems = await _preparePageItems(result.items);
       }
 
       if (isRefresh) {
@@ -692,11 +879,29 @@ class ClipboardProvider extends ChangeNotifier {
   /// 解析复制文本：已有完整内容直接返回；预览疑似截断（contentSize 未知或
   /// 预览长度 < contentSize）且为文本类条目时，拉取完整内容并回填本地缓存。
   /// 任何失败都退化为预览文本，不阻塞复制动作。
+  ///
+  /// B10：E2E 条目复制的一律是解密后的明文（图片条目为解密出的 dataUrl）；
+  /// 解不出来（本设备不在 keys / 失败，占位态）时返回空串——UI 侧 clipboard_screen
+  /// 对空文本有现成的「该条目暂无可复制的内容」SnackBar 提示——绝不把密文
+  /// 或 '[E2E]' 占位串写进系统剪贴板。
   Future<String> resolveCopyText(String? token, String itemId) async {
     final index = _items.indexWhere((item) => item.id == itemId);
     if (index == -1) return '';
 
     final item = _items[index];
+
+    if (_isE2eItem(item)) {
+      final plain = await _decryptE2eItem(item);
+      if (plain == null || plain.isEmpty) {
+        debugPrint(
+            '[ClipboardProvider] e2e: copy blocked (undecryptable) ${item.id}');
+        return '';
+      }
+      _items[index] = _withE2ePlaintext(item, plain);
+      notifyListeners();
+      return plain;
+    }
+
     if (!item.mayBeTruncated) return item.copyText;
 
     const fullTextTypes = {'text', 'link', 'code'};
@@ -728,8 +933,13 @@ class ClipboardProvider extends ChangeNotifier {
   /// Handle real-time updates from WebSocket
   ///
   /// F2：新条目与当前 [contentTypeFilter] 不匹配时不插入列表（否则会出现
-  /// 「文本筛选下冒出图片条目」），改为累计 [pendingNewCount] 交由浮条提示；
-  /// 匹配则头插并清零 pending 计数（列表头部已是最新可见内容）。
+  /// 「文本筛选下冒出图片条目」），改为累计 [pendingNewCount]（「有 N 条新内容」
+  /// 浮条数据源），匹配则头插并清零 pending 计数（列表头部已是最新可见内容）。
+  ///
+  /// B10：E2E 条目（metadata.e2e 存在）先拉密文解密再入列表——解密动作在
+  /// 落库/入列表之前（ws_service 的分发逻辑不变，此处只处理入列表的数据形态）：
+  /// 成功 → 明文入列表；失败（本设备不在 keys 等）→ '[E2E]' 占位入列表，
+  /// 不崩溃、不把密文当内容。解密含网络+密码学操作，走 _handleNewE2eItem 异步执行。
   void handleNewItem(Map<String, dynamic> data) {
     final raw = data['item'];
     final itemJson = raw is Map<String, dynamic> ? raw : data;
@@ -741,6 +951,11 @@ class ClipboardProvider extends ChangeNotifier {
     // 也不占用「有 N 条新内容」浮条计数，静默丢弃即可）
     if (newItem.isExpired) return;
 
+    if (_isE2eItem(newItem)) {
+      unawaited(_handleNewE2eItem(newItem));
+      return;
+    }
+
     if (!_matchesContentTypeFilter(newItem.contentType) || _archiveView) {
       // 归档视图下新条目（未归档）同样被视图挡住，累计到浮条
       _pendingNewCount++;
@@ -751,6 +966,33 @@ class ClipboardProvider extends ChangeNotifier {
     }
 
     _items.insert(0, newItem);
+    if (_totalItems > 0) _totalItems++;
+    if (_pendingNewCount != 0) _pendingNewCount = 0;
+    _notifyThrottler(() {
+      notifyListeners();
+    });
+  }
+
+  /// B10：E2E 新条目的异步入列（handleNewItem 的解密前置分支）。
+  /// 解密成功/失败后的入列规则（类型筛选、浮条计数、头插）与明文条目完全一致。
+  Future<void> _handleNewE2eItem(ClipboardItem newItem) async {
+    final plain = await _decryptE2eItem(newItem);
+    // 解密（网络往返）期间该条目可能已随下拉刷新/分页进入列表：不重复插入
+    if (_items.any((i) => i.id == newItem.id)) return;
+    final resolved = plain != null
+        ? _withE2ePlaintext(newItem, plain)
+        : _withE2ePlaceholder(newItem);
+
+    if (!_matchesContentTypeFilter(resolved.contentType) || _archiveView) {
+      // 归档视图下新条目（未归档）同样被视图挡住，累计到浮条
+      _pendingNewCount++;
+      _notifyThrottler(() {
+        notifyListeners();
+      });
+      return;
+    }
+
+    _items.insert(0, resolved);
     if (_totalItems > 0) _totalItems++;
     if (_pendingNewCount != 0) _pendingNewCount = 0;
     _notifyThrottler(() {
@@ -812,6 +1054,8 @@ class ClipboardProvider extends ChangeNotifier {
     _page = 1;
     _hasMore = true;
     _pendingNewCount = 0;
+    // B10：明文缓存一并丢弃（登出/清缓存后不得残留 E2E 解密明文）
+    _e2ePlaintextCache.clear();
     notifyListeners();
   }
 

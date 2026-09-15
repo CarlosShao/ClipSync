@@ -14,6 +14,12 @@ class SettingsProvider extends ChangeNotifier {
   bool _wifiOnly = false;
   bool _notificationsEnabled = true;
 
+  /// B9：E2E 端到端加密用户级开关的 SharedPreferences 键。
+  /// 采集执行侧（clipboard_capture）每次上传前实时读同一键（与 B3
+  /// 'clipboard_capture_enabled' 的「UI 缓存 + 执行侧实时读」双写模式一致），
+  /// 两端以 SharedPreferences 为准。默认 false（协议 §5：用户级开关默认关闭）。
+  static const String e2eEnabledPrefKey = 'e2e_enabled';
+
   /// B3：剪贴板采集总开关（SharedPreferences 'clipboard_capture_enabled'，
   /// 默认 true）。仅作 UI 显示缓存；采集执行侧（sync_service）每次实时读
   /// 同一键，不依赖本缓存，两端以 SharedPreferences 为准。
@@ -24,6 +30,12 @@ class SettingsProvider extends ChangeNotifier {
   bool _autoSaveImagesToAlbum = true;
   /// 手机系统截屏 → 自动同步至电脑及其他端
   bool _autoSyncScreenshots = true;
+
+  /// B9：端到端加密用户级本地开关（SharedPreferences 'e2e_enabled'，默认 false）。
+  /// 仅作 UI 显示缓存；采集执行侧（clipboard_capture）每次上传前实时读同一键，
+  /// 不依赖本缓存。协议 §5 双闸门中的「用户级设置开关」，另一闸门
+  /// （套餐特性位 e2e_encryption）见 FeatureFlagsProvider.e2eEncryptionAllowed。
+  bool _e2eEnabled = false;
 
   /// 主题模式，以 int 枚举持久化（SharedPreferences 'theme_mode'）。
   /// 与 Flutter 的 ThemeMode.index 对齐：0=system（跟随系统）、1=light、2=dark。
@@ -40,6 +52,7 @@ class SettingsProvider extends ChangeNotifier {
   bool get clipboardWritebackEnabled => _clipboardWritebackEnabled;
   bool get autoSaveImagesToAlbum => _autoSaveImagesToAlbum;
   bool get autoSyncScreenshots => _autoSyncScreenshots;
+  bool get e2eEnabled => _e2eEnabled;
   int get themeModeIndex => _themeModeIndex;
 
   /// 初始化
@@ -60,6 +73,8 @@ class SettingsProvider extends ChangeNotifier {
     _clipboardWritebackEnabled = _prefs.getBool('clipboard_writeback_enabled') ?? true;
     _autoSaveImagesToAlbum = _prefs.getBool('auto_save_images_to_album') ?? true;
     _autoSyncScreenshots = _prefs.getBool('auto_sync_screenshots') ?? true;
+    // B9：端到端加密用户级开关（默认 false）
+    _e2eEnabled = _prefs.getBool(e2eEnabledPrefKey) ?? false;
     // theme_mode 容错读取：历史版本可能写过字符串（'system'/'light'/'dark'），
     // 统一迁移为 int 枚举（0=system/1=light/2=dark），避免 getString/getInt 类型不匹配崩溃。
     _themeModeIndex = _normalizeThemeModeIndex(_prefs.get('theme_mode'));
@@ -154,6 +169,15 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> setClipboardCaptureEnabled(bool value) async {
     _clipboardCaptureEnabled = value;
     await _prefs.setBool('clipboard_capture_enabled', value);
+    notifyListeners();
+  }
+
+  /// 设置端到端加密开关（B9）：双写 SharedPreferences（采集执行侧
+  /// clipboard_capture 每次上传前实时读取该键）+ 内存缓存供 UI 显示。
+  /// 仅影响之后的上传；已在途/已入库条目按各自 metadata.e2e 解密（协议 §5）。
+  Future<void> setE2eEnabled(bool value) async {
+    _e2eEnabled = value;
+    await _prefs.setBool(e2eEnabledPrefKey, value);
     notifyListeners();
   }
 }

@@ -886,8 +886,11 @@ router.delete('/:id', requirePerm('admin.users.delete'), async (req, res) => {
 // ───────────────────── AN-13 数据主体请求：用户数据导出 ─────────────────────
 
 // 导出硬上限（大数据防护：分页拉取 + 截断，meta 中标注 total 与 exported）。
-// 剪贴板正文 content_encrypted 为端到端加密密文，服务端无法解密，
-// 导出仅含服务端可见的 content_preview 与元数据（导出 JSON meta 中注明）。
+// 剪贴板正文 content_encrypted 两态（E2E 协议 v1，见 docs/plans/e2e-protocol.md §2）：
+//   - metadata.e2e 存在 → 端到端加密密文，服务端无法解密；
+//   - metadata.e2e 不存在 → 历史条目，正文为历史明文。
+// 导出统一只含服务端可见的 content_preview 与元数据，不含任何解密能力
+// （E2E 信封中的 wrapped key 须配合设备私钥才能解开，私钥永不离开客户端），meta 中注明。
 const EXPORT_CLIPBOARD_LIMIT = 1000;
 const EXPORT_ORDER_LIMIT = 500;
 const EXPORT_AUDIT_LIMIT = 200;
@@ -990,7 +993,7 @@ router.get('/:id/export', requirePerm('admin.users.view'), async (req, res) => {
       createdAt: formatDateTime(o.created_at),
     }));
 
-    // 5) 剪贴板条目元数据（不含端到端加密正文，meta 注明）
+    // 5) 剪贴板条目元数据（不含正文 content_encrypted；E2E 条目 preview 为占位串 [E2E]，meta 注明）
     const { rows: clipTotalRows } = await pool.query(
       `SELECT COUNT(*)::int AS total FROM clipboard_items WHERE user_id = $1::uuid`,
       [id]
@@ -1008,6 +1011,7 @@ router.get('/:id/export', requirePerm('admin.users.view'), async (req, res) => {
       preview: c.content_preview || '',
       size: Number(c.content_size) || 0,
       isFavorite: Boolean(c.is_favorite),
+      // metadata 原样导出：E2E 条目内含信封（epk/iv/keys wrapped key），仅密钥封装材料，无解密能力
       metadata: c.metadata ?? {},
       createdAt: formatDateTime(c.created_at),
       updatedAt: formatDateTime(c.updated_at),
@@ -1042,7 +1046,7 @@ router.get('/:id/export', requirePerm('admin.users.view'), async (req, res) => {
         requestedBy: req.user?.userId ?? null,
         reason: reason || '未填写',
         notes:
-          '剪贴板正文为端到端加密（content_encrypted），服务端不可解密，本导出仅含服务端可见的预览与元数据；各数据域超出上限部分已截断（total 为库中总量）。',
+          '剪贴板正文 content_encrypted 不在导出范围内：metadata.e2e 存在的条目为端到端加密密文（服务端不可解密），历史条目（metadata.e2e 不存在）为历史明文；导出统一仅含服务端可见的预览与元数据，不含任何解密能力；各数据域超出上限部分已截断（total 为库中总量）。',
         limits: {
           clipboardItems: EXPORT_CLIPBOARD_LIMIT,
           orders: EXPORT_ORDER_LIMIT,

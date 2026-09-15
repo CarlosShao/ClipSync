@@ -222,15 +222,19 @@ onMounted(load)
 
 <style scoped>
 .settings-view {
-  padding: 24px;
-  max-width: 720px;
+  padding: 20px 28px 48px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  box-sizing: border-box;
   overflow-y: auto;
   flex: 1;
 }
 .sv-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 24px;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 18px;
+  letter-spacing: 0.2px;
 }
 
 /* 系统设置分组/行样式（与 SettingsView 一致） */
@@ -316,12 +320,16 @@ onMounted(load)
   gap: 16px;
   padding: 16px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  transition: all 0.15s;
+  transition:
+    transform 0.18s var(--ease),
+    border-color 0.18s,
+    box-shadow 0.18s var(--ease);
 }
 .link-card:hover {
-  border-color: var(--accent);
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
   box-shadow: var(--shadow-elevated);
 }
 .link-icon {

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref, defineAsyncComponent } from 'vue'
+import { onMounted, ref, computed, defineAsyncComponent } from 'vue'
+import { useRoute } from 'vue-router'
 import { useConfigStore } from '@/stores/configStore'
 import { useCollectionStore } from '@/stores/collectionStore'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
 import { Toaster } from 'vue-sonner'
+import TitleBar from '@/components/layout/TitleBar.vue'
 import * as tauri from '@/lib/tauri'
 
 const QuickPasteStandalone = defineAsyncComponent(() => import('@/views/QuickPasteStandalone.vue'))
@@ -18,6 +20,11 @@ const { setLang } = useI18n()
 // Rust creates QP window with ?mode=qp → window.location.search is available
 // SYNCHRONOUSLY before Vue mounts — zero race condition.
 const isQuickPasteStandalone = ref(typeof window !== 'undefined' && window.location.search.includes('mode=qp'))
+// decorations:false 后登录页也需要窗口控制与拖拽区（主视图的标题栏由 HomeView 自己渲染）
+const route = useRoute()
+const showAuthTitlebar = computed(
+  () => !isQuickPasteStandalone.value && route.path.startsWith('/auth'),
+)
 
 onMounted(async () => {
   await configStore.load()
@@ -45,15 +52,18 @@ onMounted(async () => {
   <QuickPasteStandalone v-if="isQuickPasteStandalone" />
   <!-- Normal app shell -->
   <template v-else>
+    <TitleBar v-if="showAuthTitlebar" minimal />
     <router-view />
+    <!-- Clearline toast：右下角堆叠，入场从右缘滑入（动画与卡片化样式见 globals.css 的 sonner 覆盖段） -->
     <Toaster
-      position="top-right"
+      position="bottom-right"
       :rich-colors="true"
       :close-button="true"
       close-button-position="top-right"
       :duration="3000"
       :expand="true"
-      :visible-toasts="3"
+      :visible-toasts="4"
+      :offset="20"
     />
   </template>
 </template>

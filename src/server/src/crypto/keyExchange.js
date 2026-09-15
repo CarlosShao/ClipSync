@@ -21,6 +21,39 @@ const AUTH_TAG_LENGTH = 16; // 128 bits for AES-GCM
 const SALT_LENGTH = 16; // 128 bits for PBKDF2
 const PBKDF2_ITERATIONS = 100000;
 
+// E2E 协议 v1：设备公钥 = P-256 未压缩点（0x04 || X || Y）的 base64，固定 65 字节
+const DEVICE_PUBLIC_KEY_LENGTH = 65;
+const DEVICE_PUBLIC_KEY_UNCOMPRESSED_PREFIX = 0x04;
+
+/**
+ * 校验设备公钥格式（E2E 协议 v1 §1）
+ * 必须是 base64 编码的 P-256 未压缩点：解码后 65 字节且首字节 0x04
+ * @param {string} b64 - base64 编码的公钥
+ * @returns {boolean} 格式是否合法
+ */
+export function isValidDevicePublicKey(b64) {
+  if (typeof b64 !== 'string' || b64.length === 0) return false;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return false; // base64 字符集，padding 仅允许在末尾
+  // Node 的 base64 解码是宽松的（忽略非法字符），需做回环校验兜底
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length !== DEVICE_PUBLIC_KEY_LENGTH || buf[0] !== DEVICE_PUBLIC_KEY_UNCOMPRESSED_PREFIX) {
+    return false;
+  }
+  const normalized = buf.toString('base64');
+  // 回环校验：拒绝被宽松解码放行的输入（如 padding 错位、非规范末尾位）
+  return normalized === b64 || normalized.replace(/=+$/, '') === b64;
+}
+
+/**
+ * 计算设备公钥指纹（SHA-256 前 16 位 hex，与 routes/admin/devices.js 的 keys 摘要算法一致）
+ * @param {string} b64 - base64 编码的公钥（按原文字符串参与哈希）
+ * @returns {string} 16 位 hex 指纹；输入为空/非字符串时返回空串
+ */
+export function publicKeyFingerprint(b64) {
+  if (typeof b64 !== 'string' || b64.length === 0) return '';
+  return crypto.createHash('sha256').update(b64, 'utf8').digest('hex').slice(0, 16);
+}
+
 /**
  * 生成 ECDH 密钥对
  * @returns {Promise<{publicKey: string, privateKey: string}>}
@@ -249,5 +282,7 @@ export default {
   decrypt,
   encryptData,
   decryptData,
+  isValidDevicePublicKey,
+  publicKeyFingerprint,
   keyManager,
 };

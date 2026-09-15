@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/clipboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/app_exception.dart';
+import '../../services/clipboard_capture.dart';
 import '../../services/token_store.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common/app_card.dart';
@@ -157,7 +158,7 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
     return response.statusCode == 201 || response.statusCode == 200;
   }
 
-  /// 图片入库：POST /api/media/image
+  /// 图片入库：E2E 开启走端到端加密通道（B9 补线，三态），否则 POST /api/media/image
   Future<bool> _uploadImage(String token, String deviceId, String path) async {
     final file = File(path);
     if (!file.existsSync()) return false;
@@ -165,6 +166,16 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
     if (bytes.isEmpty) return false;
 
     final fileName = path.split(Platform.pathSeparator).last;
+    final e2eImg = await ClipboardCaptureService.instance.uploadImageMaybeE2e(
+      deviceId: deviceId,
+      imageBytes: bytes,
+      filename: fileName,
+      mimeType: _guessImageMime(fileName),
+    );
+    if (e2eImg.handled) {
+      // handled=true：E2E 通道已终结（成功 / fail-closed），绝不回退明文 multipart
+      return e2eImg.response != null;
+    }
     final result = await ApiService().uploadImage(
       token,
       deviceId,

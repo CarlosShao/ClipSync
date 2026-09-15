@@ -297,6 +297,17 @@ class SyncService {
       final bytes = await File(path).readAsBytes();
       if (bytes.isEmpty) return false;
       final filename = path.split(Platform.pathSeparator).last;
+      // B9 补线：图片重放先过 E2E 三态——handled=true 时绝不回退明文 multipart
+      //（重放的图片若在采集时刻开关已开却走了明文，此处开关关才可能发生；以当前闸门为准）
+      if (entry.contentType == 'image') {
+        final e2eImg = await ClipboardCaptureService.instance.uploadImageMaybeE2e(
+          deviceId: deviceId,
+          imageBytes: bytes,
+          filename: filename,
+          mimeType: _guessImageMime(filename),
+        );
+        if (e2eImg.handled) return e2eImg.response != null;
+      }
       final result = entry.contentType == 'image'
           ? await ApiService().uploadImage(
               token,

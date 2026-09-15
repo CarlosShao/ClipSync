@@ -7,6 +7,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_BASE = path.join(__dirname, '../../uploads');
 
 /**
+ * E2E 条目判定（协议 docs/plans/e2e-protocol.md §2）：metadata.e2e 存在即端到端加密条目，
+ * content_encrypted 为密文、preview 为 "[E2E]" 占位，服务端一切消费内容明文的功能
+ * （哈希/查重/OCR 等）必须对这类条目跳过；不存在则按旧明文条目走原逻辑。
+ */
+export function isE2eItem(metadata) {
+  return !!metadata?.e2e;
+}
+
+/**
  * 将剪贴板存储值（data URL / 裸 base64 / 磁盘文件名）还原为图片字节。
  * 与 aiOcr.resolveImageDataUrl 逻辑对齐，但返回 Buffer（用于哈希）。
  */
@@ -33,8 +42,14 @@ async function resolveImageBytes(stored) {
   return null;
 }
 
-/** 计算剪贴板图片的内容哈希（基于明文字节，跨复制去重用）。 */
-export async function hashImageStored(stored) {
+/**
+ * 计算剪贴板图片的内容哈希（基于明文字节，跨复制去重用）。
+ * E2E 守卫：E2E 条目（metadata.e2e 存在）的 content_encrypted 是密文，对其哈希既无意义
+ * 又会污染明文图片查重库（协议 §6），直接返回 null 跳过。
+ * 调用方应传入条目 metadata 以启用跳过；未传 metadata 时无法判定，按原逻辑处理。
+ */
+export async function hashImageStored(stored, metadata) {
+  if (isE2eItem(metadata)) return null;
   const buf = await resolveImageBytes(stored);
   return buf ? crypto.createHash('sha256').update(buf).digest('hex') : null;
 }

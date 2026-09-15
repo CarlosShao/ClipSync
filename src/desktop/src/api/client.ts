@@ -422,6 +422,8 @@ export {
   deleteTag,
   getAllFavoriteTags,
   toggleSensitive,
+  createTag,
+  updateTag,
 } from './favorites'
 export type { FavoriteTag } from './favorites'
 

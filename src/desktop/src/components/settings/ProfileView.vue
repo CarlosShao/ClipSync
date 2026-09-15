@@ -2,8 +2,10 @@
 import { ref } from 'vue'
 import { Camera, Pencil, Lock } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
+import { useUser } from '@/composables/useUser'
 import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
+import { api } from '@/api/client'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Avatar from '@/components/ui/avatar/Avatar.vue'
@@ -11,9 +13,10 @@ import AvatarImageComp from '@/components/ui/avatar/AvatarImage.vue'
 import AvatarFallbackComp from '@/components/ui/avatar/AvatarFallback.vue'
 import Label from '@/components/ui/label/Label.vue'
 
-const { t } = useI18n()
+const { t, tf } = useI18n()
 const configStore = useConfigStore()
 const toast = useSonner()
+const { isSuperAdmin } = useUser()
 
 // === Display Name (nickname) ===
 const editingName = ref(false)
@@ -44,10 +47,8 @@ async function saveDisplayName() {
     editingName.value = false
     toast.show(t('profile_saved'), 'success')
   } else {
-    configStore.user.name = trimmed
-    editingName.value = false
-    localStorage.setItem('clipsync-display-name', trimmed)
-    toast.show(t('profile_saved'), 'success')
+    // 保存失败：不改本地 state、不退出编辑态，如实报错
+    toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
   }
 }
 
@@ -77,28 +78,15 @@ async function saveEmail() {
     return
   }
 
-  try {
-    const res = await fetch(`${configStore.serverUrl}/api/auth/profile`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${configStore.config.token}`,
-      },
-      body: JSON.stringify({ email: trimmed }),
-    })
-    if (res.ok) {
-      configStore.user.email = trimmed
-      editingEmail.value = false
-      toast.show(t('profile_saved'), 'success')
-    } else {
-      configStore.user.email = trimmed
-      editingEmail.value = false
-      toast.show(t('profile_saved'), 'success')
-    }
-  } catch {
+  // 走统一封装（带鉴权/CSRF/超时/401 刷新），以 res.ok 判定真实结果
+  const res = await api('PUT', '/api/auth/profile', { email: trimmed })
+  if (res.ok) {
     configStore.user.email = trimmed
     editingEmail.value = false
     toast.show(t('profile_saved'), 'success')
+  } else {
+    // 保存失败：不改本地 email、不退出编辑态，如实报错
+    toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
   }
 }
 
@@ -138,7 +126,9 @@ async function handleAvatarUpload(e: Event) {
 
     const ok = await configStore.updateUserProfile({ avatarUrl: dataUrl })
     if (!ok) {
+      // 本地预览保留，但服务端未保存成功必须如实告知
       console.warn('[Profile] Avatar upload failed, using local-only')
+      toast.show(tf('profile_save_fail', '保存失败，请稍后重试'), 'error')
     } else {
       toast.show(t('avatar_saved') || '头像已更新', 'success')
     }
@@ -216,10 +206,12 @@ async function handleAvatarUpload(e: Event) {
           </div>
         </div>
 
-        <!-- Plan -->
+        <!-- Plan（与左下角角色一致：超级管理员显示超管而非底层套餐） -->
         <div class="sg-row">
           <Label class="sg-label">{{ t('pf_plan') }}</Label>
-          <div class="sg-control">{{ t('role_' + (configStore.user.plan || 'Free').toLowerCase()) }}</div>
+          <div class="sg-control">
+            {{ isSuperAdmin ? t('role_super_admin') : t('role_' + (configStore.user.plan || 'Free').toLowerCase()) }}
+          </div>
         </div>
       </div>
     </div>
@@ -234,23 +226,27 @@ async function handleAvatarUpload(e: Event) {
 
 <style scoped>
 .settings-view {
-  padding: 24px;
-  max-width: 720px;
+  padding: 20px 28px 48px;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  box-sizing: border-box;
   overflow-y: auto;
   flex: 1;
 }
 .sv-title {
-  font-size: 22px;
-  font-weight: 700;
-  margin-bottom: 24px;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 18px;
+  letter-spacing: 0.2px;
 }
 .profile-card {
   display: flex;
-  gap: 24px;
-  padding: 24px;
+  gap: 20px;
+  padding: 20px;
   background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
 
 /* Avatar — wraps shadcn Avatar with hover overlay */
@@ -269,6 +265,9 @@ async function handleAvatarUpload(e: Event) {
 .avatar-wrap:hover {
   transform: scale(1.04);
   box-shadow: 0 0 0 3px var(--accent-light);
+}
+.avatar-wrap:active {
+  transform: scale(0.98);
 }
 .avatar-shadcn {
   width: 80px !important;
@@ -312,7 +311,8 @@ async function handleAvatarUpload(e: Event) {
   color: var(--text-secondary);
 }
 .sg-control {
-  font-size: 13px;
+  font-family: var(--font-content);
+  font-size: 12.5px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
@@ -349,12 +349,16 @@ async function handleAvatarUpload(e: Event) {
 .profile-hint {
   margin-top: 16px;
   padding: 10px 14px;
-  border-radius: var(--radius-md);
-  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
   font-size: 12px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.profile-hint :deep(svg) {
+  color: var(--accent);
 }
 </style>

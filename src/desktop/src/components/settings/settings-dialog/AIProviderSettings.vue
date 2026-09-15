@@ -19,6 +19,7 @@ import {
   getProviderModels,
   getSettings,
   saveSettings,
+  testSearchConfig,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
 
@@ -103,9 +104,79 @@ async function loadAllSettings() {
       prefThinking.value = !!res.data.thinkingEnabled
       prefThinkingStrength.value = res.data.thinkingStrength || 'medium'
       prefMemory.value = !!res.data.memoryEnabled
+      searchProvider.value = res.data.searchProvider || ''
+      searchBaseUrl.value = res.data.searchBaseUrl || ''
+      searchHasKey.value = !!res.data.searchHasKey
     }
   } catch (e) {
     console.warn('[AI] load settings failed', e)
+  }
+}
+
+// ===== 联网搜索源（web_search 工具路由；key 加密存、不回显）=====
+const SEARCH_PROVIDER_OPTIONS = [
+  { value: 'anysearch', label: 'AnySearch' },
+  { value: 'bocha', label: '博查 Bocha' },
+  { value: 'brave', label: 'Brave Search' },
+  { value: 'tavily', label: 'Tavily' },
+  { value: 'searxng', label: '自建 SearXNG' },
+]
+const searchProvider = ref('')
+const searchBaseUrl = ref('')
+const searchApiKeyInput = ref('')
+const searchHasKey = ref(false)
+const searchTesting = ref(false)
+
+function searchProviderLabel(v: string) {
+  return SEARCH_PROVIDER_OPTIONS.find((o) => o.value === v)?.label || v
+}
+
+function onSearchProviderChange(v: string) {
+  searchProvider.value = v
+  // 切源即保存（空=未配置，走管理台全局兜底）；key 输入框独立保存
+  savePrefs({ searchProvider: v })
+}
+
+function onSearchBaseUrlBlur() {
+  savePrefs({ searchBaseUrl: searchBaseUrl.value.trim() })
+}
+
+function saveSearchApiKey() {
+  const v = searchApiKeyInput.value.trim()
+  if (!v) return
+  savePrefs({ searchApiKey: v })
+  searchApiKeyInput.value = ''
+  searchHasKey.value = true
+}
+
+function clearSearchApiKey() {
+  savePrefs({ searchApiKey: null })
+  searchApiKeyInput.value = ''
+  searchHasKey.value = false
+}
+
+async function testSearch() {
+  if (!searchProvider.value || searchTesting.value) return
+  searchTesting.value = true
+  try {
+    // 输入框有值用输入框的（未保存也可用）；否则用已存 key（后端 '__keep__' 语义）
+    const res = await testSearchConfig({
+      provider: searchProvider.value,
+      apiKey: searchApiKeyInput.value.trim() || '__keep__',
+      baseUrl: searchBaseUrl.value.trim() || undefined,
+    })
+    if (res.ok && res.data?.ok) {
+      toast.show(
+        t('ai_search_test_ok', `搜索可用（${res.data.firstTitle || '已返回结果'}）`),
+        'success',
+      )
+    } else {
+      toast.show(tMsg(res.error) || t('ai_search_test_fail', '搜索测试失败'), 'error')
+    }
+  } catch (e: any) {
+    toast.show(tMsg(e?.message) || String(e), 'error')
+  } finally {
+    searchTesting.value = false
   }
 }
 
@@ -679,6 +750,111 @@ onMounted(() => {
       </div>
     </section>
 
+    <!-- ===== 联网搜索源（web_search 工具路由） ===== -->
+    <section class="ai-section">
+      <div class="ai-section-head">
+        <div class="ai-section-head-text">
+          <div class="ai-section-title">{{ t('ai_search_title', '联网搜索') }}</div>
+          <div class="ai-section-hint">
+            {{ t('ai_search_hint', 'Agent 需要最新知识时调用的搜索源。未配置则走管理台全局，仍未配则用 AnySearch 匿名额度。') }}
+          </div>
+        </div>
+      </div>
+      <div class="ai-prefs-card">
+        <div class="ai-pref-row">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">{{ t('ai_search_provider', '搜索源') }}</div>
+            <div class="ai-pref-hint">{{ t('ai_search_provider_h', '清空=未配置，走管理台全局兜底。') }}</div>
+          </div>
+          <div class="ai-pref-control">
+            <CustomSelect :model-value="searchProvider" @update:model-value="onSearchProviderChange">
+              {{ searchProvider ? searchProviderLabel(searchProvider) : t('ai_search_unset', '未配置') }}
+              <template #options>
+                <CustomSelectOption value="" :selected="searchProvider === ''" @select="onSearchProviderChange">
+                  {{ t('ai_search_unset', '未配置') }}
+                </CustomSelectOption>
+                <CustomSelectOption
+                  v-for="o in SEARCH_PROVIDER_OPTIONS"
+                  :key="o.value"
+                  :value="o.value"
+                  :selected="searchProvider === o.value"
+                  @select="onSearchProviderChange"
+                >
+                  {{ o.label }}
+                </CustomSelectOption>
+              </template>
+            </CustomSelect>
+          </div>
+        </div>
+
+        <div v-if="searchProvider && searchProvider !== 'searxng'" class="ai-pref-row">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">
+              {{ t('ai_search_key', 'API Key') }}
+              <span v-if="searchHasKey" class="ai-badge ai-badge--key">{{ t('ai_key_set', '已配置') }}</span>
+              <span v-else class="ai-badge ai-badge--nokey">{{ t('ai_no_key', '未配置') }}</span>
+            </div>
+            <div class="ai-pref-hint">{{ t('ai_search_key_h', '加密存储，永不回显；留空=不修改。') }}</div>
+          </div>
+          <div class="ai-pref-control ai-pref-control--wide">
+            <div class="ai-search-key-line">
+              <Input
+                v-model="searchApiKeyInput"
+                type="password"
+                autocomplete="off"
+                class="ai-search-key-input"
+                :placeholder="searchHasKey ? t('ai_api_key_keep', '留空表示不修改') : t('ai_api_key_ph', '输入 Key')"
+                @keyup.enter="saveSearchApiKey"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!searchApiKeyInput.trim()"
+                @click="saveSearchApiKey"
+              >
+                {{ t('ai_save', '保存') }}
+              </Button>
+              <Button
+                v-if="searchHasKey"
+                size="sm"
+                variant="ghost"
+                class="shrink-0 whitespace-nowrap"
+                @click="clearSearchApiKey"
+              >
+                {{ t('ai_search_key_clear', '清除') }}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="searchProvider === 'searxng'" class="ai-pref-row">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">{{ t('ai_search_base_url', '自建地址') }}</div>
+            <div class="ai-pref-hint">{{ t('ai_search_base_url_h', '公网地址，如 https://search.example.com（内网会被拒绝）。') }}</div>
+          </div>
+          <div class="ai-pref-control ai-pref-control--wide">
+            <Input
+              v-model="searchBaseUrl"
+              placeholder="https://search.example.com"
+              @blur="onSearchBaseUrlBlur"
+              @keyup.enter="onSearchBaseUrlBlur"
+            />
+          </div>
+        </div>
+
+        <div v-if="searchProvider" class="ai-pref-row">
+          <div class="ai-pref-text">
+            <div class="ai-pref-name">{{ t('ai_search_test', '连通性测试') }}</div>
+          </div>
+          <Button size="sm" variant="outline" :disabled="searchTesting" @click="testSearch">
+            <RefreshCw v-if="!searchTesting" :size="12" />
+            {{ searchTesting ? t('ai_testing', '测试中…') : t('ai_test', '测试') }}
+          </Button>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== 全局系统提示词 ===== -->
     <section class="ai-section">
       <div class="ai-section-head">
@@ -1068,7 +1244,18 @@ onMounted(() => {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface, transparent);
-  overflow: hidden;
+  /* 下拉弹层必须能溢出卡片：hidden 会把 CustomSelect 的菜单在卡片边缘截断
+     （圆角改由首/末行收角保证，见下方 .ai-pref-row:first/last-child 规则） */
+  overflow: visible;
+}
+/* 卡片无 overflow:hidden 后，首末行的背景收圆角，避免方形背景穿帮 */
+.ai-prefs-card > .ai-pref-row:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.ai-prefs-card > .ai-pref-row:last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 .ai-pref-row {
   display: flex;
@@ -1114,6 +1301,19 @@ onMounted(() => {
 }
 .ai-pref-control .custom-select {
   width: 100%;
+}
+/* 联网搜索 key 行：输入框 + 保存/清除同一行；地址行沿用纵向 */
+.ai-pref-control--wide {
+  width: 264px;
+}
+.ai-search-key-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-search-key-input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ===== 全局系统提示词 ===== */

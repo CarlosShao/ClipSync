@@ -456,9 +456,12 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
           </div>
         </template>
 
-        <!-- ===== 总结内容 ===== -->
-        <div v-if="hasContent && (!isStreamingNow || !hasLiveThinkingSegment)" class="ai-msg-content markdown-body">
-          <AiStreamText :text="streamingContent" :done="!isStreamingNow" />
+        <!-- ===== 总结内容 =====
+             常挂载：思考活跃期也不再 v-if 藏正文区（此前思考一结束才挂载 AiStreamText，
+             首帧全量 + done 取消追赶 = 结尾整块蹦出）。有内容即流式渲染，无内容时占位。 -->
+        <div v-if="hasContent || (isStreamingNow && hasLiveThinkingSegment)" class="ai-msg-content markdown-body">
+          <AiStreamText v-if="hasContent" :text="streamingContent" :done="!isStreamingNow" />
+          <span v-else class="ai-content-waiting">{{ t('ai_content_waiting', '思考中，正文稍候…') }}</span>
           <span v-if="isStreamingNow && !hasToolCalls" class="ai-stream-caret"></span>
         </div>
       </div>
@@ -689,6 +692,11 @@ const quickActionLabel = computed(() => (quickActionMeta.value ? t(quickActionMe
   background: var(--bg-base-secondary, var(--bg-hover));
 }
 
+/* 正文等待占位（思考活跃、正文未出）：弱化显示，不抢思考面板 */
+.ai-content-waiting {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
 /* 流式光标：中性灰 */
 .ai-stream-caret {
   display: inline-block;

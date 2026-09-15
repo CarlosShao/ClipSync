@@ -22,6 +22,12 @@ typedef PendingUploadUploader = Future<bool> Function(PendingUploadEntry entry);
 ///   "attempts": 3
 /// }
 /// ```
+///
+/// B9 E2E：text 类的 `text` 字段可能是「密封包装」（魔数前缀
+/// `{"clipsyncE2e":` 开头的 JSON，含 ciphertext + 信封）——加密在入队前由
+/// ClipboardCaptureService 完成（队列机制本身不感知/不改动），重放时经
+/// reuploadText 解包原样上传。队列去重/removeMatchingText 对密封包装
+/// 按整体字符串比较，行为与普通文本一致。
 class PendingUploadEntry {
   const PendingUploadEntry({
     required this.idempotencyKey,

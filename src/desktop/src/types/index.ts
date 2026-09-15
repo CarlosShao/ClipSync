@@ -8,7 +8,7 @@ export interface AppConfig {
   toggle_ai_panel_shortcut: string | null
 }
 
-export type ThemeStyle = 'vercel' | 'clipsync' | 'notion' | 'linear' | 'apple' | 'raycast' | 'arc'
+export type ThemeStyle = 'clearline' | 'vercel' | 'clipsync' | 'notion' | 'linear' | 'apple' | 'raycast' | 'arc'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 

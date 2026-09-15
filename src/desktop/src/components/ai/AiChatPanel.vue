@@ -35,6 +35,7 @@ import {
   Check,
   ShieldAlert,
   Pencil,
+  Quote,
 } from 'lucide-vue-next'
 
 /**
@@ -323,18 +324,33 @@ function onSend(text: string, images?: import('@/api/ai').ChatImage[]) {
       console.warn('[AiChatPanel] reedit anchor missing, falling back to normal send')
     }
   }
+  // A7 侧栏兜底：引用块上下文走隐藏 system 通道（不混入用户消息正文），发送后清除
+  const composedCtx = pendingContext.value
+    ? [viewContextText.value, `[引用上下文]\n${pendingContext.value}`].filter(Boolean).join('\n\n')
+    : viewContextText.value
+  pendingContext.value = ''
   send(text, {
     mode: mode.value,
     thinking: thinkingEnabled.value,
     thinkingStrength: thinkingStrength.value,
     images,
-    viewContext: viewContextText.value,
+    viewContext: composedCtx,
   })
 }
 
 provide('aiChatSend', onSend)
 
+// A7 侧栏兜底：外部事件携带 context 时 → 不自动发送，上下文折叠为引用块置于草稿上方，用户可删可改
+const pendingContext = ref('')
+
 const onCustomSendMessage = (e: any) => {
+  if (e?.detail?.context) {
+    // 外部派发不属于"编辑重发"语义，放弃编辑态
+    pendingEdit.value = null
+    pendingContext.value = String(e.detail.context)
+    chatInputRef.value?.setDraft(String(e.detail.content || ''))
+    return
+  }
   if (e?.detail?.content) {
     // 外部派发的发送不属于"编辑重发"语义，放弃编辑态
     pendingEdit.value = null
@@ -539,6 +555,20 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
                   {{ roleKey }}
                 </span>
               </div>
+              <!-- Clearline 上下文感知 chip：把已有的 viewContext 显性化（v2 §5）——
+                   面板顶条常驻「当前上下文 · {页面}」，用户可直接针对当前页提问 -->
+              <span
+                v-if="viewContextText"
+                class="ai-ctx-chip"
+                :title="t('ai_ctx_chip_tip', 'AI 感知你所在的页面，可直接针对当前页提问')"
+              >
+                <span
+                  class="ai-ctx-dot"
+                  :class="{ 'is-streaming': isStreaming }"
+                  aria-hidden="true"
+                />
+                {{ t('ai_ctx_prefix', '当前上下文') }} · {{ viewContextText }}
+              </span>
             </div>
             <div class="ai-header-right">
               <Button
@@ -724,6 +754,18 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
             </button>
           </div>
 
+          <!-- A7 引用上下文块：从内联 AI 卡「在助手中继续」带入，可删除；发送时走隐藏上下文 -->
+          <div v-if="pendingContext" class="ai-quote-ctx" role="note">
+            <div class="ai-quote-ctx-head">
+              <Quote :size="12" />
+              <span>{{ t('ai_quote_ctx', '引用上下文') }}</span>
+              <button type="button" class="ai-quote-ctx-x" :title="t('delete_btn')" :aria-label="t('delete_btn')" @click="pendingContext = ''">
+                <X :size="13" />
+              </button>
+            </div>
+            <div class="ai-quote-ctx-body">{{ pendingContext }}</div>
+          </div>
+
           <AiChatComposer
             ref="chatInputRef"
             :disabled="!canSend"
@@ -834,6 +876,56 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   color: var(--text-primary);
 }
 
+/* Clearline 上下文感知 chip（v2 §5）：accent-soft 底 + 呼吸点 */
+.ai-ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+/* 与侧边栏同步珠同一套"玻璃珠"语言：静态径向高光 + 极轻外发光。
+   常驻无限动画会让浏览器永远无法进入空闲帧（合成器按刷新率持续要帧，
+   165Hz 下 GPU 约 28% 单核全耗在合成/提交），故默认静态、零运行时开销。 */
+.ai-ctx-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background:
+    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 58%),
+    var(--accent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 13%, transparent),
+    0 0 6px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* 仅在 AI 真实生成中呼吸：让动画表达"正在活动"而非常驻装饰。
+   生成期间页面本就在持续更新，不额外引入空闲帧；空闲时完全静态。 */
+.ai-ctx-dot.is-streaming {
+  animation: ai-ctx-breathe 1.8s ease-in-out infinite;
+}
+@keyframes ai-ctx-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
 /* 角色徽章（#217 / RBAC） */
 .ai-role-badge {
   display: inline-flex;
@@ -926,6 +1018,53 @@ const currentAgentRuns = computed<import('@/api/ai').AgentRun[]>(() => {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-top: 1px solid var(--border-default);
+}
+
+/* ========== A7 引用上下文块 ========== */
+.ai-quote-ctx {
+  margin: 0 10px 4px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.ai-quote-ctx-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.ai-quote-ctx-head svg {
+  flex: none;
+}
+.ai-quote-ctx-x {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+}
+.ai-quote-ctx-x:hover {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+.ai-quote-ctx-body {
+  padding: 0 10px 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 /* ========== 编辑即回滚提示条 ========== */

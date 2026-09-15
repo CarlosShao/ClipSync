@@ -15,6 +15,9 @@ use tauri_plugin_autostart::MacosLauncher;
 
 mod clipboard_monitor;
 
+// B5: 端到端加密密钥库与加解密命令（协议契约见 docs/plans/e2e-protocol.md）
+mod e2e_crypto;
+
 // ============================================================================
 // AppConfig persistence (A1)
 // ============================================================================
@@ -1968,6 +1971,8 @@ pub fn run() {
                 .build(),
         )
         .manage(state)
+        // B5: E2E 密钥库状态（本机静态私钥，惰性加载，永不出 Rust 进程）
+        .manage(e2e_crypto::E2eState::new())
         .invoke_handler(tauri::generate_handler![
             get_config,
             update_config,
@@ -2004,6 +2009,12 @@ pub fn run() {
             resize_qp_window,
             start_clipboard_monitor,
             stop_clipboard_monitor,
+            // B5: 端到端加密
+            e2e_crypto::e2e_status,
+            e2e_crypto::e2e_ensure_keypair,
+            e2e_crypto::e2e_public_key,
+            e2e_crypto::e2e_encrypt,
+            e2e_crypto::e2e_decrypt,
         ])
         .setup(|app| {
             info!("[Setup] ClipSync starting up");

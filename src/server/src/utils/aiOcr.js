@@ -2,6 +2,7 @@ import { pool } from '../db/pool.js'
 import { decrypt } from './encryption.js'
 import { buildUpstreamChat, safeUpstreamFetch } from './aiProviders.js'
 import { logger } from './logger.js'
+import { isE2eItem } from './imageHash.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -111,6 +112,9 @@ export async function ocrImage({ providerRow, apiKey, dataUrl, mime = 'image/png
 }
 
 // 把图片字节（data URL / 裸 base64 / 磁盘文件名）解析为可被视觉模型消费的 data URL
+// 入参防御：E2E 条目（metadata.e2e 存在）的 contentEncrypted 是密文，本函数不感知 metadata、
+// 无法识别密文字节，会把密文误当图片内容处理 —— 调用方必须先用 isE2eItem(metadata) 跳过
+// E2E 条目再调用本函数（runOcrForClip / ocrClipById 入口已自带守卫）。
 export async function resolveImageDataUrl(contentEncrypted) {
   if (!contentEncrypted) return null
   if (contentEncrypted.startsWith('data:')) return contentEncrypted
@@ -134,7 +138,17 @@ export async function resolveImageDataUrl(contentEncrypted) {
 }
 
 // 异步 OCR 并写入 ocr_text；任何失败（无供应商 / 无视觉 / 网络 / 超限）均静默跳过，绝不阻塞剪贴板写入
+// E2E 守卫（双保险）：调用入口（clipboard.js）应先跳过 E2E 条目；此处再自查 metadata，
+// 端到端加密条目直接返回 —— 密文送 OCR 无意义且浪费 token。
 export async function runOcrForClip(clipId, userId, dataUrl) {
+  const metaRow = await pool.query(
+    'SELECT metadata FROM clipboard_items WHERE id = $1 AND user_id = $2',
+    [clipId, userId]
+  )
+  if (isE2eItem(metaRow.rows[0]?.metadata)) {
+    logger.debug('[OCR] skip: E2E encrypted item, server only holds ciphertext', { userId, clipId })
+    return
+  }
   const providerRow = await getOcrProvider(userId)
   if (!providerRow) {
     logger.info('[OCR] skip: no vision-capable provider configured', { userId, clipId })
@@ -158,12 +172,14 @@ export async function runOcrForClip(clipId, userId, dataUrl) {
 // 供 AI 工具按需 OCR 某条图片剪贴板
 export async function ocrClipById(clipId, userId) {
   const result = await pool.query(
-    'SELECT id, content_type, content_encrypted FROM clipboard_items WHERE id = $1 AND user_id = $2',
+    'SELECT id, content_type, content_encrypted, metadata FROM clipboard_items WHERE id = $1 AND user_id = $2',
     [clipId, userId]
   )
   if (result.rowCount === 0) return { error: 'Clip not found' }
   const item = result.rows[0]
   if (item.content_type !== 'image') return { error: '该条目不是图片' }
+  // E2E 守卫：端到端加密条目的 content_encrypted 是密文，服务端无法解密，跳过 OCR（协议 §6）
+  if (isE2eItem(item.metadata)) return { error: '该条目为端到端加密内容，服务端无法解密，无法 OCR' }
 
   const dataUrl = await resolveImageDataUrl(item.content_encrypted)
   if (!dataUrl) return { error: '无法解析图片字节（既非内联 base64 也找不到磁盘文件）' }

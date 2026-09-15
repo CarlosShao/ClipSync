@@ -62,6 +62,10 @@ export const pageSize = ref(50)
 // 用 module-level ref 让 setFilter/loadMore/clearAdvancedFilters 自动沿用当前视图，
 // 避免切到归档视图后切换分类竟把非归档数据拉进来。
 export const currentView = ref<'all' | 'archive'>('all')
+// Clearline 页内视图分段（时间流/仅收藏/归档）：提升为全局状态，
+// 让所有刷新路径（轮询/同步完成后的无参 loadClipboardItems）都沿用当前分段，
+// 而不是把「仅收藏」悄悄刷回时间流。
+export const clipViewSeg = ref<'timeline' | 'fav' | 'archive'>('timeline')
 export const totalItems = ref(0)
 // 主剪贴板视图（非归档）的总数，用于侧边栏计数稳定显示：
 // 归档视图拉取时只更新 totalItems，不覆盖 mainTotalItems，避免侧边栏「剪贴板」数字跳到归档数量。

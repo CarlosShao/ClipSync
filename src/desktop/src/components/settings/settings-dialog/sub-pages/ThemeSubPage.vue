@@ -9,6 +9,7 @@ const { currentStyle, currentMode, allThemes, setStyle, setMode } = useTheme()
 const emit = defineEmits<{ back: [] }>()
 
 const gradients: Record<ThemeStyle, { bg: string; text: string; border?: string }> = {
+  clearline: { bg: 'linear-gradient(135deg,#FFFFFF 0%,#EAF0FD 100%)', text: '#2F5BCC', border: '1px solid #E4E6EB' },
   vercel: { bg: 'linear-gradient(135deg,#FAFAFA 0%,#E5E5E5 100%)', text: '#111', border: '1px solid #E5E5E5' },
   clipsync: { bg: 'linear-gradient(135deg,#6366F1 0%,#A78BFA 100%)', text: '#fff' },
   notion: { bg: 'linear-gradient(135deg,#FFFFFF 0%,#EBF4FF 100%)', text: '#37352F', border: '1px solid #E8E7E3' },

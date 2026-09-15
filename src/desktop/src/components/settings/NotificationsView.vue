@@ -150,9 +150,11 @@ function translateNotif(title: string, body: string): { title: string; body: str
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
-  padding: 0 24px;
-  background: var(--bg-surface);
+  padding: 20px 28px 14px;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   flex-shrink: 0;
 }
 .notif-title-wrap {
@@ -162,8 +164,8 @@ function translateNotif(title: string, body: string): { title: string; body: str
 }
 .notif-title {
   font-weight: 600;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  letter-spacing: 0.2px;
 }
 .notif-unread-badge {
   font-size: 11px;
@@ -175,32 +177,40 @@ function translateNotif(title: string, body: string): { title: string; body: str
 .notif-filters {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 24px;
+  gap: 8px;
+  padding: 0 28px 14px;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   flex-shrink: 0;
   overflow-x: auto;
 }
 .notif-filter-btn {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--text-secondary);
-  background: var(--bg-hover);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 4px 14px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background 0.15s var(--ease),
+    color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
   white-space: nowrap;
   line-height: 1.4;
 }
 .notif-filter-btn:hover {
   color: var(--text-primary);
-  background: var(--bg-active);
+  background: var(--bg-hover);
+  border-color: var(--border-default);
 }
 .notif-filter-btn.active {
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-card);
+  background: var(--accent-light);
+  border-color: transparent;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -208,7 +218,11 @@ function translateNotif(title: string, body: string): { title: string; body: str
 .notif-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 24px 24px;
+  max-width: 1080px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 28px 24px;
+  box-sizing: border-box;
 }
 .notif-items {
   display: flex;
@@ -221,21 +235,25 @@ function translateNotif(title: string, body: string): { title: string; body: str
   align-items: flex-start;
   gap: 12px;
   padding: 14px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+    background 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    transform 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
   position: relative;
 }
 .notif-item:hover {
-  background: var(--bg-hover);
+  transform: translateY(-1px);
   border-color: var(--border-default);
+  box-shadow: var(--shadow-elevated);
 }
 .notif-item.unread {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-subtle));
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-surface));
 }
 
 .notif-icon {
@@ -265,6 +283,7 @@ function translateNotif(title: string, body: string): { title: string; body: str
   color: var(--text-tertiary);
 }
 .notif-time {
+  font-family: var(--font-content);
   font-size: 11px;
   color: var(--text-tertiary);
 }
@@ -300,14 +319,14 @@ function translateNotif(title: string, body: string): { title: string; body: str
 .notif-empty-icon {
   width: 64px;
   height: 64px;
-  border-radius: 16px;
-  background: var(--bg-hover);
+  border-radius: var(--radius-lg);
+  background: var(--accent-light);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 16px;
-  color: var(--text-tertiary);
-  opacity: 0.6;
+  color: var(--accent);
+  opacity: 0.9;
 }
 .notif-empty-title {
   font-size: 15px;

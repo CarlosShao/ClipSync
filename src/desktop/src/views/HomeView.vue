@@ -21,15 +21,18 @@ import {
 import * as tauri from '@/lib/tauri'
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
+import TitleBar from '@/components/layout/TitleBar.vue'
 import ClipboardView from '@/components/clipboard/ClipboardView.vue'
 // FavoritesView 非首屏（仅切到收藏页时挂载），改异步避免启动即解析其代码
 const FavoritesView = defineAsyncComponent(() => import('@/components/clipboard/FavoritesView.vue'))
 // TemplatesView 非首屏，异步加载
 const TemplatesView = defineAsyncComponent(() => import('@/components/clipboard/TemplatesView.vue'))
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
+import { useSyncLog } from '@/composables/useSyncLog'
+import CommandPalette from '@/components/layout/CommandPalette.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
-// SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog (settings-dialog/)
-const SettingsDialog = defineAsyncComponent(() => import('@/components/settings/settings-dialog/SettingsDialog.vue'))
+// v2 原型：设置是页面（settings.html），不是弹窗 —— 复用 settings-dialog/ 下的分组组件
+const SettingsView = defineAsyncComponent(() => import('@/components/settings/SettingsView.vue'))
 // AI 聊天面板非首屏，异步加载
 const AiChatPanel = defineAsyncComponent(() => import('@/components/ai/AiChatPanel.vue'))
 const AiSummaryFloat = defineAsyncComponent(() => import('@/components/AiSummaryFloat.vue'))
@@ -155,9 +158,11 @@ let confirmCallback: (() => void) | null = null
 const modalManagerActive = computed(() => !!showModalType.value || showForgotPwd.value || !!previewItem.value)
 const showOnboarding = ref(!localStorage.getItem('clipsync-onboarded'))
 const showCoachMarks = ref(false)
-const showSettingsDialog = ref(false)
-const settingsInitialCategory = ref('')
 const aiSidebarOpen = ref(false)
+// 原型 cmdk：Ctrl K / 顶栏搜索 打开命令导航弹窗（前往各页 / AI / 快速粘贴 / 主题），快速粘贴面板仍由 Ctrl+Shift+V 打开
+const commandPaletteOpen = ref(false)
+// 设备页「同步日志」数据源：WS 下行事件入 log（上行在 useClipboard 采集处入）
+const syncLog = useSyncLog()
 // AI 功能开关集中守卫：开关关闭时快捷键/侧栏/托盘任何路径都无法打开 AI 面板，
 // 且开关切换为关闭时立即收起已打开的面板（全链路隐藏，服务端 403 兜底依旧有效）。
 function toggleAiPanel() {
@@ -170,15 +175,10 @@ watch(aiEnabled, (on) => {
 function openAiSettings() {
   // 开关关闭时不允许进入 AI 供应商配置页（防止「未配置供应商→添加供应商」死路）
   if (!aiEnabled.value) return
-  settingsInitialCategory.value = 'ai'
-  showSettingsDialog.value = true
+  switchSub('settings')
 }
 // 设置弹窗关闭：抽成方法而非多语句内联 handler —— prettier 会把
 // `@close="a; b"` 拆行并丢掉分号，导致 Vue 模板表达式解析失败（构建报错）。
-function closeSettingsDialog() {
-  showSettingsDialog.value = false
-  settingsInitialCategory.value = ''
-}
 function openModalFromDialog(type: string) {
   showModalType.value = type
 }
@@ -233,7 +233,7 @@ function closePinDialog() {
 }
 function goToSettings() {
   closePinDialog()
-  showSettingsDialog.value = true
+  switchSub('settings')
 }
 async function verifyPin() {
   pinError.value = ''
@@ -257,6 +257,7 @@ async function verifyPin() {
 }
 
 let stopPolling: (() => void) | null = null
+let toggleAiHandler: (() => void) | null = null
 // ws.onMessage 返回的取消函数。useWebSocket 的 handlers 是模块级数组，组件卸载/登出时
 // 不会自动摘除 —— 不保存并调用它，重新登录会再挂一个 handler，一次推送触发 N 次刷新。
 let offWsMessage: (() => void) | null = null
@@ -341,11 +342,11 @@ function detachWsHandler() {
 // Esc 由最高层消费（PIN > 预览 > ModalManager 弹窗 > AI 面板 > 快速粘贴 > 列表），
 // 列表快捷键在任意弹层打开时被冻结（见 useClipboardKeyboard）。
 watch(
-  [showPinDialog, previewItem, showModalType, showForgotPwd, showSettingsDialog, aiSidebarOpen, showQuickPaste],
+  [showPinDialog, previewItem, showModalType, showForgotPwd, aiSidebarOpen, showQuickPaste],
   () => {
     setKeyboardLayer('pin', showPinDialog.value)
     setKeyboardLayer('preview', !!previewItem.value)
-    setKeyboardLayer('modal', !!(showModalType.value || showForgotPwd.value || showSettingsDialog.value))
+    setKeyboardLayer('modal', !!(showModalType.value || showForgotPwd.value))
     setKeyboardLayer('ai', aiSidebarOpen.value)
     // 快速粘贴面板是全局单例：HomeView 的 showQuickPaste 是唯一真相源
     setQuickPasteOpen(showQuickPaste.value)
@@ -385,6 +386,9 @@ function notifyNative(title: string, body: string) {
   }
 }
 
+// 同步通知节流：连复制时不要每条都弹（与下方的收敛逻辑配套）
+let lastSyncNotifAt = 0
+
 onMounted(async () => {
   // Request native notification permission once
   try {
@@ -417,19 +421,33 @@ onMounted(async () => {
   // WebSocket 推送（设备注册后后端定向广播）→ 刷新列表 + 弹系统通知；通知推送 → 实时插入收件箱
   // 事件名与后端广播契约对齐：clipboard.js 广播 new_clipboard / clipboard_updated / clipboard_favorite / clipboard_deleted
   offWsMessage = ws.onMessage((data) => {
+    if (data?.type === 'new_clipboard' || data?.type === 'clipboard_updated' || data?.type === 'clipboard_favorite') {
+      syncLog.pushFromWs(data)
+    }
     if (data?.type === 'new_clipboard') {
       clip.refresh()
       perfFirstDataLoad()
-      // Native notification: show what was synced (skip if window is focused)
-      const source = data.item?.sourceDeviceId || ''
-      const preview = data.item?.contentPreview || ''
-      const label = source ? `${source}` : t('app_name')
-      const text = preview ? String(preview).slice(0, 80) : t('empty_action')
-      // Only notify when main window is not focused (avoid redundant alerts)
-      try {
-        notifyNative(label, text)
-      } catch {
-        /* ignore */
+      // 通知收敛（用户反馈：每次复制都弹太吵）：
+      // ① 只通知「远端设备同步来的内容」——服务端会把本机上传广播回来，不过滤就是自回声刷屏；
+      // ② 窗口聚焦时不打扰（正在看应用，通知无信息量）；
+      // ③ 10 秒节流，连发场景只弹第一条。
+      const srcDevice = data.item?.sourceDeviceId || ''
+      const localDeviceId = localStorage.getItem('clipsync-device-id')
+      const isRemote = !!srcDevice && srcDevice !== localDeviceId
+      const now = Date.now()
+      if (isRemote && !document.hasFocus() && now - lastSyncNotifAt > 10_000) {
+        lastSyncNotifAt = now
+        const dName = device.devices.value.find((d) => d.id === srcDevice)?.name
+        const rawPreview = String(data.item?.contentPreview || '')
+        // B7：E2E 条目预览是 [E2E] 占位——通知里换成本地化文案，不显示裸占位符
+        const preview = rawPreview === '[E2E]' ? t('e2e_notif_placeholder', '端到端加密内容') : rawPreview
+        const label = dName || t('remote_device', '远端设备')
+        const text = preview ? preview.slice(0, 80) : t('empty_action')
+        try {
+          notifyNative(label, text)
+        } catch {
+          /* ignore */
+        }
       }
       // 远程条目自动写入系统剪贴板（2026-09：手机复制/截图 → PC 无需打开本应用直接 Ctrl+V）。
       // 服务端 broadcastToUser 包含来源设备自身，必须按 deviceId 过滤自己的上传回声；
@@ -533,8 +551,7 @@ onMounted(async () => {
   try {
     trayUnlisteners.push(
       await listen('tray://open-settings', () => {
-        settingsInitialCategory.value = ''
-        showSettingsDialog.value = true
+        switchSub('settings')
       }),
     )
   } catch (e) {
@@ -545,6 +562,12 @@ onMounted(async () => {
   } catch (e) {
     console.warn('[Home] listen tray://check-updates failed:', e)
   }
+  // v2 原型：业务页「原位 AI」按钮 → 呼出 AI dock（未打开时）
+  const onToggleAi = () => {
+    if (!aiSidebarOpen.value) toggleAiPanel()
+  }
+  toggleAiHandler = onToggleAi
+  window.addEventListener('clipsync:toggle-ai', onToggleAi)
 
   document.addEventListener('keydown', handleGlobalKeydown)
   try {
@@ -562,6 +585,7 @@ onUnmounted(() => {
   delete (window as any).__toggleQuickPaste
   delete (window as any).__toggleWindow
   delete (window as any).__toggleTheme
+  if (toggleAiHandler) window.removeEventListener('clipsync:toggle-ai', toggleAiHandler)
   document.removeEventListener('keydown', handleGlobalKeydown)
 })
 
@@ -582,7 +606,7 @@ function handleGlobalKeydown(e: KeyboardEvent) {
       showModalType.value = ''
       return
     }
-    if (layer === 'ai' && !showSettingsDialog.value) {
+    if (layer === 'ai') {
       aiSidebarOpen.value = false
       return
     }
@@ -595,12 +619,28 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   // Ctrl+K 全局唯一入口（ClipboardView 侧已移除重复注册链，否则两条通道互相抵消）
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
-    showQuickPaste.value = !showQuickPaste.value
+    commandPaletteOpen.value = !commandPaletteOpen.value
     return
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'j') {
     e.preventDefault()
     toggleAiPanel()
+  }
+  // Clearline 导航键位（与侧栏 kbd 提示一一对应）：Ctrl+1..4 切业务页，Ctrl+, 打开设置
+  const NAV_KEYS: Record<string, string> = {
+    '1': 'clipboard',
+    '2': 'favorites',
+    '3': 'templates',
+    '4': 'devices',
+  }
+  if ((e.ctrlKey || e.metaKey) && NAV_KEYS[e.key]) {
+    e.preventDefault()
+    switchSub(NAV_KEYS[e.key])
+    return
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+    e.preventDefault()
+    switchSub('settings')
   }
 }
 
@@ -691,24 +731,35 @@ function confirmAction() {
 
 <template>
   <div class="app-shell">
-    <AppSidebar
-      :sidebar-open="sidebarOpen"
+    <!-- Clearline 自定义标题栏（decorations:false）：品牌 + 面包屑 + Ctrl+K 命令栏 + AI/明暗/通知 + 窗口控制 -->
+    <TitleBar
       :current-sub="currentSub"
-      :items-count="clip.mainTotalItems.value"
-      :user-name="configStore.user.name"
-      :user-plan="configStore.user.plan"
-      :user-email="configStore.user.email"
-      :user-avatar-url="userAvatarUrl"
-      :settings-dialog-open="showSettingsDialog"
+      :ai-enabled="aiEnabled"
       :ai-open="aiSidebarOpen"
-      @toggle="sidebarOpen = !sidebarOpen"
+      :unread-count="notif.unreadCount.value"
+      :sidebar-open="sidebarOpen"
+      @open-search="commandPaletteOpen = true"
+      @toggle-ai="toggleAiPanel"
+      @toggle-sidebar="sidebarOpen = !sidebarOpen"
       @navigate="switchSub"
-      @open-settings-dialog="showSettingsDialog = true"
-      @open-ai="toggleAiPanel"
-      @logout="handleLogout"
     />
+    <div class="app-body">
+      <AppSidebar
+        :sidebar-open="sidebarOpen"
+        :current-sub="currentSub"
+        :items-count="clip.mainTotalItems.value"
+        :user-name="configStore.user.name"
+        :user-plan="configStore.user.plan"
+        :user-email="configStore.user.email"
+        :user-avatar-url="userAvatarUrl"
+        :ai-open="aiSidebarOpen"
+        @toggle="sidebarOpen = !sidebarOpen"
+        @navigate="switchSub"
+        @open-ai="toggleAiPanel"
+        @logout="handleLogout"
+      />
 
-    <main class="main-content">
+      <main class="main-content">
       <!-- CO-21 维护模式横幅：维护期间轮询与自动同步已暂停（服务端 503 强制兜底） -->
       <div v-if="maintenanceOn" class="maintenance-banner" role="alert">
         <AlertTriangle :size="16" :stroke-width="2" />
@@ -736,6 +787,7 @@ function confirmAction() {
       <ClipboardView
         v-if="currentSub === 'clipboard' || currentSub === 'archive'"
         :mode="currentSub === 'archive' ? 'archive' : 'default'"
+        :ai-enabled="aiEnabled"
         @toggle-quick-paste="showQuickPaste = !showQuickPaste"
         @toggle-theme="toggleMode"
         @preview-image="onPreviewImage"
@@ -748,6 +800,7 @@ function confirmAction() {
       />
       <FavoritesView
         v-else-if="currentSub === 'favorites'"
+        :ai-enabled="aiEnabled"
         @preview-image="onPreviewImage"
         @preview-text="onPreviewText"
         @preview-file="onPreviewFile"
@@ -755,29 +808,43 @@ function confirmAction() {
         @show-pin-setup="onShowPinSetup"
         @toggle-sensitive="onToggleSensitive"
       />
-      <TemplatesView v-else-if="currentSub === 'templates'" />
-      <!-- SettingsView archived to backups/old-settings-v1/ — replaced by SettingsDialog -->
+      <TemplatesView v-else-if="currentSub === 'templates'" :ai-enabled="aiEnabled" />
+      <SettingsView v-else-if="currentSub === 'settings'" :ai-enabled="aiEnabled" />
       <ProfileView v-else-if="currentSub === 'profile'" />
-      <DevicesView v-else-if="currentSub === 'devices'" @open-modal="openModal" />
+      <DevicesView v-else-if="currentSub === 'devices'" :ai-enabled="aiEnabled" @open-modal="openModal" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />
       <!-- enable_subscription 关闭：订阅页不渲染（侧栏入口已隐藏，直接改 URL 也不可达） -->
       <SubscriptionView
         v-else-if="currentSub === 'subscription' && can('nav.subscription')"
         @open-modal="openModal"
       />
-    </main>
+      </main>
 
-    <!-- AI 面板（右侧展开/折叠）：view 传入当前页面上下文，AI 回答可感知用户所在页面（#229）。
-         enable_ai_agent 关闭：面板不挂载，快捷键/侧栏入口均已守卫。 -->
-    <AiChatPanel
-      v-if="aiEnabled"
-      :open="aiSidebarOpen"
-      :view="currentSub"
-      @close="aiSidebarOpen = false"
-      @open-settings="openAiSettings"
-    />
+      <!-- AI 面板：老版行为——右侧常驻侧栏（流内子项），打开时挤压内容区而非覆盖；
+           常驻面板不会因点击内容区意外关闭。view 传入当前页面上下文（#229）。
+           enable_ai_agent 关闭：面板不挂载，快捷键/侧栏入口均已守卫。 -->
+      <AiChatPanel
+        v-if="aiEnabled"
+        :open="aiSidebarOpen"
+        :view="currentSub"
+        @close="aiSidebarOpen = false"
+        @open-settings="openAiSettings"
+      />
+    </div>
   </div>
 
+  <CommandPalette
+    :open="commandPaletteOpen"
+    @close="commandPaletteOpen = false"
+    @navigate="
+      (sub) => {
+        switchSub(sub)
+      }
+    "
+    @toggle-ai="toggleAiPanel"
+    @open-quick-paste="showQuickPaste = true"
+    @toggle-theme="toggleMode"
+  />
   <QuickPastePanel :open="showQuickPaste" @close="showQuickPaste = false" />
 
   <!-- 复制剪贴板后 AI 摘要浮窗（AI 关闭时一并隐藏） -->
@@ -880,21 +947,29 @@ function confirmAction() {
   <!-- Satisfaction Survey (shows after 7 days, once per 30 days) -->
   <SatisfactionSurvey />
 
-  <!-- Settings Dialog (v2 — progressive migration) -->
-  <SettingsDialog
-    :open="showSettingsDialog"
-    :initial-category="settingsInitialCategory"
-    @close="closeSettingsDialog"
-  />
 </template>
 
 <style scoped>
 .app-shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
   background: var(--bg-base);
+  position: relative;
+}
+/* AI 面板是 .app-body 的第三个流内子项（侧栏 | 内容 | AI 侧栏）：
+   打开时以定宽挤压内容区（老版行为），关闭时宽度归 0，不覆盖内容。 */
+.app-body > :deep(.ai-panel) {
+  flex: none;
+}
+/* 标题栏之下的主体行：侧栏 + 内容区 */
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
 }
 .main-content {
   flex: 1;

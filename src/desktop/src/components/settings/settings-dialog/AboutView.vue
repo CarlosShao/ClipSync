@@ -6,7 +6,7 @@ import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
 import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
-import { Github, ExternalLink, RefreshCw } from 'lucide-vue-next'
+import { Github, ExternalLink, RefreshCw, MessageSquare } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -82,72 +82,71 @@ async function installUpdate() {
 
 <template>
   <div class="about-view">
-    <!-- Hero card -->
-    <div class="about-hero">
-      <div class="about-logo">C</div>
-      <div class="about-info">
-        <div class="about-name">{{ t('app_name') }}</div>
-        <div class="about-version">{{ t('app_version', { v: appVersion }) }}</div>
+    <!-- 重排版：一张连体卡片（品牌行 + 行式条目），与其它设置分节同一套卡片语言 -->
+    <div class="about-card">
+      <!-- 品牌行 -->
+      <div class="about-brand">
+        <div class="about-logo">C</div>
+        <div class="about-info">
+          <div class="about-name-row">
+            <span class="about-name">{{ t('app_name') }}</span>
+            <span class="about-ver">v{{ appVersion }}</span>
+          </div>
+          <div class="about-desc">{{ t('app_desc') }}</div>
+        </div>
       </div>
-    </div>
 
-    <div class="about-desc">{{ t('app_desc') }}</div>
-
-    <!-- Links row -->
-    <div class="about-row">
-      <a href="https://github.com/CarlosShao/ClipSync" target="_blank" rel="noopener" class="about-link">
-        <Github :size="16" />
-        <span>{{ t('app_github') }}</span>
-        <ExternalLink :size="12" class="link-ext" />
-      </a>
-    </div>
-
-    <!-- Update row -->
-    <div class="about-row about-row--space">
-      <div class="about-row-left">
-        <span class="about-row-label">{{ t('sg_update') || '检查更新' }}</span>
-        <span v-if="lastChecked" class="about-row-hint"
-          >{{ t('sg_update_last') || '上次检查' }}: {{ lastChecked }}</span
-        >
-      </div>
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="checkingUpdate || installingUpdate"
-        class="update-btn"
-        @click="checkForUpdates"
-      >
-        <RefreshCw :size="14" :class="{ spin: checkingUpdate }" />
-        {{ checkingUpdate ? t('sg_update_checking') : t('btn_check') }}
-      </Button>
-    </div>
-
-    <!-- A7：发现新版本 → 就地确认；确认后才 download_and_install + relaunch。
-         AN-04：force_update=true → 危险色强更条，不提供"稍后"（不可跳过） -->
-    <div v-if="pendingUpdate" class="about-update" :class="{ 'about-update--force': pendingUpdate.forceUpdate }">
-      <div class="about-update-text">
-        {{ t('sg_update_found', { v: pendingUpdate.version }) }}
-        <span v-if="pendingUpdate.forceUpdate" class="about-update-force-hint">{{
-          t('sg_update_force_hint')
-        }}</span>
-      </div>
-      <div class="about-update-actions">
-        <Button size="sm" :disabled="installingUpdate" @click="installUpdate">{{ t('btn_install') }}</Button>
+      <!-- 检查更新行 -->
+      <div class="about-line">
+        <div class="about-line-label">
+          {{ t('sg_update') || '检查更新' }}
+          <span v-if="lastChecked" class="about-line-hint"
+            >{{ t('sg_update_last') || '上次检查' }}: {{ lastChecked }}</span
+          >
+        </div>
         <Button
-          v-if="!pendingUpdate.forceUpdate"
           variant="outline"
           size="sm"
-          :disabled="installingUpdate"
-          @click="pendingUpdate = null"
-          >{{ t('btn_later') }}</Button
+          :disabled="checkingUpdate || installingUpdate"
+          class="update-btn"
+          @click="checkForUpdates"
         >
+          <RefreshCw :size="14" :class="{ spin: checkingUpdate }" />
+          {{ checkingUpdate ? t('sg_update_checking') : t('btn_check') }}
+        </Button>
       </div>
-    </div>
 
-    <!-- Feedback row -->
-    <div class="about-row">
-      <a href="https://github.com/CarlosShao/ClipSync/issues" target="_blank" rel="noopener" class="about-link">
-        {{ t('fb_title') || '发送反馈' }}
+      <!-- A7：发现新版本 → 就地确认；确认后才 download_and_install + relaunch。
+           AN-04：force_update=true → 危险色强更条，不提供"稍后"（不可跳过） -->
+      <div v-if="pendingUpdate" class="about-update" :class="{ 'about-update--force': pendingUpdate.forceUpdate }">
+        <div class="about-update-text">
+          {{ t('sg_update_found', { v: pendingUpdate.version }) }}
+          <span v-if="pendingUpdate.forceUpdate" class="about-update-force-hint">{{
+            t('sg_update_force_hint')
+          }}</span>
+        </div>
+        <div class="about-update-actions">
+          <Button size="sm" :disabled="installingUpdate" @click="installUpdate">{{ t('btn_install') }}</Button>
+          <Button
+            v-if="!pendingUpdate.forceUpdate"
+            variant="outline"
+            size="sm"
+            :disabled="installingUpdate"
+            @click="pendingUpdate = null"
+            >{{ t('btn_later') }}</Button
+          >
+        </div>
+      </div>
+
+      <!-- 开源仓库行 -->
+      <a class="about-line about-line--link" href="https://github.com/CarlosShao/ClipSync" target="_blank" rel="noopener">
+        <span class="about-line-label"><Github :size="14" />{{ t('app_github') }}</span>
+        <ExternalLink :size="12" class="link-ext" />
+      </a>
+
+      <!-- 问题反馈行 -->
+      <a class="about-line about-line--link" href="https://github.com/CarlosShao/ClipSync/issues" target="_blank" rel="noopener">
+        <span class="about-line-label"><MessageSquare :size="14" />{{ t('fb_title') || '发送反馈' }}</span>
         <ExternalLink :size="12" class="link-ext" />
       </a>
     </div>
@@ -155,106 +154,114 @@ async function installUpdate() {
 </template>
 
 <style scoped>
-.about-view {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+/* 连体卡片：与设置页其它分节同语言（surface 底 + 细分隔线行） */
+.about-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 4px 14px;
 }
 
-/* Hero */
-.about-hero {
+/* 品牌行 */
+.about-brand {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-hover) 100%);
-  margin-bottom: 8px;
+  gap: 12px;
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .about-logo {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  /* Logo 品牌渐变：沿用主题的 logo-gradient token，避免明暗主题下对比度失控（C6②） */
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   background: var(--logo-gradient);
   color: var(--accent-foreground);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  flex: none;
 }
 .about-info {
   flex: 1;
   min-width: 0;
 }
+.about-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .about-name {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
-.about-version {
-  font-size: 13px;
-  color: var(--accent);
-  font-weight: 500;
-  margin-top: 2px;
+.about-ver {
+  font-family: var(--font-content);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 8px;
 }
 .about-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
-  line-height: 1.6;
-  padding: 4px 0 16px;
+  line-height: 1.5;
+  margin-top: 3px;
 }
 
-/* Row */
-.about-row {
+/* 行式条目 */
+.about-line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 0;
-  border-top: 1px solid var(--border-subtle);
-}
-.about-row--space {
   justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
-.about-row-left {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.about-line:last-child {
+  border-bottom: none;
 }
-.about-row-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-.about-row-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
-
-/* Link */
-.about-link {
+.about-line-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--accent);
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 0;
+}
+.about-line-label svg {
+  color: var(--text-tertiary);
+  flex: none;
+}
+.about-line-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: 6px;
+}
+.about-line--link {
   text-decoration: none;
   cursor: pointer;
-  transition: opacity 0.15s;
 }
-.about-link:hover {
-  opacity: 0.75;
+.about-line--link:hover .about-line-label {
+  color: var(--accent);
+}
+.about-line--link:hover .about-line-label svg {
+  color: var(--accent);
 }
 .link-ext {
-  opacity: 0.5;
+  opacity: 0.45;
+  flex: none;
 }
 
-/* Update button */
+/* 检查更新按钮 */
 .update-btn {
   gap: 6px;
 }
@@ -266,7 +273,8 @@ async function installUpdate() {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 12px 14px;
+  margin: 10px 0;
+  padding: 10px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--radius-md);
   background: var(--accent-light);

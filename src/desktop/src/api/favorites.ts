@@ -74,6 +74,19 @@ export async function setItemTags(
   return res.ok ? res.data : null
 }
 
+export async function createTag(name: string, color?: string): Promise<{ tag: { name: string; color: string | null } } | null> {
+  const res = await api('POST', '/api/favorites/tags', { name, color })
+  return res.ok ? res.data : null
+}
+
+export async function updateTag(
+  tag: string,
+  data: { name?: string; color?: string },
+): Promise<{ tag: { name: string; color: string | null } } | null> {
+  const res = await api('PUT', `/api/favorites/tags/${encodeURIComponent(tag)}`, data)
+  return res.ok ? res.data : null
+}
+
 export async function deleteTag(tagName: string): Promise<boolean> {
   const res = await api('DELETE', `/api/favorites/tags/${encodeURIComponent(tagName)}`)
   return res.ok

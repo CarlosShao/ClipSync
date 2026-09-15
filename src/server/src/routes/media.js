@@ -991,6 +991,15 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Only file types support text preview' });
     }
 
+    // E2E 条目（metadata.e2e 存在，协议见 docs/plans/e2e-protocol.md §2/§6）落盘为密文，
+    // 服务端不持有明文：直接 409，禁止读盘把密文当文本预览返回
+    if (metadata?.e2e) {
+      return res.status(409).json({
+        error: 'E2E_FILE',
+        message: 'End-to-end encrypted file; preview unavailable on server',
+      });
+    }
+
     // F1.3：多文件条目（metadata.files，F1.2 契约）支持 ?fileIndex=n——缺省时与改造前
     // 完全一致（metadata.extension / content_encrypted 均为首文件口径）；fileIndex 指定
     // 时预览对应文件（落盘名 files[n].fileId，扩展名/展示名取 files[n].name）。

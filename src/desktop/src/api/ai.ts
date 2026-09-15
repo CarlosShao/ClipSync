@@ -234,6 +234,22 @@ export interface AiSettings {
   memoryEnabled: boolean
   // 全局自定义系统提示词：追加到角色/产品知识之后（服务端读 ai_settings，前端持久化）
   customSystemPrompt?: string
+  // 联网搜索源配置（服务端读 ai_settings；searchApiKey 写 '__keep__' 表示不修改，null/'' 清空）
+  searchProvider?: string
+  searchBaseUrl?: string
+  searchApiKey?: string | null
+  searchHasKey?: boolean
+}
+
+export interface SearchTestResult {
+  ok: boolean
+  provider: string
+  firstTitle: string
+  count: number
+}
+
+export function testSearchConfig(input: { provider: string; apiKey?: string; baseUrl?: string }) {
+  return api<SearchTestResult>('POST', '/api/ai/settings/search-test', input)
 }
 
 // ===== CRUD =====
@@ -739,4 +755,16 @@ export interface ConversationSearchResult {
 
 export function searchConversationHistory(q: string) {
   return api<ConversationSearchResult>('GET', `/api/ai/conversations/search?q=${encodeURIComponent(q)}`)
+}
+
+/** 单轮内联 AI（非流式、不建会话）：页内结果卡直接调用，不进侧栏消息流 */
+export interface InlineAiResult {
+  ok: boolean
+  text?: string
+  error?: string
+}
+
+export function inlineChat(prompt: string, context?: string, signal?: AbortSignal, maxTokens?: number) {
+  // maxTokens 仅透传，钳制在服务端（64-4096）；JSON 类输出（整理/模板/审查）需要放大配额
+  return api<InlineAiResult>('POST', '/api/ai/inline', { prompt, context, maxTokens }, { signal })
 }

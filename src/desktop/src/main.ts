@@ -5,6 +5,7 @@ import App from './App.vue'
 import { initErrorCapture } from './utils/errorReport'
 import { initPerfMonitor } from './utils/perfMonitor'
 import './styles/globals.css'
+import './styles/prototype-v2.css'
 import './styles/sonner-theme.css'
 import 'vue-sonner/style.css'
 

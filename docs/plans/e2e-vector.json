@@ -1,0 +1,21 @@
+{
+  "note": "E2E protocol v1 test vector — recipients use recipientPriv to unwrap K then decrypt",
+  "alg": "ECDH-P256 + HKDF-SHA256(salt=clipsync-e2e-v1, info=deviceId) + A256GCM",
+  "fixture": {
+    "recipientDeviceId": "11111111-2222-3333-4444-555555555555",
+    "recipientPrivateKeyB64": "pSdNimTX0ecVtVNpIvtdCHIOCbQFY3XN1PUE+VObiBY=",
+    "recipientPublicKeyB64": "BHaPJXJxZcrMOvnDkLRqTfjWYDKGDcv+yu65xzRJRqEFK4qtCAHoucSJ+mJ1phqGqo7uD7PU6Qkh495JQSl+rUI="
+  },
+  "envelope": {
+    "ciphertextB64": "NxZxfY970DsYNuzknxqiHaU5i/cQkqp6fS5OiM+oz6RhAVhDdYaYGncr6NwulCbzrJ4qcXSFy6Q=",
+    "epkB64": "BP57SyNEf7gLfCgl/QD3QLfTDaEadnlF2jLuSWu0IrxojjZUYTL6fxiA9NQxeUNvpBmmX+DCweBLSoU2ztHP5/I=",
+    "ivB64": "40tdTI2ae5YdP6KI",
+    "keys": {
+      "11111111-2222-3333-4444-555555555555": {
+        "wrappedB64": "mvi3AKP+384KS7y19FCdHA0OgVwQ1s+5UaaCQXd42WyqBLa3xQJx2VHEVhZ+fZ28",
+        "wivB64": "BlBKVeruduizXwe2"
+      }
+    }
+  },
+  "expectedPlaintext": "hello clipsync 端到端加密测试 ✨"
+}

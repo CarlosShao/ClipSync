@@ -19,12 +19,48 @@ import {
   searchQuery,
   maxHistoryCap,
   type ClipItem,
+  clipViewSeg,
 } from './clipboardState'
 import { getCachedContent, cacheContent } from './clipboardCache'
 import { setItemPreview, releaseRemovedObjectUrls } from './clipboardObjectUrls'
 import { resolveDeviceName } from './useDevice'
+import { isE2eItem, e2eDecryptBytes } from '@/utils/e2eCrypto'
 
 const { tf } = useI18n()
+
+// === B7：E2E 条目按需解密 ===
+
+/**
+ * E2E 条目按需解密：metadata.e2e 存在 → 用本设备私钥解出明文字符串；
+ * 非 E2E 条目原样返回 raw；解密失败/无密钥返回 null（调用方保持占位，绝不渲染密文）。
+ */
+export async function decryptIfE2e(raw: string, metadata: unknown): Promise<string | null> {
+  if (!isE2eItem(metadata)) return raw
+  try {
+    const myDeviceId = localStorage.getItem('clipsync-device-id') || ''
+    if (!myDeviceId) return null
+    const bytes = await e2eDecryptBytes((metadata as any).e2e, myDeviceId)
+    return new TextDecoder().decode(bytes)
+  } catch (e) {
+    console.warn('[E2E] decrypt failed:', e)
+    return null
+  }
+}
+
+/** 详情/抽屉按需取全文：拉 /content →（E2E 则解密）→ 写缓存。返回明文；失败返回 null */
+export async function fetchFullContentDecrypted(item: Pick<ClipItem, 'id' | 'metadata'>): Promise<string | null> {
+  try {
+    const res = await api<{ contentEncrypted: string; metadata?: unknown }>('GET', `/api/clipboard/${item.id}/content`)
+    if (!res.ok || !res.data?.contentEncrypted) return null
+    const plain = await decryptIfE2e(res.data.contentEncrypted, res.data.metadata ?? item.metadata)
+    if (plain === null) return null
+    cacheContent(item.id, plain)
+    return plain
+  } catch (e) {
+    console.warn('[E2E] fetch full content failed:', e)
+    return null
+  }
+}
 
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
@@ -111,6 +147,10 @@ function formatBytesSafe(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
+// 请求序号：视图/分段/筛选快速切换时，先发出的请求可能后返回，
+// 过期响应一律丢弃，避免旧视图数据覆盖新视图（如「仅收藏」被时间流结果冲掉）。
+let loadSeq = 0
+
 export async function loadClipboardItems(opts?: {
   page?: number
   append?: boolean
@@ -120,13 +160,15 @@ export async function loadClipboardItems(opts?: {
   /** 覆盖每页条数（收藏页按 pageSize 分页，不再一次性拉 200 条） */
   limit?: number
 }) {
+  const seq = ++loadSeq
   const page = opts?.page ?? 1
   const append = opts?.append ?? false
   const loadAll = opts?.all ?? false
-  const loadFavorites = opts?.favorite ?? false
-  // 视图：归档视图(view=archive)只拉 archived=TRUE 的条目；默认沿用 currentView，
-  // 保证分类切换/加载更多时不丢失归档上下文。
-  const view = opts?.view || currentView.value
+  // 分段感知默认值：显式传入 favorite/view 的调用（收藏页、归档深链）不受全局分段影响；
+  // 未传的调用（轮询、同步刷新、分类/搜索切换、加载更多）继承当前分段。
+  const seg = clipViewSeg.value
+  const loadFavorites = opts?.favorite ?? (opts?.view ? false : seg === 'fav')
+  const view = opts?.view || (opts?.favorite ? 'all' : seg === 'archive' ? 'archive' : currentView.value)
   currentView.value = view
   if (!append) currentPage.value = page
   if (append) loadingMore.value = true
@@ -157,6 +199,11 @@ export async function loadClipboardItems(opts?: {
       `/api/clipboard?page=${page}&limit=${limit}${loadAll ? '&all=true' : ''}${favParam}${typeParam}${advParamStr}${viewParam}${searchParam}`,
     )
     console.log(`[Clipboard] loadClipboardItems response: ok=${res.ok}, status=${res.status}, items count=${Array.isArray(res.data?.items) ? res.data.items.length : 'N/A'}`)
+    if (seq !== loadSeq) {
+      // 已有更新的请求在途/完成：丢弃本响应，不触碰 items/total/loadError 状态
+      console.log(`[Clipboard] loadClipboardItems: stale response (seq=${seq}) dropped, current=${loadSeq}`)
+      return true
+    }
     if (res.ok && Array.isArray(res.data?.items)) {
       // 成功响应即推进删除感知同步点（含 append 空页分支，均为有效同步时刻）
       touchLastSyncAt()
@@ -485,7 +532,14 @@ export async function loadImagesFromQueue(queue: ClipItem[]) {
       }
 
       if (fullRes.ok && fullRes.data?.contentEncrypted) {
-        const raw = fullRes.data.contentEncrypted
+        // B7：E2E 条目先按需解密（密文 b64 → 明文 dataUrl）；失败时保持占位，绝不渲染密文
+        const rawEnc = fullRes.data.contentEncrypted as string
+        const meta = fullRes.data.metadata ?? item.metadata
+        const raw = (await decryptIfE2e(rawEnc, meta)) ?? ''
+        if (!raw && isE2eItem(meta)) {
+          console.warn(`[E2E] image ${item.id} decrypt unavailable (no key / failed) — keep placeholder`)
+          return
+        }
         const isDataUrl = raw.startsWith('data:')
         let renderSrc: string
         if (isDataUrl) {

@@ -12,6 +12,7 @@ export const APP_SUB_PAGES = [
   'favorites',
   'templates',
   'devices',
+  'settings',
   'profile',
   'notifications',
   'subscription',

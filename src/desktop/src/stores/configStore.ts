@@ -107,13 +107,17 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
-  async function save(partial: Partial<AppConfig>) {
+  // S7：如实返回持久化结果，供调用方区分「已落盘」与「写失败」。
+  // 失败时不更新 config.value，避免 UI 显示"已生效"但实际没落盘。
+  // 既有调用方（completeLogin 等）忽略返回值，行为向后兼容。
+  async function save(partial: Partial<AppConfig>): Promise<boolean> {
     const updated = { ...config.value, ...partial }
     try {
       await tauri.updateConfig(updated)
       config.value = updated
+      return true
     } catch {
-      /* ignore */
+      return false
     }
   }
 

@@ -49,6 +49,17 @@ async function toggle() {
     const clip = findClipAncestor(anchor)
     const limit = clip ? clip.getBoundingClientRect().right - 8 : window.innerWidth - 8
     dropRight.value = rect.left + menuWidth > limit && rect.right - menuWidth >= (clip ? clip.getBoundingClientRect().left + 8 : 8)
+    // 弹层被右缘裁剪时（右对齐仍放不下）：收窄菜单到裁剪容器内，避免选项被截断。
+    // 典型场景：设置页右侧窄列里的长文本下拉（搜索源选项名较长）。
+    if (dropRight.value) {
+      const availRight = (clip ? clip.getBoundingClientRect().right : window.innerWidth) - rect.right - 8
+      const availLeft = rect.right - (clip ? clip.getBoundingClientRect().left : 0) - 8
+      const avail = Math.max(availRight, availLeft)
+      if (avail > 0 && menuWidth > avail) {
+        menu.style.maxWidth = `${Math.max(160, Math.min(avail, 420))}px`
+        menu.style.width = 'auto'
+      }
+    }
   }
 }
 function select(value: string) {

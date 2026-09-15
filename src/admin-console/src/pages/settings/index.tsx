@@ -138,8 +138,9 @@ function isNumericConfigKey(key: string): boolean {
     key !== 'menu_overrides' &&
     key !== 'rate_limit_disabled' &&
     !key.startsWith('smtp_') &&
-    // 字符串域键（068/A4 短信、运维地址/发布源）：非数字，允许留空
+    // 字符串域键（068/A4 短信、运维地址/发布源、联网搜索）：非数字，允许留空
     !key.startsWith('sms_') &&
+    !key.startsWith('ai_search_') &&
     !key.endsWith('_url') &&
     key !== 'storage_cleanup_enabled' &&
     key !== 'release_download_base_url'
@@ -378,7 +379,16 @@ export default function SettingsPage() {
   // 系统参数分组（UI 归组；服务端 CONFIG_CATALOG 为键的事实来源，未归组键走「其它」兜底）
   // AN-16：原「邮件 (SMTP)」组已迁出——改由上方独立的「邮件通道」卡管理
   const PARAM_GROUPS: { title: string; keys: string[] }[] = [
-    { title: 'AI 能力', keys: ['ai_max_tokens', 'ai_default_provider'] },
+    {
+      title: 'AI 能力',
+      keys: [
+        'ai_max_tokens',
+        'ai_default_provider',
+        'ai_search_provider',
+        'ai_search_api_key_encrypted',
+        'ai_search_base_url',
+      ],
+    },
     { title: '安全与会话', keys: ['session_timeout_minutes', 'audit_log_retention_days'] },
     { title: '日志', keys: ['log_level'] },
     // 运维域：可观测（Prometheus/Grafana）、备份保留、存储清理、设备在线判定、
@@ -416,9 +426,13 @@ export default function SettingsPage() {
     const rateLimitValues: Record<string, number | string | boolean> = {};
     for (const config of editableConfigs) {
       const target = isRateLimitKey(config.key) ? rateLimitValues : systemValues;
-      if (config.key === 'smtp_pass' || config.key === 'sms_access_key_secret') {
+      if (
+        config.key === 'smtp_pass' ||
+        config.key === 'sms_access_key_secret' ||
+        config.key === 'ai_search_api_key_encrypted'
+      ) {
         // 服务端脱敏回显（已配置/未配置）不回填输入框：留空 = 保持不变，避免把脱敏串当新密码提交
-        // （sms_access_key_secret 与 smtp_pass 同为加密落库 + 脱敏回显键，068/A4）
+        // （sms_access_key_secret 与 smtp_pass 同为加密落库 + 脱敏回显键，068/A4；搜索 key 同口径）
         target[config.key] = '';
         continue;
       }
@@ -475,6 +489,34 @@ export default function SettingsPage() {
   const renderConfigControl = (key: string) => {
     if (key === 'ai_default_provider') {
       return <Select style={{ maxWidth: 260 }} options={AI_PROVIDER_OPTIONS} />;
+    }
+    // 全局搜索源：枚举下拉（与桌面端/AI 页选项对齐），allowClear=回退未配置
+    if (key === 'ai_search_provider') {
+      return (
+        <Select
+          style={{ maxWidth: 260 }}
+          allowClear
+          showSearch
+          placeholder="未配置（AnySearch 匿名额度）"
+          options={[
+            { value: 'anysearch', label: 'AnySearch（每天 2000 次免费）' },
+            { value: 'bocha', label: '博查 Bocha（国产）' },
+            { value: 'brave', label: 'Brave Search' },
+            { value: 'tavily', label: 'Tavily' },
+            { value: 'searxng', label: '自建 SearXNG' },
+          ]}
+        />
+      );
+    }
+    if (key === 'ai_search_api_key_encrypted') {
+      // 全局搜索 Key：同 smtp_pass 脱敏口径，恒空起填，留空提交时跳过
+      return (
+        <Input.Password
+          style={{ maxWidth: 260 }}
+          placeholder="留空保持不变"
+          autoComplete="new-password"
+        />
+      );
     }
     if (key === 'log_level') {
       return <Select style={{ maxWidth: 260 }} options={LOG_LEVEL_OPTIONS} />;
@@ -555,7 +597,9 @@ export default function SettingsPage() {
         </span>
       }
       extra={
-        config.key === 'smtp_pass' || config.key === 'sms_access_key_secret'
+        config.key === 'smtp_pass' ||
+        config.key === 'sms_access_key_secret' ||
+        config.key === 'ai_search_api_key_encrypted'
           ? `${config.description ?? ''}（当前：${config.value}）`
           : config.description
       }

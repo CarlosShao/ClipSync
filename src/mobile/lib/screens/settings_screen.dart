@@ -265,7 +265,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           AppCard(
             surfaceTier: SurfaceTier.low,
             padding: EdgeInsets.zero,
-            child: _buildBiometricLockSetting(),
+            child: Column(
+              children: [
+                _buildBiometricLockSetting(),
+                const Divider(height: 1),
+                // B9：端到端加密用户级开关（隐私/安全分组）
+                _buildE2eEncryptionSetting(),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.md),
 
@@ -608,6 +615,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('biometric_lock_enabled', value);
+  }
+
+  /// B9：端到端加密开关（隐私/安全分组）。绑定 SettingsProvider.e2eEnabled
+  /// （SharedPreferences 'e2e_enabled'，默认 false）；采集执行侧
+  /// ClipboardCaptureService 每次上传前实时读同一键，切换即时生效、仅影响
+  /// 之后的上传。说明文案为硬编码中文兜底（工单 B9 允许改动清单不含
+  /// l10n arb 文件，无法新增键；与桌面端 e2e 开关语义一致）。
+  Widget _buildE2eEncryptionSetting() {
+    return SwitchListTile(
+      secondary: const Icon(Icons.enhanced_encryption),
+      title: const Text('端到端加密'),
+      subtitle: const Text('开启后新同步内容端到端加密，服务端无法全文搜索该内容'),
+      value: context.watch<SettingsProvider>().e2eEnabled,
+      onChanged: (value) {
+        context.read<SettingsProvider>().setE2eEnabled(value);
+      },
+    );
   }
 
   Widget _buildClearCacheButton() {

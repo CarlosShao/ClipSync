@@ -497,7 +497,8 @@ function truncate(str: string, max: number): string {
 }
 .qp-tx {
   flex: 1;
-  font-size: 13px;
+  font-family: var(--font-content);
+  font-size: 12.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -525,6 +526,7 @@ function truncate(str: string, max: number): string {
   font-size: 11px;
   color: var(--text-tertiary);
   flex-shrink: 0;
+  font-family: var(--font-content);
   font-variant-numeric: tabular-nums;
 }
 .qp-no {
