@@ -167,8 +167,15 @@ app.disable('x-powered-by');
 const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT) || 30000; // 默认30秒
 
 app.use((req, res, next) => {
+  // SSE 长连接豁免：/api/ai/chat 是最长 30 分钟的流（aiChat.js upstreamTimer），
+  // 上游长思考/工具间隙 30s 无输出属正常；此前无豁免会被 req.destroy() 掐断，
+  // 前端读到干净 done 走正常结束 —— "卡一会儿自己断掉、无错误"即来自此处。
+  // 心跳（aiChat.js SSE :ping 15s）会持续喂饱 socket，此处豁免是第二道保险。
+  const url = req.originalUrl || req.url || '';
+  const isAiChatStream = url.includes('/api/ai/chat');
   // 设置请求超时
   req.setTimeout(REQUEST_TIMEOUT, () => {
+    if (isAiChatStream) return;
     if (!res.headersSent) {
       logger.warn('Request timeout', {
         path: req.path,
