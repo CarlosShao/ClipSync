@@ -125,6 +125,7 @@ const levels = {
     'datetime_now',
     'calculator',
     'web_fetch',
+    'web_search',
   ],
   L2: [
     // 管理级工具（L1 常规能力收敛后 L2 仅保留真正的管理/破坏性动作）

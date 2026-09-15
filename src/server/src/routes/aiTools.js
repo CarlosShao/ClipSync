@@ -23,6 +23,7 @@ import { ocrClipById } from '../utils/aiOcr.js'
 import { getVersionHistory, restoreVersion } from '../utils/versionManager.js'
 import { getSlowQueries, getPoolStatus } from '../utils/query-monitor.js'
 import { safeUpstreamFetch } from '../utils/aiProviders.js'
+import { searchWeb } from '../utils/searchProviders.js'
 
 const router = Router()
 
@@ -1594,6 +1595,21 @@ export const TOOLS = [
               min_time: { type: 'number', description: '最小执行时间（毫秒），默认1000' }
             },
             required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'web_search',
+          description: '联网搜索（标题+链接+摘要）。不知道网址、需要最新知识（价格/版本/报错/新闻）时先调它搜出链接，再用 web_fetch 抓正文。搜索源与 Key 走用户 AI 设置（未配则走管理台全局，仍未配则 AnySearch 匿名额度）。',
+          parameters: {
+            type: 'object',
+            properties: {
+              query: { type: 'string', description: '搜索关键词' },
+              count: { type: 'number', description: '返回条数，默认 5，最大 10' }
+            },
+            required: ['query']
           }
         }
       },
@@ -4616,6 +4632,74 @@ async function executeToolInner(toolName, args, userId, role) {
         const minT = Math.max(0, parseInt(min_time, 10) || 1000)
         const [slowQueries, poolStatus] = await Promise.all([getSlowQueries(lim, minT), getPoolStatus()])
         return { slowQueries, poolStatus, limit: lim, minTimeMs: minT }
+      }
+
+      case 'web_search': {
+        // 联网搜索：配置优先级 用户 ai_settings > 管理台 system_configs 全局 > AnySearch 匿名。
+        // ai_settings 列可能尚不存在（迁移未跑）→ 查库失败时降级全局/匿名，绝不抛错中断对话。
+        const { query, count } = args
+        if (typeof query !== 'string' || !query.trim()) {
+          return { error: 'QUERY_REQUIRED', code: 'QUERY_REQUIRED' }
+        }
+        let provider = ''
+        let apiKeyEnc = ''
+        let baseUrl = ''
+        try {
+          const srow = await pool.query(
+            'SELECT search_provider, search_api_key_encrypted, search_base_url FROM ai_settings WHERE user_id = $1',
+            [userId],
+          )
+          const s = srow.rows[0]
+          if (s) {
+            provider = s.search_provider || ''
+            apiKeyEnc = s.search_api_key_encrypted || ''
+            baseUrl = s.search_base_url || ''
+          }
+        } catch {
+          /* 列不存在/表不存在：降级走全局配置 */
+        }
+        let apiKey = ''
+        if (apiKeyEnc) {
+          try {
+            apiKey = decrypt(apiKeyEnc) || ''
+          } catch {
+            apiKey = ''
+          }
+        }
+        if (!provider) {
+          try {
+            const grow = await pool.query(
+              `SELECT config_key, config_value FROM system_configs
+               WHERE config_key IN ('ai_search_provider', 'ai_search_api_key_encrypted', 'ai_search_base_url')`,
+            )
+            const gmap = {}
+            for (const r of grow.rows) gmap[r.config_key] = r.config_value
+            const gv = (k) => {
+              const v = gmap[k]
+              if (v == null) return ''
+              if (typeof v === 'string') return v
+              try {
+                const parsed = typeof v === 'object' ? v : JSON.parse(String(v))
+                return typeof parsed === 'string' ? parsed : (parsed?.value ?? String(v))
+              } catch {
+                return String(v)
+              }
+            }
+            provider = gv('ai_search_provider')
+            baseUrl = baseUrl || gv('ai_search_base_url')
+            const gEnc = gv('ai_search_api_key_encrypted')
+            if (!apiKey && gEnc) {
+              try {
+                apiKey = decrypt(gEnc) || ''
+              } catch {
+                apiKey = ''
+              }
+            }
+          } catch {
+            /* system_configs 不可读：降级匿名 */
+          }
+        }
+        return await searchWeb(provider, query.trim().slice(0, 500), { apiKey, baseUrl, count, userId })
       }
 
       case 'datetime_now': {
