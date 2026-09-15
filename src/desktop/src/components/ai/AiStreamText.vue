@@ -170,7 +170,12 @@ watch(
   () => props.done,
   (done) => {
     if (done) {
-      // 终态：取消挂起追赶并立即最终刷新
+      // 终态：若追赶播出中，让它播完再全量（每轮仅 100ms，拖不久），
+      // 避免"追一半突然跳全量"的视觉断裂；无追赶则立即最终刷新。
+      if (catchupTarget !== null) {
+        scheduleCatchupNext()
+        return
+      }
       cancelScheduled()
       catchupTarget = null
       doRender()

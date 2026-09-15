@@ -69,7 +69,7 @@ export function useAiChat() {
   const isStreaming = ref(false)
   // 流健康检查：记录最后一次活动时间，超时强制重置 isStreaming
   const streamLastActivityAt = ref(0)
-  const STREAM_HEALTH_TIMEOUT = 120_000 // 120秒无活动则视为卡死
+  const STREAM_HEALTH_TIMEOUT = 30_000 // 30秒无活动则视为卡死（与注释/日志一致；此前误写 120s）
   const error = ref('')
   // 上下文用量（token 计数，由后端 usage 事件下发；保留最近一次调用，代表当前上下文占用）
   const contextUsage = ref<ContextUsage | null>(null)
@@ -307,6 +307,8 @@ export function useAiChat() {
         isStreaming.value = false
         abortCtrl.value?.abort()
       } else {
+        // 流式进行中拒绝新发送 —— 必须可见，否则用户看到的是"点击发送毫无反应"
+        error.value = 'ai_streaming_busy'
         return
       }
     }
@@ -433,23 +435,26 @@ export function useAiChat() {
       if (!slot) return false
       return Date.now() - slot.lastThinkingAt < 1200
     }
-    // 缓冲上限：思考活跃期正文也不再无限积压 —— 超过即先释放一批，
-    // 使长思考期间的正文分段流出（逐段打字机），而不是最后思考结束时一次性倾泻。
+    // 缓冲上限：思考活跃期正文也不再无限积压 —— 真分段释放：超过上限只放出
+    // 超出部分、保留上限量继续缓冲（而不是阈值一到整包全倒），使长思考期间的
+    // 正文分段流出（逐段打字机），而不是最后思考结束时一次性倾泻。
     const TEXT_BUFFER_CAP = 400
     // 把 text 增量追加到 bucket.content；若思考仍在活跃则先存 buffer 挂定时释放
     function appendTextDelta(bucket: any, delta: string) {
       if (!delta) return
       const slot = getOrCreateSlot(bucket)
       if (isThinkingStillLive(bucket)) {
-        // 思考仍在活跃输出 → 先缓冲，等静默期后再释放；但缓冲超上限就分段先倒一批
+        // 思考仍在活跃输出 → 先缓冲，等静默期后再释放；超上限则分段先放一批
         //（思考 token 不停到达时会反复取消静默定时器，没有上限正文会一直憋到 onDone 一次性砸屏）
         slot.buffer += delta
         if (slot.buffer.length >= TEXT_BUFFER_CAP) {
-          if (bucket.thinkingActive !== false) {
-            bucket.thinkingActive = false
-            sealThinkingSegment(bucket)
-          }
-          flushTextBuffer(bucket)
+          // 真分段：只释放超出上限的部分，保留 CAP 长度继续缓冲 ——
+          // 下游 AiStreamText 每次只看到 ≤ 数百字符的增量，走正常节流渲染而非追赶/全量。
+          // 注意：此处不提前结束思考（不置 thinkingActive=false、不封段），
+          // 思考面板保持"思考中"，真正的结束仍由静默定时器/工具调用/onDone 判定。
+          const release = slot.buffer.slice(0, slot.buffer.length - TEXT_BUFFER_CAP)
+          ;(bucket as any).content = (bucket.content || '') + release
+          slot.buffer = slot.buffer.slice(release.length)
         } else if (slot.flushTimer === null) {
           slot.flushTimer = window.setTimeout(() => {
             slot.flushTimer = null
