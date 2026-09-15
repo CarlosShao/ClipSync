@@ -115,8 +115,8 @@ async function loadAllSettings() {
 
 // ===== 联网搜索源（web_search 工具路由；key 加密存、不回显）=====
 const SEARCH_PROVIDER_OPTIONS = [
-  { value: 'anysearch', label: 'AnySearch（每天 2000 次免费）' },
-  { value: 'bocha', label: '博查 Bocha（国产）' },
+  { value: 'anysearch', label: 'AnySearch' },
+  { value: 'bocha', label: '博查 Bocha' },
   { value: 'brave', label: 'Brave Search' },
   { value: 'tavily', label: 'Tavily' },
   { value: 'searxng', label: '自建 SearXNG' },
