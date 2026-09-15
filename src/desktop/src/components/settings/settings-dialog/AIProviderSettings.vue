@@ -1230,7 +1230,18 @@ onMounted(() => {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface, transparent);
-  overflow: hidden;
+  /* 下拉弹层必须能溢出卡片：hidden 会把 CustomSelect 的菜单在卡片边缘截断
+     （圆角改由首/末行收角保证，见下方 .ai-pref-row:first/last-child 规则） */
+  overflow: visible;
+}
+/* 卡片无 overflow:hidden 后，首末行的背景收圆角，避免方形背景穿帮 */
+.ai-prefs-card > .ai-pref-row:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.ai-prefs-card > .ai-pref-row:last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
 }
 .ai-pref-row {
   display: flex;
