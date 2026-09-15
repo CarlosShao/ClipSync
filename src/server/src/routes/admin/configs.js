@@ -93,6 +93,24 @@ const CONFIG_CATALOG = [
     consumer: 'src/server/src/utils/aiRuntimeConfig.js（resolveUserProvider 兜底路由，aiChat.js 各端点消费）',
   },
   {
+    key: 'ai_search_provider',
+    name: '全局联网搜索源',
+    description: '用户未配搜索源时的全局兜底（anysearch / bocha / brave / tavily / searxng，空=未配置）',
+    consumer: 'src/server/src/routes/aiTools.js（web_search 执行优先级第二级，用户 ai_settings 优先）',
+  },
+  {
+    key: 'ai_search_api_key_encrypted',
+    name: '全局搜索 API Key',
+    description: '全局搜索源 Key（加密存储，SearXNG 自建源不需要；用户已配 key 时优先用用户的）',
+    consumer: 'src/server/src/routes/aiTools.js（web_search 执行，decrypt 后透传搜索源）',
+  },
+  {
+    key: 'ai_search_base_url',
+    name: '自建搜索地址',
+    description: '自建 SearXNG 公网地址（仅 searxng 源需要，如 https://search.example.com）',
+    consumer: 'src/server/src/routes/aiTools.js（web_search 执行，searxng 适配器）',
+  },
+  {
     key: 'session_timeout_minutes',
     name: '管理台会话超时（分钟）',
     description: '管理员无操作自动登出时间',
@@ -339,7 +357,8 @@ function mapConfigRow(meta, row) {
   let value = jsonbValueToString(row?.config_value);
   // CO-30：smtp_pass 加密存储，任何读取路径（GET 列表 / PATCH 回显）只暴露配置状态，不回传密文
   // A4：sms_access_key_secret 同口径（短信 AccessKeySecret 亦为密文）
-  if (meta.key === 'smtp_pass' || meta.key === 'sms_access_key_secret') {
+  // 搜索全局 Key 同口径（加密存储，读取只暴露状态）
+  if (meta.key === 'smtp_pass' || meta.key === 'sms_access_key_secret' || meta.key === 'ai_search_api_key_encrypted') {
     value = value ? '已配置' : '未配置';
   }
   return {
@@ -422,8 +441,9 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
 
     // CO-30：smtp_pass 落库前加密（AES-256-GCM），其余键原样写入
     // A4：sms_access_key_secret 同口径加密（sms.js 发送前 decryptField 解密）
+    // 搜索全局 Key 同口径加密（web_search 执行前 decrypt 解密；与 aiSettings 用户 key 同加密体系）
     const valueToStore =
-      key === 'smtp_pass' || key === 'sms_access_key_secret'
+      key === 'smtp_pass' || key === 'sms_access_key_secret' || key === 'ai_search_api_key_encrypted'
         ? encryptField(valueStr)
         : valueStr;
 

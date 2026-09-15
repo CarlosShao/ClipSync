@@ -60,6 +60,7 @@ import sharedLinksRoutes from './routes/sharedLinks.js';
 import searchHistoryRoutes from './routes/searchHistory.js';
 import aiProvidersRoutes from './routes/aiProviders.js';
 import aiChatRoutes from './routes/aiChat.js';
+import aiInlineRoutes from './routes/aiInline.js';
 import aiConversationsRoutes from './routes/aiConversations.js';
 import workflowRulesRoutes from './routes/workflowRules.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
@@ -166,8 +167,15 @@ app.disable('x-powered-by');
 const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT) || 30000; // 默认30秒
 
 app.use((req, res, next) => {
+  // SSE 长连接豁免：/api/ai/chat 是最长 30 分钟的流（aiChat.js upstreamTimer），
+  // 上游长思考/工具间隙 30s 无输出属正常；此前无豁免会被 req.destroy() 掐断，
+  // 前端读到干净 done 走正常结束 —— "卡一会儿自己断掉、无错误"即来自此处。
+  // 心跳（aiChat.js SSE :ping 15s）会持续喂饱 socket，此处豁免是第二道保险。
+  const url = req.originalUrl || req.url || '';
+  const isAiChatStream = url.includes('/api/ai/chat');
   // 设置请求超时
   req.setTimeout(REQUEST_TIMEOUT, () => {
+    if (isAiChatStream) return;
     if (!res.headersSent) {
       logger.warn('Request timeout', {
         path: req.path,
@@ -478,6 +486,12 @@ app.use('/api/ai/conversations', authenticateToken, apiLimiter, csrfProtection, 
   req.userId = req.user.userId;
   next();
 }, aiConversationsRoutes);
+
+// 内联 AI（单轮非会话非流式）：桌面页内结果卡直接调用，不进侧栏消息流
+app.use('/api/ai/inline', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiInlineRoutes);
 
 // 工作流规则引擎路由（任务 #237）：「当…时自动…」
 app.use('/api/workflow-rules', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {

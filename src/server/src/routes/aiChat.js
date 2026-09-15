@@ -121,6 +121,33 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const upstreamAbort = new AbortController()
     const upstreamTimer = setTimeout(() => upstreamAbort.abort(), 30 * 60_000)
 
+    // SSE 心跳：上游长思考/工具间隙可能 30s+ 无输出，无心跳会被中间件
+    // 请求超时掐断（req.destroy，前端表现为静默断流）。每 15s 写一条 SSE
+    // 注释帧（以 : 开头，客户端按规范忽略），既保活 socket 也喂饱超时计时。
+    // 有真实增量时重置计时，避免心跳与内容挤在一起。
+    let heartbeatTimer = null
+    const resetHeartbeat = () => {
+      if (heartbeatTimer) clearTimeout(heartbeatTimer)
+      heartbeatTimer = setTimeout(() => {
+        if (!res.writableEnded) {
+          try {
+            res.write(': ping\n\n')
+            if (typeof res.flush === 'function') res.flush()
+          } catch {
+            /* socket 已死，下次 sendDelta/safeFinish 会收敛 */
+          }
+        }
+        resetHeartbeat()
+      }, 15_000)
+    }
+    resetHeartbeat()
+    const stopHeartbeat = () => {
+      if (heartbeatTimer) {
+        clearTimeout(heartbeatTimer)
+        heartbeatTimer = null
+      }
+    }
+
     // Agent-C：客户端断开时立刻中止上游生成并清空该用户残留的 pending。
     req.on('close', () => {
       upstreamAbort.abort()
@@ -142,6 +169,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 这直接对应"思考卡在小半程 → 突然一下全出来"的现象：连接中途崩溃后客户端只能延迟 reconcile 状态。
     const safeFinish = () => {
       if (res.writableEnded) return
+      stopHeartbeat()
       // Agent-C：流结束（含正常结束/异常）时清掉该用户残留的待确认破坏性请求，
       // 避免 SSE 已断开仍残留 pending（确认卡片已无发送通道）。
       cancelPendingForUser(req.userId)
@@ -210,6 +238,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
         // 强制 flush：SSE 必须逐块到达客户端，避免服务器缓冲导致“一下子蹦出来”。
         // compression 对 /api/ai/chat 已禁用，flush 可能不存在；存在时立即调用。
         if (typeof res.flush === 'function') res.flush()
+        // 有真实增量 → 心跳计时重置（避免心跳与内容挤在一起）
+        resetHeartbeat()
       } catch (e) {
         logger.warn('[AI] sendDelta write skipped (stream already closed):', e.message)
       }

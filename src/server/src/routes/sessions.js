@@ -14,7 +14,9 @@ const router = Router();
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const sessionId = req.headers['x-session-id'] || req.body?.sessionId;
+    // 当前会话标识：header 优先，其次取 JWT 里携带的 sessionId（auth.js 已写入 req.user.sessionId），
+    // 最后兜底 body。桌面端不发 x-session-id，若只看 header 会导致 isCurrent 恒 false（可能误踢自己）。
+    const sessionId = req.headers['x-session-id'] || req.user?.sessionId || req.body?.sessionId;
 
     const result = await pool.query(`
       SELECT
