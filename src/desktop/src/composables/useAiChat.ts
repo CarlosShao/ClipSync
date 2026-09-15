@@ -423,14 +423,24 @@ export function useAiChat() {
       if (!slot) return false
       return Date.now() - slot.lastThinkingAt < 1200
     }
+    // 缓冲上限：思考活跃期正文也不再无限积压 —— 超过即先释放一批，
+    // 使长思考期间的正文分段流出（逐段打字机），而不是最后思考结束时一次性倾泻。
+    const TEXT_BUFFER_CAP = 400
     // 把 text 增量追加到 bucket.content；若思考仍在活跃则先存 buffer 挂定时释放
     function appendTextDelta(bucket: any, delta: string) {
       if (!delta) return
       const slot = getOrCreateSlot(bucket)
       if (isThinkingStillLive(bucket)) {
-        // 思考仍在活跃输出 → 先缓冲，等静默期后再一次性显示
+        // 思考仍在活跃输出 → 先缓冲，等静默期后再释放；但缓冲超上限就分段先倒一批
+        //（思考 token 不停到达时会反复取消静默定时器，没有上限正文会一直憋到 onDone 一次性砸屏）
         slot.buffer += delta
-        if (slot.flushTimer === null) {
+        if (slot.buffer.length >= TEXT_BUFFER_CAP) {
+          if (bucket.thinkingActive !== false) {
+            bucket.thinkingActive = false
+            sealThinkingSegment(bucket)
+          }
+          flushTextBuffer(bucket)
+        } else if (slot.flushTimer === null) {
           slot.flushTimer = window.setTimeout(() => {
             slot.flushTimer = null
             // 思考静默期结束且无新思考 token：标记思考结束、封段并释放正文

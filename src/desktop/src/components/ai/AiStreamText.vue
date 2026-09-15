@@ -14,12 +14,19 @@ import { sanitizeHtml } from '@/utils/html'
  * 渲染动作通过 requestAnimationFrame 推迟到下一帧执行，setTimeout 只负责补齐节流
  * 间隔，两者都不在 SSE 回调线程内同步 parse，避免阻塞主线程。
  *
- * 终态：done 置 true 后取消挂起的节流任务并立即做最终刷新，保证结尾 Markdown 完整。
+ * 防跳变：单次新增 ≥ 追赶阈值（CATCHUP_CHARS）的大块增量不再一帧全渲，
+ * 而是每次只追 600 字符、逐节流轮分段补齐 —— 视觉上是分段爬出来而不是整块砸屏。
+ * （典型来源：思考期缓冲在 onDone 一次性释放、切换会话、历史消息加载）
+ *
+ * 终态：done 置 true 后取消挂起的节流任务并立即做最终刷新，保证结尾 Markdown 完整.
  */
 const props = withDefaults(defineProps<{ text: string; done?: boolean }>(), { done: false })
 
 const RENDER_INTERVAL_MS = 100
 const CHUNK_FLUSH_CHARS = 200
+// 大跳变追赶：单次新增超过此值时，每轮只追 CATCHUP_STEP 字符
+const CATCHUP_CHARS = 600
+const CATCHUP_STEP = 600
 
 const marked = new Marked({ gfm: true, breaks: false })
 
@@ -28,6 +35,8 @@ let lastRenderAt = 0
 let lastRenderedLen = 0
 let flushTimer: number | undefined
 let rafId: number | undefined
+/** 追赶播出中：当前已渲染到 props.text 的哪个位置（null = 未追赶，直接全量） */
+let catchupTarget: number | null = null
 
 function fixIncompleteMarkdown(raw: string): string {
   if (!raw) return ''
@@ -53,20 +62,27 @@ function fixIncompleteMarkdown(raw: string): string {
   return text
 }
 
-function doRender() {
+function renderSlice(upto: number | null) {
   const raw = props.text || ''
-  lastRenderAt = Date.now()
-  lastRenderedLen = raw.length
-  if (!raw) {
+  const slice = upto === null ? raw : raw.slice(0, upto)
+  if (!slice) {
     html.value = ''
     return
   }
-  const prepared = fixIncompleteMarkdown(raw)
+  const prepared = fixIncompleteMarkdown(slice)
   try {
     html.value = sanitizeHtml(marked.parse(prepared) as string)
   } catch {
     html.value = sanitizeHtml(prepared)
   }
+}
+
+function doRender() {
+  const raw = props.text || ''
+  lastRenderAt = Date.now()
+  // 已渲染长度 = 实际渲染到的切片位置（追赶中可能小于全文），作为下一轮增量基准
+  lastRenderedLen = catchupTarget === null ? raw.length : Math.min(catchupTarget, raw.length)
+  renderSlice(catchupTarget)
 }
 
 function cancelScheduled() {
@@ -80,10 +96,39 @@ function cancelScheduled() {
   }
 }
 
+// 追赶进度：本轮渲染后若仍未追平，继续排下一轮
+function scheduleCatchupNext() {
+  if (catchupTarget === null) return
+  if (catchupTarget >= (props.text || '').length) {
+    catchupTarget = null
+    return
+  }
+  flushTimer = window.setTimeout(() => {
+    flushTimer = undefined
+    catchupTarget = Math.min((catchupTarget ?? 0) + CATCHUP_STEP, (props.text || '').length)
+    rafId = requestAnimationFrame(() => {
+      rafId = undefined
+      doRender()
+      scheduleCatchupNext()
+    })
+  }, RENDER_INTERVAL_MS)
+}
+
 function scheduleFlush() {
   if (rafId !== undefined || flushTimer !== undefined) return
+  const pending = props.text.length - lastRenderedLen
+  // 大跳变：新增 ≥600 字符 → 进入追赶播出（每轮只追 600），避免整块砸屏
+  if (pending >= CATCHUP_CHARS && catchupTarget === null) {
+    catchupTarget = lastRenderedLen + CATCHUP_STEP
+    rafId = requestAnimationFrame(() => {
+      rafId = undefined
+      doRender()
+      scheduleCatchupNext()
+    })
+    return
+  }
   // 字符突发：新累积 ≥200 字符 → 下一帧立即刷新（优先于时间阈值）
-  if (props.text.length - lastRenderedLen >= CHUNK_FLUSH_CHARS) {
+  if (pending >= CHUNK_FLUSH_CHARS) {
     rafId = requestAnimationFrame(() => {
       rafId = undefined
       doRender()
@@ -113,6 +158,7 @@ watch(
     // 内容变短 → 消息被整体替换（如切换会话复用组件）：立即全量重渲，避免残留旧内容
     if (now.length < lastRenderedLen) {
       cancelScheduled()
+      catchupTarget = null
       doRender()
       return
     }
@@ -124,8 +170,9 @@ watch(
   () => props.done,
   (done) => {
     if (done) {
-      // 终态：取消挂起任务并立即最终刷新
+      // 终态：取消挂起追赶并立即最终刷新
       cancelScheduled()
+      catchupTarget = null
       doRender()
     }
   },
