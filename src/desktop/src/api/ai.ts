@@ -234,6 +234,22 @@ export interface AiSettings {
   memoryEnabled: boolean
   // 全局自定义系统提示词：追加到角色/产品知识之后（服务端读 ai_settings，前端持久化）
   customSystemPrompt?: string
+  // 联网搜索源配置（服务端读 ai_settings；searchApiKey 写 '__keep__' 表示不修改，null/'' 清空）
+  searchProvider?: string
+  searchBaseUrl?: string
+  searchApiKey?: string | null
+  searchHasKey?: boolean
+}
+
+export interface SearchTestResult {
+  ok: boolean
+  provider: string
+  firstTitle: string
+  count: number
+}
+
+export function testSearchConfig(input: { provider: string; apiKey?: string; baseUrl?: string }) {
+  return api<SearchTestResult>('POST', '/api/ai/settings/search-test', input)
 }
 
 // ===== CRUD =====
