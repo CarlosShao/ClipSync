@@ -22,6 +22,7 @@ import { TEXT_PREVIEW_EXTENSIONS } from './media.js'
 import { ocrClipById } from '../utils/aiOcr.js'
 import { getVersionHistory, restoreVersion } from '../utils/versionManager.js'
 import { getSlowQueries, getPoolStatus } from '../utils/query-monitor.js'
+import { safeUpstreamFetch } from '../utils/aiProviders.js'
 
 const router = Router()
 
@@ -1595,6 +1596,49 @@ export const TOOLS = [
             required: []
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'datetime_now',
+          description: '获取当前日期时间（含 ISO、本地显示、星期、时区偏移）。回答"今天几号/周几/现在几点"、总结时间范围、去重时间判断时调用，不要瞎猜日期。',
+          parameters: {
+            type: 'object',
+            properties: {
+              timezone: { type: 'string', description: '可选：IANA 时区（如 Asia/Shanghai），默认服务端时区' }
+            },
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'calculator',
+          description: '精确数值计算（四则运算、百分比、括号）。涉及金额、统计、用量换算时调用，不要心算。只支持数字与 + - * / % ( ) 及小数点，不执行任意代码。',
+          parameters: {
+            type: 'object',
+            properties: {
+              expression: { type: 'string', description: '计算表达式，如 "(1200 + 340) * 0.15 / 100"' }
+            },
+            required: ['expression']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'web_fetch',
+          description: '抓取公网 URL 的正文并转纯文本（自动去标签、截断）。查官方文档/公告/报错说明时调用。仅允许公网 http/https，内网与元数据地址会被拒绝；超长自动截断。',
+          parameters: {
+            type: 'object',
+            properties: {
+              url: { type: 'string', description: '要抓取的完整 URL（含 http(s)://）' },
+              max_chars: { type: 'number', description: '返回正文最大字符数，默认 8000，最大 20000' }
+            },
+            required: ['url']
+          }
+        }
       }
     ]
 
@@ -1615,6 +1659,9 @@ export const WRITE_TOOL_NAMES = new Set([
   'create_shared_link',
   'batch_favorite',
   'batch_delete',
+  // 登记漂移修复：两者语义为写（移动条目归属 / 按类型整理），此前漏登记会被误判只读下发给并行子代理
+  'batch_move_to_collection',
+  'organize_by_type',
   'destroy_clips',
   'ocr_clip_image',
   // RBAC 管理域写类（feature/ai-rbac-backend）
@@ -4569,6 +4616,126 @@ async function executeToolInner(toolName, args, userId, role) {
         const minT = Math.max(0, parseInt(min_time, 10) || 1000)
         const [slowQueries, poolStatus] = await Promise.all([getSlowQueries(lim, minT), getPoolStatus()])
         return { slowQueries, poolStatus, limit: lim, minTimeMs: minT }
+      }
+
+      case 'datetime_now': {
+        // L1 常规只读：服务端时间 + 可选 IANA 时区换算（Intl 校验时区合法性）
+        const { timezone } = args
+        const now = new Date()
+        let tz = timezone && typeof timezone === 'string' ? timezone.trim().slice(0, 60) : null
+        let local = null
+        if (tz) {
+          try {
+            const fmt = new Intl.DateTimeFormat('zh-CN', {
+              timeZone: tz,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false,
+              weekday: 'long',
+            })
+            local = `${fmt.format(now)} (${tz})`
+          } catch {
+            return { error: 'INVALID_TIMEZONE', code: 'INVALID_TIMEZONE', message: `无效的时区：${tz}` }
+          }
+        }
+        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+        return {
+          iso: now.toISOString(),
+          timestamp: now.getTime(),
+          weekday: weekdays[now.getDay()],
+          timezoneOffsetMinutes: -now.getTimezoneOffset(),
+          local,
+        }
+      }
+
+      case 'calculator': {
+        // L1 常规只读：白名单表达式求值（数字 + - * / % ( ) . 与空白），禁用 eval/Function
+        const { expression } = args
+        if (typeof expression !== 'string' || !expression.trim()) {
+          return { error: 'EXPRESSION_REQUIRED', code: 'EXPRESSION_REQUIRED' }
+        }
+        const expr = expression.trim().slice(0, 200)
+        // 百分比糖：数字% → (数字/100)，仅处理"数字紧跟 %" 的安全形态
+        const normalized = expr.replace(/(\d+(?:\.\d+)?)\s*%/g, '($1/100)')
+        if (!/^[\d+\-*/%().\s]+$/.test(normalized)) {
+          return { error: 'INVALID_EXPRESSION', code: 'INVALID_EXPRESSION', message: '仅支持数字与 + - * / % ( ) . 运算符' }
+        }
+        try {
+          // Function 构造器 + 严格白名单校验（上已校验字符集，无标识符可引用外部作用域）
+          const value = Function(`"use strict"; return (${normalized})`)()
+          if (typeof value !== 'number' || !Number.isFinite(value)) {
+            return { error: 'NON_FINITE_RESULT', code: 'NON_FINITE_RESULT', message: '计算结果非有限数值（如除零）' }
+          }
+          return { expression: expr, result: value }
+        } catch {
+          return { error: 'EVAL_FAILED', code: 'EVAL_FAILED', message: '表达式无法求值，请检查括号与运算符' }
+        }
+      }
+
+      case 'web_fetch': {
+        // L1 常规只读：公网 URL 正文抓取。SSRF 防护复用 safeUpstreamFetch
+        //（协议/内网/元数据 차단 + DNS 复检 + 手动重定向），此处再加逐跳重定向
+        // 校验 + 体积上限 + Content-Type 白名单。
+        const { url, max_chars = 8000 } = args
+        if (typeof url !== 'string' || !url.trim()) {
+          return { error: 'URL_REQUIRED', code: 'URL_REQUIRED' }
+        }
+        const cap = Math.min(20000, Math.max(1000, parseInt(max_chars, 10) || 8000))
+        let current = url.trim().slice(0, 2000)
+        let res = null
+        // 手动跟随重定向 ≤3 跳，每跳重走 SSRF 校验（safeUpstreamFetch 内含 assertSafeUpstreamUrl）
+        for (let hop = 0; hop <= 3; hop++) {
+          try {
+            res = await safeUpstreamFetch(current, {}, { timeoutMs: 12000 })
+          } catch (e) {
+            return { error: 'FETCH_BLOCKED', code: 'FETCH_BLOCKED', message: String(e?.message || e) }
+          }
+          if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+            const next = new URL(res.headers.get('location'), current).toString()
+            await res.arrayBuffer().catch(() => null)
+            current = next
+            res = null
+            continue
+          }
+          break
+        }
+        if (!res) return { error: 'TOO_MANY_REDIRECTS', code: 'TOO_MANY_REDIRECTS', message: '重定向超过 3 跳，已拒绝' }
+        if (!res.ok) {
+          const code = res.status
+          await res.arrayBuffer().catch(() => null)
+          return { error: 'UPSTREAM_STATUS', code: 'UPSTREAM_STATUS', status: code, message: `对方返回 HTTP ${code}` }
+        }
+        const contentType = (res.headers.get('content-type') || '').toLowerCase()
+        if (contentType && !/text\/html|application\/xhtml|text\/plain|application\/json|application\/xml|text\/xml/.test(contentType)) {
+          await res.arrayBuffer().catch(() => null)
+          return { error: 'UNSUPPORTED_TYPE', code: 'UNSUPPORTED_TYPE', contentType, message: '仅支持 HTML/纯文本类页面' }
+        }
+        const buf = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0)))
+        if (buf.length > 2 * 1024 * 1024) {
+          return { error: 'TOO_LARGE', code: 'TOO_LARGE', message: '页面超过 2MB，已拒绝' }
+        }
+        let text = buf.toString('utf8')
+        // 简易去标签：去 script/style → 标签换行 → 去剩余标签 → 解常见实体 → 压空行
+        text = text
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<\/(p|div|br|li|tr|h[1-6])>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#0?39;/g, "'")
+          .replace(/[ \t]+/g, ' ')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim()
+        const truncated = text.length > cap
+        return { url: current, contentType, length: text.length, truncated, text: truncated ? text.slice(0, cap) : text }
       }
 
       default:

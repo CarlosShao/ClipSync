@@ -121,6 +121,10 @@ const levels = {
     'cancel_subscription',
     'resume_subscription',
     'submit_survey',
+    // 基础工具（联网/时间/计算，L1 常规只读，无确认门控）
+    'datetime_now',
+    'calculator',
+    'web_fetch',
   ],
   L2: [
     // 管理级工具（L1 常规能力收敛后 L2 仅保留真正的管理/破坏性动作）
