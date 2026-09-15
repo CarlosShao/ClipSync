@@ -797,17 +797,31 @@ onMounted(() => {
             <div class="ai-pref-hint">{{ t('ai_search_key_h', '加密存储，永不回显；留空=不修改。') }}</div>
           </div>
           <div class="ai-pref-control ai-pref-control--wide">
-            <Input
-              v-model="searchApiKeyInput"
-              type="password"
-              autocomplete="off"
-              :placeholder="searchHasKey ? t('ai_api_key_keep', '留空表示不修改') : t('ai_api_key_ph', '输入 Key')"
-            />
-            <div class="ai-search-key-acts">
-              <Button size="sm" variant="outline" :disabled="!searchApiKeyInput.trim()" @click="saveSearchApiKey">
+            <div class="ai-search-key-line">
+              <Input
+                v-model="searchApiKeyInput"
+                type="password"
+                autocomplete="off"
+                class="ai-search-key-input"
+                :placeholder="searchHasKey ? t('ai_api_key_keep', '留空表示不修改') : t('ai_api_key_ph', '输入 Key')"
+                @keyup.enter="saveSearchApiKey"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="!searchApiKeyInput.trim()"
+                @click="saveSearchApiKey"
+              >
                 {{ t('ai_save', '保存') }}
               </Button>
-              <Button v-if="searchHasKey" size="sm" variant="ghost" @click="clearSearchApiKey">
+              <Button
+                v-if="searchHasKey"
+                size="sm"
+                variant="ghost"
+                class="shrink-0 whitespace-nowrap"
+                @click="clearSearchApiKey"
+              >
                 {{ t('ai_search_key_clear', '清除') }}
               </Button>
             </div>
@@ -1288,16 +1302,18 @@ onMounted(() => {
 .ai-pref-control .custom-select {
   width: 100%;
 }
-/* 联网搜索 key/地址行：输入框 + 操作按钮需要更宽 */
+/* 联网搜索 key 行：输入框 + 保存/清除同一行；地址行沿用纵向 */
 .ai-pref-control--wide {
-  width: 220px;
+  width: 264px;
+}
+.ai-search-key-line {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
 }
-.ai-search-key-acts {
-  display: flex;
-  gap: 8px;
+.ai-search-key-input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ===== 全局系统提示词 ===== */
