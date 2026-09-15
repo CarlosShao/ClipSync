@@ -331,6 +331,16 @@ export function useAiChat() {
     if (!conv.currentConversationId.value) {
       const created = await newConversation({ mode: options.mode, thinkingEnabled: options.thinking })
       if (!created) {
+        // 创建失败也不静默吞掉用户输入：先把 user 消息落进列表（用户至少看到"已发出"），
+        // 再把失败摆到顶部错误条 —— 此前此处直接 return，用户看到的是"毫无反应"。
+        const tFailUser = new Date().toISOString()
+        messages.value.push({
+          role: 'user',
+          content: options.quickAction ? `${USER_INPUT_OPEN}${text}${USER_INPUT_CLOSE}` : text,
+          images: options.images,
+          imageHash: options.images?.[0]?.hash,
+          createdAt: tFailUser,
+        })
         error.value = 'ai_create_conversation_failed'
         isStreaming.value = false
         return
