@@ -1741,6 +1741,8 @@ function cancelEditTags() {
           :title="tf('fav_ai_summarize_col', '总结这个合集')"
           :status="summarizeAi.status.value"
           :text="summarizeAi.text.value"
+          :display-text="summarizeAi.displayText.value"
+          :streaming="summarizeAi.streaming.value"
           :error="summarizeAi.error.value"
           closable
           @close="closeSummarize"

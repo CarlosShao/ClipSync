@@ -519,6 +519,8 @@ onUnmounted(() => {
         :title="tf('inline_ai_summarize_today', '总结今日动态')"
         :status="todaySummary.status.value"
         :text="todaySummary.text.value"
+        :display-text="todaySummary.displayText.value"
+        :streaming="todaySummary.streaming.value"
         :error="todaySummary.error.value"
         closable
         @close="closeTodaySummary"

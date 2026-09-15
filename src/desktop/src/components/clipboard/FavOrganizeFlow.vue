@@ -10,6 +10,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useUser } from '@/composables/useUser'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import AiStreamText from '@/components/ai/AiStreamText.vue'
 import { createFavoriteCollection, addCollectionItem, createTag, setItemTags } from '@/api/client'
 import { Sparkles, X, RefreshCw, Folder, Tag, Copy, Check, Info } from 'lucide-vue-next'
 import type { ClipItem } from '@/composables/useClipboard'
@@ -301,10 +302,10 @@ async function applyPlan() {
       </button>
     </div>
 
-    <!-- JSON 解析失败：降级为纯文本预览（不提供采纳按钮，不白屏） -->
+    <!-- JSON 解析失败：降级为 Markdown 预览（不提供采纳按钮，不白屏） -->
     <template v-else-if="status === 'done' && parseFailed">
       <div class="fof-notice">{{ tf('inline_ai_org_parse_fail', 'AI 返回格式无法解析，仅显示原文') }}</div>
-      <div class="fof-plaintext">{{ text }}</div>
+      <div class="fof-plaintext markdown-body"><AiStreamText :text="text" :done="true" /></div>
       <div class="fof-acts">
         <button type="button" class="pl-btn pl-btn--sm" @click="copySuggestion">
           <Copy :size="12" /><span>{{ tf('inline_ai_org_copy_list', '复制建议清单') }}</span>
@@ -466,10 +467,91 @@ async function applyPlan() {
   font-size: 12.5px;
   line-height: 1.65;
   color: var(--text-primary);
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 320px;
   overflow-y: auto;
+}
+/* 解析失败降级区的 Markdown 预览排版（与 InlineAiCard 同 token） */
+.fof-plaintext.markdown-body :deep(h1),
+.fof-plaintext.markdown-body :deep(h2),
+.fof-plaintext.markdown-body :deep(h3),
+.fof-plaintext.markdown-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+.fof-plaintext.markdown-body :deep(h1) {
+  font-size: 17px;
+}
+.fof-plaintext.markdown-body :deep(h2) {
+  font-size: 15px;
+}
+.fof-plaintext.markdown-body :deep(h3) {
+  font-size: 13.5px;
+}
+.fof-plaintext.markdown-body :deep(p) {
+  margin: 6px 0;
+}
+.fof-plaintext.markdown-body :deep(ul),
+.fof-plaintext.markdown-body :deep(ol) {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.fof-plaintext.markdown-body :deep(li) {
+  margin: 3px 0;
+}
+.fof-plaintext.markdown-body :deep(code) {
+  background: var(--bg-overlay-l1, var(--bg-hover));
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--accent);
+}
+.fof-plaintext.markdown-body :deep(pre) {
+  background: var(--bg-base-secondary, var(--bg-hover));
+  border: 1px solid var(--border-neutral-l1, var(--border-default));
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.fof-plaintext.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: var(--text-default, var(--text-primary));
+}
+.fof-plaintext.markdown-body :deep(strong) {
+  font-weight: 600;
+}
+.fof-plaintext.markdown-body :deep(a) {
+  color: var(--accent);
+}
+.fof-plaintext.markdown-body :deep(blockquote) {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-overlay-l1, var(--bg-hover));
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+}
+.fof-plaintext.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.fof-plaintext.markdown-body :deep(th),
+.fof-plaintext.markdown-body :deep(td) {
+  padding: 8px 12px;
+  border: 1px solid var(--border-neutral-l1, var(--border-default));
+  text-align: left;
+}
+.fof-plaintext.markdown-body :deep(th) {
+  background: var(--bg-base-secondary, var(--bg-hover));
+  font-weight: 600;
+}
+.fof-plaintext.markdown-body :deep(tr:nth-child(2n)) {
+  background: var(--bg-base-secondary, var(--bg-hover));
 }
 .fof-stage-label {
   padding: 8px 12px 0;

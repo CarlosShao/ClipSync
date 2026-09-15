@@ -146,6 +146,8 @@ async function handleDelete(id: string, name: string) {
         :title="tf('dev_ai_diagnose', 'AI 诊断同步')"
         :status="diagAi.status.value"
         :text="diagAi.text.value"
+        :display-text="diagAi.displayText.value"
+        :streaming="diagAi.streaming.value"
         :error="diagAi.error.value"
         closable
         @close="closeDiagnose"

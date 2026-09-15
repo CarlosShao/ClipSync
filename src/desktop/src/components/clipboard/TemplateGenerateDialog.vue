@@ -12,6 +12,7 @@ import ModalDialog from '@/components/ui/ModalDialog.vue'
 import { Textarea } from '@/components/ui/textarea'
 import Button from '@/components/ui/button/Button.vue'
 import { Sparkles, Loader2, RefreshCw, Save } from 'lucide-vue-next'
+import AiStreamText from '@/components/ai/AiStreamText.vue'
 import type { ClipboardTemplate } from '@/types'
 
 const props = defineProps<{ open: boolean }>()
@@ -189,7 +190,7 @@ watch(
         <div class="tgd-error">
           <span>{{ tf('tpl_ai_gen_parse_fail', 'AI 返回格式无法解析，请调整需求后重新生成') }}</span>
         </div>
-        <div class="tgd-plaintext">{{ text }}</div>
+        <div class="tgd-plaintext markdown-body"><AiStreamText :text="text" :done="true" /></div>
       </template>
 
       <!-- 预览：模板名 + 正文（变量高亮）+ 变量 chip -->
@@ -320,7 +321,6 @@ watch(
   font-size: 12.5px;
   line-height: 1.65;
   color: var(--text-secondary);
-  white-space: pre-wrap;
   word-break: break-word;
   max-height: 160px;
   overflow-y: auto;
@@ -328,6 +328,88 @@ watch(
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-hover);
+}
+/* 解析失败降级区的 Markdown 预览排版（与 InlineAiCard 同 token） */
+.tgd-plaintext.markdown-body :deep(p) {
+  margin: 6px 0;
+}
+.tgd-plaintext.markdown-body :deep(ul),
+.tgd-plaintext.markdown-body :deep(ol) {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.tgd-plaintext.markdown-body :deep(li) {
+  margin: 3px 0;
+}
+.tgd-plaintext.markdown-body :deep(h1),
+.tgd-plaintext.markdown-body :deep(h2),
+.tgd-plaintext.markdown-body :deep(h3),
+.tgd-plaintext.markdown-body :deep(h4) {
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+.tgd-plaintext.markdown-body :deep(h1) {
+  font-size: 17px;
+}
+.tgd-plaintext.markdown-body :deep(h2) {
+  font-size: 15px;
+}
+.tgd-plaintext.markdown-body :deep(h3) {
+  font-size: 13.5px;
+}
+.tgd-plaintext.markdown-body :deep(code) {
+  background: var(--bg-overlay-l1, var(--bg-hover));
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--accent);
+}
+.tgd-plaintext.markdown-body :deep(pre) {
+  background: var(--bg-base-secondary, var(--bg-hover));
+  border: 1px solid var(--border-neutral-l1, var(--border-default));
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.tgd-plaintext.markdown-body :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: var(--text-default, var(--text-primary));
+}
+.tgd-plaintext.markdown-body :deep(strong) {
+  font-weight: 600;
+}
+.tgd-plaintext.markdown-body :deep(a) {
+  color: var(--accent);
+}
+.tgd-plaintext.markdown-body :deep(blockquote) {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-overlay-l1, var(--bg-hover));
+  padding: 8px 14px;
+  border-radius: 6px;
+  margin: 8px 0;
+  color: var(--text-secondary);
+}
+.tgd-plaintext.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.tgd-plaintext.markdown-body :deep(th),
+.tgd-plaintext.markdown-body :deep(td) {
+  padding: 8px 12px;
+  border: 1px solid var(--border-neutral-l1, var(--border-default));
+  text-align: left;
+}
+.tgd-plaintext.markdown-body :deep(th) {
+  background: var(--bg-base-secondary, var(--bg-hover));
+  font-weight: 600;
+}
+.tgd-plaintext.markdown-body :deep(tr:nth-child(2n)) {
+  background: var(--bg-base-secondary, var(--bg-hover));
 }
 .tgd-stage-label {
   font-size: 11px;

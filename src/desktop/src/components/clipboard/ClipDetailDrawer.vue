@@ -305,6 +305,8 @@ function openInBrowser() {
             :title="tf(activeActMeta.i18n, activeActMeta.fallback)"
             :status="drawerAi.status.value"
             :text="drawerAi.text.value"
+            :display-text="drawerAi.displayText.value"
+            :streaming="drawerAi.streaming.value"
             :error="drawerAi.error.value"
             closable
             @close="closeDrawerAi"
