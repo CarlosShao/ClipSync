@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App as AntdApp, Button, Card, InputNumber, Select, Switch, Table, Tag, Typography } from 'antd';
+import { App as AntdApp, Button, Card, Input, InputNumber, Select, Switch, Table, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { aiKeys, getAiProviders, patchAiProvider } from '@/api/ai';
 import type { AdminAiProvider } from '@/api/ai';
@@ -30,6 +30,22 @@ const DEFAULT_PROVIDER_OPTIONS = [
   { value: 'hunyuan', label: 'hunyuan' },
   { value: 'custom', label: 'custom' },
 ];
+
+/** 全局联网搜索源（与后端 utils/searchProviders.SEARCH_PROVIDERS 对齐） */
+const SEARCH_PROVIDER_OPTIONS = [
+  { value: 'anysearch', label: 'AnySearch（每天 2000 次免费）' },
+  { value: 'bocha', label: '博查 Bocha（国产）' },
+  { value: 'brave', label: 'Brave Search' },
+  { value: 'tavily', label: 'Tavily' },
+  { value: 'searxng', label: '自建 SearXNG' },
+];
+
+/** 全局搜索草稿（key 输入框永不回显已存值，留空=不修改） */
+interface SearchDraft {
+  provider: string;
+  apiKey: string;
+  baseUrl: string;
+}
 
 /** 全局参数草稿 */
 interface AiParamDraft {
@@ -73,7 +89,57 @@ export default function AiPage() {
     });
   }, [configsQuery.data]);
 
+  // ---- 全局搜索（ai_search_* 三键，用户未配时的全局兜底）----
+  const searchConfigs = useMemo(
+    () =>
+      (configsQuery.data ?? []).filter((c) =>
+        ['ai_search_provider', 'ai_search_api_key_encrypted', 'ai_search_base_url'].includes(c.key),
+      ),
+    [configsQuery.data],
+  );
+  const [searchDraft, setSearchDraft] = useState<SearchDraft>({ provider: '', apiKey: '', baseUrl: '' });
+  useEffect(() => {
+    if (!configsQuery.data) return;
+    setSearchDraft({
+      // 后端对加密 key 只回"已配置/未配置"，下拉与地址回显真实值
+      provider: configsQuery.data.find((c) => c.key === 'ai_search_provider')?.value ?? '',
+      apiKey: '',
+      baseUrl: configsQuery.data.find((c) => c.key === 'ai_search_base_url')?.value ?? '',
+    });
+  }, [configsQuery.data]);
+  const searchKeyConfigured =
+    searchConfigs.find((c) => c.key === 'ai_search_api_key_encrypted')?.value === '已配置';
+  const [searchSaving, setSearchSaving] = useState(false);
+  const searchDirty =
+    searchDraft.provider !== (searchConfigs.find((c) => c.key === 'ai_search_provider')?.value ?? '') ||
+    searchDraft.apiKey.trim() !== '' ||
+    searchDraft.baseUrl !== (searchConfigs.find((c) => c.key === 'ai_search_base_url')?.value ?? '');
+  const saveSearch = async (reason: string) => {
+    setSearchSaving(true);
+    try {
+      const curProvider = searchConfigs.find((c) => c.key === 'ai_search_provider')?.value ?? '';
+      const curBaseUrl = searchConfigs.find((c) => c.key === 'ai_search_base_url')?.value ?? '';
+      if (searchDraft.provider !== curProvider) {
+        await patchConfig('ai_search_provider', searchDraft.provider, reason);
+      }
+      if (searchDraft.apiKey.trim() !== '') {
+        await patchConfig('ai_search_api_key_encrypted', searchDraft.apiKey.trim(), reason);
+      }
+      if (searchDraft.baseUrl !== curBaseUrl) {
+        await patchConfig('ai_search_base_url', searchDraft.baseUrl, reason);
+      }
+      setSearchDraft((prev) => ({ ...prev, apiKey: '' }));
+      await queryClient.invalidateQueries({ queryKey: ['configs'] });
+      void message.success('全局搜索配置已更新（用户未配搜索源时兜底生效）');
+      setReasonOpen(false);
+    } finally {
+      setSearchSaving(false);
+    }
+  };
+
   const [reasonOpen, setReasonOpen] = useState(false);
+  // 确认框归属：params=全局参数，search=全局搜索（共用一个 ConfirmReasonModal）
+  const [reasonFor, setReasonFor] = useState<'params' | 'search'>('params');
   const [saving, setSaving] = useState(false);
 
   const canManageProviders = hasPerm('admin.ai.manage');
@@ -225,13 +291,93 @@ export default function AiPage() {
             type="primary"
             disabled={!canManageConfigs || !paramsDirty}
             loading={saving}
-            onClick={() => setReasonOpen(true)}
+            onClick={() => {
+              setReasonFor('params');
+              setReasonOpen(true);
+            }}
           >
             保存全局参数
           </Button>
           <Typography.Text type="secondary">
             保存后写审计日志并失效 AI 运行时缓存（≤5s 生效）；供应商族用于客户端未指定供应商时的兜底路由
           </Typography.Text>
+        </div>
+      </Card>
+
+      <Card title="全局联网搜索（用户未配置时的兜底）" style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>搜索源</div>
+              <div style={{ color: 'var(--text-tertiary, #999)', fontSize: 12, marginTop: 2 }}>
+                用户在桌面端 AI 设置中未配置搜索源时，使用此处配置；用户已配则优先用用户的
+              </div>
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <Select
+                style={{ width: 240 }}
+                value={searchDraft.provider || undefined}
+                options={SEARCH_PROVIDER_OPTIONS}
+                placeholder="未配置（AnySearch 匿名额度）"
+                allowClear
+                showSearch
+                disabled={!canManageConfigs}
+                onChange={(v) => setSearchDraft((prev) => ({ ...prev, provider: v ?? '' }))}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>
+                API Key {searchKeyConfigured && <Tag color="green">已配置</Tag>}
+              </div>
+              <div style={{ color: 'var(--text-tertiary, #999)', fontSize: 12, marginTop: 2 }}>
+                加密存储，永不回显；留空表示不修改（自建 SearXNG 不需要 Key）
+              </div>
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <Input.Password
+                style={{ width: 240 }}
+                placeholder={searchKeyConfigured ? '已配置，留空不修改' : '输入搜索源 Key'}
+                disabled={!canManageConfigs}
+                value={searchDraft.apiKey}
+                onChange={(e) => setSearchDraft((prev) => ({ ...prev, apiKey: e.target.value }))}
+              />
+            </div>
+          </div>
+          {searchDraft.provider === 'searxng' && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>自建地址</div>
+                <div style={{ color: 'var(--text-tertiary, #999)', fontSize: 12, marginTop: 2 }}>
+                  公网地址，如 https://search.example.com（内网地址会被 SSRF 防护拒绝）
+                </div>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <Input
+                  style={{ width: 240 }}
+                  placeholder="https://search.example.com"
+                  disabled={!canManageConfigs}
+                  value={searchDraft.baseUrl}
+                  onChange={(e) => setSearchDraft((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <Button
+            type="primary"
+            disabled={!canManageConfigs || !searchDirty}
+            loading={searchSaving}
+            onClick={() => {
+              setReasonFor('search');
+              setReasonOpen(true);
+            }}
+          >
+            保存全局搜索
+          </Button>
+          <Typography.Text type="secondary">保存后写入审计日志，用户未配搜索源时即时兜底生效</Typography.Text>
         </div>
       </Card>
 
@@ -257,13 +403,17 @@ export default function AiPage() {
 
       <ConfirmReasonModal
         open={reasonOpen}
-        title="保存 AI 全局参数"
+        title={reasonFor === 'search' ? '保存全局搜索配置' : '保存 AI 全局参数'}
         danger={false}
         confirmText="确认保存"
-        confirmLoading={saving}
-        description="将更新 AI 全局参数（写入审计日志，≤5s 内对全部 AI 调用生效）。"
+        confirmLoading={reasonFor === 'search' ? searchSaving : saving}
+        description={
+          reasonFor === 'search'
+            ? '将更新全局联网搜索配置（写入审计日志，用户未配搜索源时即时兜底生效）。'
+            : '将更新 AI 全局参数（写入审计日志，≤5s 内对全部 AI 调用生效）。'
+        }
         onCancel={() => setReasonOpen(false)}
-        onConfirm={(reason) => saveParams(reason)}
+        onConfirm={(reason) => (reasonFor === 'search' ? saveSearch(reason) : saveParams(reason))}
       />
     </div>
   );
