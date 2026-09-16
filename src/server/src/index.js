@@ -663,7 +663,7 @@ if (!isClusteredPrimary) {
 
     logger.info(`
   ╔══════════════════════════════════════════╗
-  ║          ClipSync Server v0.2.0          ║
+  ║          ClipSync Server v0.1.0          ║
   ╠══════════════════════════════════════════╣
   ║  HTTP:  http://${config.host}:${config.port}          ║
   ║  WS:    ws://${config.host}:${config.port}/ws          ║

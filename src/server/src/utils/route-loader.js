@@ -141,7 +141,7 @@ export function registerSystemRoutes(app) {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      version: process.env.npm_package_version || '0.2.0',
+      version: process.env.npm_package_version || '0.1.0',
     });
   });
 
