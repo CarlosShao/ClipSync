@@ -92,6 +92,33 @@ if (!ldMatch) {
   }
 }
 
+// ── 6) ICP 备案号（法规强制展示在页脚，且必须链到工信部）──
+// 备案号已于 2026-09-16 批下（苏ICP备2026067775号-1），源码常量见 src/data/icp.ts。
+// 这条断言的作用：任何一次「备案号从产物里消失」的回归（例如误删锚点、改动构建管线）
+// 都会在这里直接 FAIL，而不是等到管局检查时才发现。
+const ICP_EXPECT = '苏ICP备2026067775号-1';
+const ICP_HREF_EXPECT = 'https://beian.miit.gov.cn/';
+for (const [label, file, content] of [
+  ['index.html', indexPath, html],
+  ['404.html', join(distDir, '404.html'), existsSync(join(distDir, '404.html')) ? readFileSync(join(distDir, '404.html'), 'utf8') : ''],
+]) {
+  if (!content.includes(ICP_EXPECT)) {
+    problems.push(`${label} 页脚缺少 ICP 备案号 ${ICP_EXPECT}`);
+    console.log(`[check] MISSING: ${label} 页脚备案号`);
+    continue;
+  }
+  // 备案号必须是一个指向工信部的 <a>，否则只是纯文本、不合规
+  const linked = new RegExp(
+    `<a[^>]+href="${ICP_HREF_EXPECT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>${ICP_EXPECT}</a>`,
+  ).test(content);
+  console.log(`[check] ${linked ? 'OK' : 'MISSING'}: ${label} 页脚备案号${linked ? '已链到工信部' : '未链到工信部'}`);
+  if (!linked) problems.push(`${label} 备案号未以 <a> 链接到 ${ICP_HREF_EXPECT}`);
+}
+// 锚点必须已被消费：产物里残留 <!--icp-filing--> 说明注入插件没跑
+if (html.includes('<!--icp-filing-->')) {
+  problems.push('index.html 残留未消费的 <!--icp-filing--> 锚点，注入插件未生效');
+}
+
 if (problems.length > 0) {
   console.error(`\n[check] FAIL（${problems.length} 项）:`);
   for (const p of problems) console.error(`  - ${p}`);

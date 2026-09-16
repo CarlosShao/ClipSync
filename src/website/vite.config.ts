@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 
+import { ICP_LICENSE, ICP_LICENSE_HREF } from './src/data/icp';
+
 /**
  * ICP 备案号占位标记（T-W3）。
  * index.html 的 footer 里保留这对注释作为「锚点」，构建期在这里注入备案号；
@@ -9,12 +11,18 @@ import { defineConfig, loadEnv } from 'vite';
 const ICP_ANCHOR = '<!--icp-filing-->';
 
 /**
- * 从环境变量读取备案号。
+ * 解析要展示的备案号：环境变量优先，回退到 src/data/icp.ts 的已备案值。
+ *
+ * 之所以有回退：备案号已于 2026-09-16 批下（苏ICP备2026067775号-1），
+ * 直接写进源码可以保证**任何一次构建都带上它**——不依赖服务器上是否存在
+ * .env（该文件被 .gitignore 忽略），避免「重新构建后备案号凭空消失」这类事故。
+ * 环境变量仍保留，便于在别的域名/测试环境覆盖。
+ *
  * 只读 loadEnv 的返回值（它已合并 .env 文件与进程环境），不直接引用 process ——
  * 该包刻意不装 @types/node（见下方注释），任何 node 全局都会让 tsc --noEmit 报 TS2591。
  */
 function resolveIcpLicense(env: Record<string, string>): string {
-  return (env.VITE_ICP_LICENSE || '').trim();
+  return (env.VITE_ICP_LICENSE || ICP_LICENSE).trim();
 }
 
 export default defineConfig(({ mode }) => {
@@ -43,12 +51,12 @@ export default defineConfig(({ mode }) => {
         name: 'clipsync-icp-filing',
         /**
          * 构建期把备案号写进 footer 的锚点位置。
-         * 已配置 → 渲染「<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">京ICP备XXXXXXXX号-1</a>」
+         * 已配置 → 渲染「<a href="https://beian.miit.gov.cn/" ...>苏ICP备2026067775号-1</a>」
          * 未配置 → 整段替换为空，footer 不会留下任何备案痕迹。
          */
         transformIndexHtml(html: string): string {
           const block = icpLicense
-            ? ` · <a class="beian" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">${icpLicense.replace(
+            ? ` · <a class="beian" href="${ICP_LICENSE_HREF}" target="_blank" rel="noopener noreferrer">${icpLicense.replace(
                 /[<>&"]/g,
                 (c) =>
                   ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c] as string,
