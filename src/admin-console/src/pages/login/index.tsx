@@ -260,6 +260,14 @@ export default function LoginPage() {
             <span>忘记密码？</span>
             <span>登录即代表同意《运营安全规范》</span>
           </div>
+
+          {/* 备案号展示位（事实源 src/website/src/data/icp.ts；跨包不引用，保持字面量） */}
+          <div className={styles.beian}>
+            © 2026 ClipSync ·{' '}
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+              苏ICP备2026067775号-1
+            </a>
+          </div>
         </div>
       </section>
     </div>

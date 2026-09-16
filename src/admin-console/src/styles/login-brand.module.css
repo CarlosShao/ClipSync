@@ -163,6 +163,25 @@
   margin-top: 10px;
 }
 
+/* 页脚备案号：ICP 备案要求展示在网站底部并链到工信部。
+   登录页是管理台唯一对外可见（未登录可访问）的页面，故挂在这里。 */
+.beian {
+  margin-top: 22px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.beian a {
+  color: var(--text-3);
+  text-decoration: none;
+}
+
+.beian a:hover {
+  color: var(--text-2);
+  text-decoration: underline;
+}
+
 @media (max-width: 960px) {
   .wrap {
     grid-template-columns: 1fr;
