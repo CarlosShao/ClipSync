@@ -164,3 +164,10 @@ scripts/admin-full-audit/.tokens.json
 
 # 审计脚本缓存的会话令牌（禁止入库）
 scripts/feature-flags-audit/.tokens.json
+
+# 生产部署本机配置（与仓库多实例草稿不同，勿被 git checkout 覆盖）
+nginx/nginx.conf.prod-local
+nginx/conf.d/clipsync.conf.prod-local
+.env.production
+nginx/certbot/
+backups/
