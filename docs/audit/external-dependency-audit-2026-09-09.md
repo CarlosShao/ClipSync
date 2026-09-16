@@ -173,18 +173,30 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 ## 3. B 类 · 商业化（支付）
 
-> **共同前提**：微信/支付宝**必须有企业营业执照 + 对公账户**（个人无法申请）。这是整份清单里最耗时的一段，建议最早启动。
+> **共同前提**：微信/支付宝**必须有营业执照**（个人无法申请）。
+> ✅ **个体工商户即可，并且不需要对公账户**——个体户的结算账户可直接用**经营者本人银行卡**。
+> 「对公账户」是**有限责任公司**的要求，本文件早期版本按企业口径写，已修正（2026-09-16）。
 
 ### B1 微信支付
 
-**现状**：`src/server/src/middleware/webhook-signature.js:39-119`（APIv3 验签已实现，手写 crypto）；`routes/payments.js:131-149` 下单返回 `mock:true` + `/payment/mock?orderNo=`。**回调是真的，下单是假的**。
+**现状**：`routes/payments.js:131-149` 下单返回 `mock:true` + `/payment/mock?orderNo=`。
+
+> ⚠️ **2026-09-16 修正**：本文件此前写「回调是真的，下单是假的」，**该结论错误**。
+> `middleware/webhook-signature.js:39-119` 的「验签」实现的是**商户请求微信时**的签名格式，
+> 不是**微信回调通知**的格式，且回调路由实际不可达。详见下方「回调阻断项」。
 
 **申请步骤**
 1. 微信支付商户平台：https://pay.weixin.qq.com → 成为商户 → 接入指引
-2. 提交：**营业执照、法人身份证、对公银行账户、经营场景照片、公众号/小程序 AppID**（需先在 https://open.weixin.qq.com 注册开放平台账号并创建应用）
+2. 提交：**营业执照、经营者身份证、经营者本人银行卡（结算用）、经营场景照片**
+   - ⚠️ 原写「对公银行账户」——**个体户不需要**，用经营者本人银行卡即可
+   - ⚠️ 原写「必须有公众号/小程序 AppID」——**不必然**。桌面端 + 官网场景建议走
+     **Native 支付（扫码）**：用户在你网站点购买 → 出二维码 → 微信扫码付款，
+     **不需要公众号/小程序/移动应用 AppID**，可省掉微信开放平台的 300 元认证费。
+     仅当你要在**微信内**打开 H5 支付（JSAPI）时才必须要有 AppID。
 3. 审核：1-3 个工作日；审核通过后**超级管理员在「账户中心 → API安全」设置 APIv3 密钥**
 4. 下载**平台证书**（也是 API安全页，用于验签）：PEM 内容
-5. 配置支付回调地址：`https://api.你的域/api/webhooks/wechat-pay`（代码 `routes/payments.js:199-236`）
+5. 配置支付回调地址：`https://api.clipchain.top/api/webhooks/wechat-pay`
+   - ❌ **该路径当前是 404**，且真实挂载点被登录鉴权拦住，见下方「回调阻断项」——**修好之前配了也没用**
 
 **产出 & 填入**
 | 凭据 | 环境变量 | 证据 |
@@ -195,6 +207,19 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 > ⚠️ **命名坑**：文档写的是 `WXPAY_*`、`ALIPAY_PUBLIC_KEY_PATH`（文件路径），**代码实际读 `WECHAT_PAY_*` 和 `ALIPAY_PUBLIC_KEY`（PEM 内容）**——以代码为准。
 
+#### 🚨 回调阻断项（2026-09-16 实测发现，**配凭据前必须先修**）
+
+| # | 问题 | 证据 | 后果 |
+|---|---|---|---|
+| 1 | **回调路由不可达** | `POST https://api.clipchain.top/api/webhooks/wechat-pay` → **404** | 微信永远打不通回调 |
+| 2 | **真实路径被鉴权拦住** | `index.js:435` 把 payments 路由整体挂在 `/api/payments` 之下并加了 `authenticateToken` + `csrfProtection`；实测 `POST /api/payments/webhooks/wechat-pay` → **401 `Access token required`** | 微信服务器没有你的 JWT，必然 401 |
+| 3 | **签名格式用错** | `webhook-signature.js:51` 解析的是 `WECHATPAY2-SHA256-RSA2048` 头（**商户调微信**的格式）；微信**回调通知**实际用 `Wechatpay-Signature` / `Wechatpay-Timestamp` / `Wechatpay-Nonce` / `Wechatpay-Serial` 四个独立头 | 验签必然失败 |
+| 4 | **未解密 resource** | 回调 body 是 `{resource:{ciphertext,nonce,associated_data,algorithm}}`，需用 **APIv3 密钥做 AES-256-GCM 解密**才能拿到订单号；代码直接读 `req.body.orderNo`（顶层不存在） | 拿到回调也取不到订单号 |
+| 5 | **前端未接入** | `create-order` 的 `paymentMethod=wechat_pay` 分支只返回 `mock:true`，没有调微信「统一下单」拿 `code_url` | 用户扫不到码 |
+| 6 | **回调地址硬编码** | `webhook-signature.js:91` 写死 `const url = '/api/webhooks/wechat-pay'`，与实际挂载路径不一致 | 即使前 5 项修好，验签串拼错仍旧失败 |
+
+> 结论：**微信支付不是「填 3 个环境变量就能通」**。上面 6 项都是代码改动，需要在拿到商户号**之前**完成。
+
 **验证**：后端日志出现验签通过；`GET /api/admin/orders` 出现真实渠道订单；管理台「对账报告」有数据
 
 ---
@@ -202,19 +227,27 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 ### B2 支付宝
 
 **申请步骤**
-1. 支付宝开放平台：https://open.alipay.com → 注册企业账号 → 实名认证（营业执照 + 对公账户）
+1. 支付宝开放平台：https://open.alipay.com → 注册账号 → 实名认证
+   - ⚠️ 原写「注册**企业**账号 → 实名认证（营业执照 + **对公账户**）」
+     —— **个体工商户可用，且不需要对公账户**，用营业执照 + 经营者本人银行卡即可
 2. 控制台 → 创建**网页/移动应用** → 获得 `APPID`
 3. 应用详情 → **接口加签方式** → 设置：
    - 用工具 https://opendocs.alipay.com/common/02kipk 生成 **应用公私钥（RSA2 2048）**
    - 上传应用公钥 → 支付宝返回 **支付宝公钥**
 4. 产品中心签约 **手机网站支付 / 电脑网站支付**（需审核，1-3 天）
-5. 配置异步通知：`https://api.你的域/api/webhooks/alipay`
+5. 配置异步通知：`https://api.clipchain.top/api/webhooks/alipay`
+   - ❌ 与微信同样存在**路径不可达 + 被鉴权拦住**的问题（见 B1 回调阻断项 #1 #2）
+   - ⚠️ 支付宝回调是 `application/x-www-form-urlencoded` 表单，而 `index.js:435` 挂了
+     `csrfProtection`，**表单 POST 会被 CSRF 拦截**
 
 **产出 & 填入**
 | 凭据 | 环境变量 | 证据 |
 |---|---|---|
-| 支付宝公钥（PEM 内容） | `ALIPAY_PUBLIC_KEY` | `webhook-signature.js:275-278` |
-| 应用私钥 | 你的代码内使用（当前未实现） | — |
+| 支付宝公钥（PEM 内容） | `ALIPAY_PUBLIC_KEY` | `webhook-signature.js:273` |
+| 应用私钥 | 代码内使用（**当前未实现**） | — |
+| APPID | **代码未读取** | — |
+
+> ⚠️ 支付宝侧只有**验签**有代码，**下单、APPID、应用私钥全部未实现**。
 
 **验证**：同 B1
 
