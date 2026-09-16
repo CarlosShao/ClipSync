@@ -121,7 +121,7 @@ scp <exe> <exe>.sig CarlosCloudServer:/opt/clipsync/downloads/
 #    见下方 SQL；同时改 src/website/src/data/download-links.ts 的 href 并重新构建官网
 ```
 
-`app_releases.platforms` 里显式写 `url` 与 `signature_file`（优先级最高，
+`app_releases.platforms` 里显式写 `url` 与 `signature`（优先级最高，
 免得依赖 `release_download_base_url` 拼接）：
 
 ```sql
@@ -129,12 +129,15 @@ INSERT INTO app_releases (version, name, release_date, notes, platforms, is_publ
 VALUES ('<ver>', 'ClipSync <ver>', CURRENT_DATE, '<更新说明>',
   '{"windows-x86_64": {"filename": "ClipSync_<ver>_x64-setup.exe",
     "url": "https://www.clipchain.top/downloads/ClipSync_<ver>_x64-setup.exe",
-    "signature_file": "https://www.clipchain.top/downloads/ClipSync_<ver>_x64-setup.exe.sig"}}'::jsonb,
+    "signature": "<.sig 文件的全部内容（一行 base64）粘贴于此，不是文件地址>"}}'::jsonb,
   true, NOW(), 100)
 ON CONFLICT (version) DO UPDATE SET platforms = EXCLUDED.platforms, is_published = true, published_at = NOW();
 ```
 
-> ⚠️ `.sig` 必须与 `.exe` 一起上传。缺少它客户端会拒绝安装更新（签名校验失败）。
+> ⚠️ **`signature` 字段是 `.sig` 文件的内容字符串**（Tauri v2 动态更新协议必填，
+> updater 源码对缺失该字段直接报错），**不是**指向 `.sig` 的 URL——存 URL 客户端会报
+> `the 'signature' field was not set on the updater response`，更新下载后无法安装。
+> `.sig` 文件仍要与 `.exe` 一起上传到 `/opt/clipsync/downloads/`（官网静态下载与存档用）。
 > ⚠️ `system_configs.release_download_base_url` 也建议同步为
 > `"https://www.clipchain.top/downloads"`（发布单没写 url 时的兜底）。
 

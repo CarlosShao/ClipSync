@@ -36,9 +36,9 @@ export interface DownloadLink {
 export const DOWNLOAD_LINKS: readonly DownloadLink[] = [
   {
     platform: 'windows',
-    // 真实产物：ClipSync_0.1.0_x64-setup.exe（6.01 MB，NSIS，已用 Tauri 更新密钥签名）
-    href: `${DOWNLOAD_BASE}/ClipSync_0.1.0_x64-setup.exe`,
-    note: 'v0.1.0 · 64 位',
+    // 真实产物：ClipSync_0.1.1_x64-setup.exe（NSIS，已用 Tauri 更新密钥签名）
+    href: `${DOWNLOAD_BASE}/ClipSync_0.1.1_x64-setup.exe`,
+    note: 'v0.1.1 · 64 位',
   },
   {
     platform: 'macos',
