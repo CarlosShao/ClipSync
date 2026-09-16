@@ -70,7 +70,8 @@ async function checkRateLimitRedis(key, windowMs, max, storeName = 'api') {
   const redisKey = `ratelimit:${storeName}:${key}`;
   const now = Date.now();
   const windowStart = now - windowMs;
-  const member = `${now}:${Math.random().toString(36).substr(1, 6)}`;
+  // slice 替代已废弃的 substr（String.prototype.substr 非标准且已标记废弃）
+  const member = `${now}:${Math.random().toString(36).slice(2, 8)}`;
   
   try {
     // 使用流水线保证原子性
@@ -89,10 +90,30 @@ async function checkRateLimitRedis(key, windowMs, max, storeName = 'api') {
     pipeline.expire(redisKey, Math.ceil(windowMs / 1000));
     
     const results = await pipeline.exec();
-    
-    const count = results[2][1]; // ZCARD 的结果
+
+    // ⚠️ 生产事故修复（2026-09-15 首次生产部署实测）：
+    // node-redis v4+ 的 multi().exec() 返回**扁平结果数组**（如 [1,0,1,1]），
+    // 而非旧版 ioredis 的 [err, value] 二元组。此处曾按 results[2][1] 取值，
+    // 得到 undefined → count=undefined → `count <= max` 恒为 false
+    // → **所有经 apiLimiter 的请求恒返回 429**（实测 x-ratelimit-remaining: NaN）。
+    // 影响面：/api/app（含桌面端更新检查）、/api/subscriptions、/api/payments 等。
+    // 之所以长期未暴露：dev/test 环境 NODE_ENV !== 'production'，走内存降级分支，
+    // 该分支实现正确；只有生产（Redis 模式）才触发。
+    const rawCount = Array.isArray(results) ? results[2] : undefined;
+    const count = Number.isFinite(rawCount) ? rawCount : null;
+
+    // 计数拿不到 = 限流状态不可信。fail-closed 会拦死全部流量（本次事故形态），
+    // 故此处选择「告警 + 放行」：限流是保护措施，不应成为全站不可用的单点。
+    if (count === null) {
+      logger.error('[RateLimiter] Redis ZCARD 结果异常，本次放行以免全站 429', {
+        key,
+        results: JSON.stringify(results)?.slice(0, 120),
+      });
+      return { allowed: true, count: 0, resetTime: now + windowMs };
+    }
+
     const resetTime = now + windowMs;
-    
+
     return {
       allowed: count <= max,
       count: count,
