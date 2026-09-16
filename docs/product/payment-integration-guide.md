@@ -55,13 +55,16 @@
 
 ### 1.2 申请流程
 
-1. **注册微信开放平台应用**（**仅 JSAPI/微信内 H5 需要**）
-   - 前往 [微信开放平台](https://open.weixin.qq.com)
-   - 创建应用（选择"移动应用"或"网站应用"）
+1. **注册微信开放平台应用 / 公众号**（**Native 扫码也必须，绕不开**）
+   - 前往 [微信开放平台](https://open.weixin.qq.com) 或 [微信公众平台](https://mp.weixin.qq.com)
+   - 创建应用/公众号（移动应用 / 网站应用 / 服务号 / 小程序，**任一种即可**）
    - 等待审核（1-3工作日）
-   - > ⚠️ **2026-09-16 修正**：**Native 支付（扫码）不需要 AppID**。
-     > 桌面端 + 官网场景推荐走 Native：用户点购买 → 出二维码 → 扫码付款。
-     > 可省掉开放平台 300 元/年认证费。仅当要在**微信内**打开网页支付时才必须有 AppID。
+   - > ⚠️ **2026-09-16 修正**：本条一度被改为「Native 支付不需要 AppID」，**该说法错误**。
+     > 官方 Native 下单接口（`/v3/pay/transactions/native`）的 `appid` 是**必填**参数，
+     > 移动应用 / 小程序 / 公众号三种 AppID **任选其一**，但必须有一个并与 mchid 绑定。
+     > 申请 **Native 支付权限**时（PC 网站场景）还需填写该 AppID 并上传**网站授权函**。
+     > 详见 [Native下单](https://pay.weixin.qq.com/doc/v3/merchant/4012791877.md)、
+     > [申请Native支付权限指引](https://pay.weixin.qq.com/doc/v3/merchant/4012791875.md)。
 
 2. **申请微信支付商户号**
    - 前往 [微信支付商户平台](https://pay.weixin.qq.com)
