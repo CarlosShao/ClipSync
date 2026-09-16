@@ -273,6 +273,99 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
 });
 
 /**
+ * POST /api/subscriptions/start-trial
+ * 开始 7 天免费试用（官网承诺：「所有付费方案含 7 天 Pro 免费试用，随时取消」）。
+ *
+ * 为什么与 /subscribe 分开：
+ *   /subscribe 现在是「纯下单」入口（返回 202 + 待支付订单），不再发放任何权益。
+ *   试用是**发放权益**的动作，语义完全不同，混在一个端点里正是此前漏洞的温床
+ *   （同一条 SQL 路径既能下单又能开卡，很难判断哪条分支该收钱）。
+ *
+ * 防滥用设计：
+ *   1. **每用户终身一次** —— 以「是否存在过任何 user_subscriptions 记录」判定，
+ *      已取消/已过期的记录同样计入（否则可反复取消再试用）。
+ *   2. 试用只发放**指定套餐**，到期由 expiry 任务降级为 Free（历史数据保留）。
+ *   3. 显式审计 action=subscription.trial_start，便于事后排查批量套取。
+ *   4. 仅允许 Free 以外的套餐（给 Free 开试用没有意义）。
+ */
+router.post('/start-trial', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { planId, billingCycle = 'monthly' } = req.body;
+
+    if (!planId) {
+      return res.status(400).json({ error: 'Missing planId parameter' });
+    }
+
+    const planResult = await pool.query(
+      'SELECT * FROM subscription_plans WHERE id = $1 AND is_active = true',
+      [planId]
+    );
+    if (planResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+    const plan = planResult.rows[0];
+
+    if (plan.name.toLowerCase() === 'free') {
+      return res.status(400).json({ error: 'Free plan does not need a trial' });
+    }
+
+    // 终身一次：含 cancelled / expired（防「取消后再试用」循环套取）
+    const everSubscribed = await pool.query(
+      'SELECT id FROM user_subscriptions WHERE user_id = $1 LIMIT 1',
+      [userId]
+    );
+    if (everSubscribed.rows.length > 0) {
+      return res.status(409).json({
+        error: 'Trial already used',
+        code: 'TRIAL_ALREADY_USED',
+      });
+    }
+
+    const TRIAL_DAYS = 7;
+    // 区间用 SQL 计算（避免 JS/DB 时区不一致导致 trial_end 偏移）
+    const trial = await pool.query(
+      `INSERT INTO user_subscriptions
+         (user_id, plan_id, status, start_date, end_date,
+          current_period_start, current_period_end, billing_cycle, trial_end)
+       VALUES ($1, $2, 'trial', NOW(), NOW() + INTERVAL '${TRIAL_DAYS} days',
+               NOW(), NOW() + INTERVAL '${TRIAL_DAYS} days', $3,
+               NOW() + INTERVAL '${TRIAL_DAYS} days')
+       RETURNING id, trial_end`,
+      [userId, planId, billingCycle]
+    );
+
+    await pool.query(
+      'UPDATE users SET subscription_status = $1, current_subscription_id = $2 WHERE id = $3',
+      ['trial', trial.rows[0].id, userId]
+    );
+
+    logger.info(`[trial] started for user ${userId}`, { planId, planName: plan.name, days: TRIAL_DAYS });
+
+    await logAuditEvent({
+      userId,
+      action: AUDIT_ACTIONS.SUBSCRIPTION_CREATE,
+      resourceType: 'subscription',
+      resourceId: trial.rows[0].id,
+      details: { planId, planName: plan.name, billingCycle, trialDays: TRIAL_DAYS, kind: 'trial' },
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    return res.status(201).json({
+      message: 'Trial started',
+      isTrial: true,
+      subscriptionId: trial.rows[0].id,
+      trialEnd: trial.rows[0].trial_end,
+      trialDays: TRIAL_DAYS,
+    });
+  } catch (err) {
+    logger.error('Start trial error:', err);
+    res.status(500).json({ error: 'Failed to start trial' });
+  }
+});
+
+/**
  * POST /api/subscriptions/cancel
  * 取消订阅（期末生效）
  */

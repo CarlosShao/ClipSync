@@ -6,11 +6,23 @@
  *   - href 为 '#'（占位）      → 置禁用态并提示「即将开放」，不赋 href
  *
  * 接入真实产物时**只改本文件**，页面逻辑自动切换。
- * 桌面端安装包托管在 GitHub Releases（发布流程见
- * docs/deploy/desktop-release-process.md），下载地址形态为
- *   https://github.com/CarlosShao/ClipSync/releases/latest/download/<文件名>
- * 文件名需与 tauri 打包产物一致，否则 404。
+ *
+ * ── 托管方式（2026-09-16 决策）──
+ * 安装包托管在**自有域名** `https://www.clipchain.top/downloads/`，
+ * 而不是 GitHub Releases。原因：
+ *   1. GitHub 在国内访问不稳定，用户下载体验差；
+ *   2. 支付宝「电脑网站支付」审核要求网站**有真实商品/交付物**，
+ *      同域下载链接更直观；
+ *   3. 审查时不必把用户引到第三方站。
+ * 上传方式：`scp` 到服务器 `/opt/clipsync/downloads/`（nginx 以 /downloads/ 暴露）。
+ * 发版流程见 `docs/deploy/production-server-runbook.md`。
+ *
+ * ⚠️ 文件名必须与 `npm run tauri build` 的真实产物一致，否则 404。
+ * 当前产物：src-tauri/target/release/bundle/nsis/ClipSync_<version>_x64-setup.exe
  */
+
+/** 自建下载站前缀（结尾无斜杠） */
+const DOWNLOAD_BASE = 'https://www.clipchain.top/downloads';
 
 export interface DownloadLink {
   /** 与 index.html 中 a.dl-cell[data-platform] 的取值一致 */
@@ -24,9 +36,9 @@ export interface DownloadLink {
 export const DOWNLOAD_LINKS: readonly DownloadLink[] = [
   {
     platform: 'windows',
-    // TODO(发布时补)：产物名以 src/desktop/src-tauri 实际打包结果为准，
-    // 形如 ClipSync_<version>_x64-setup.exe，文件名不符会 404。
-    href: '#',
+    // 真实产物：ClipSync_0.1.0_x64-setup.exe（6.01 MB，NSIS，已用 Tauri 更新密钥签名）
+    href: `${DOWNLOAD_BASE}/ClipSync_0.1.0_x64-setup.exe`,
+    note: 'v0.1.0 · 64 位',
   },
   {
     platform: 'macos',
