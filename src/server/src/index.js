@@ -50,6 +50,7 @@ import sessionRoutes from './routes/sessions.js';
 import notificationRoutes from './routes/notifications.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import paymentRoutes from './routes/payments.js';
+import paymentWebhookRoutes from './routes/paymentWebhooks.js';
 import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
 import favoritesRoutes from './routes/favorites.js';
@@ -135,27 +136,39 @@ app.use(cors(corsOptions));
 app.get('/api/csrf-token', authenticateToken, handleGetCsrfToken);
 
 // ============================================
-// Raw Body Saver (for webhook signature verification)
+// Body Parser with size limits（同时留存 webhook 原始报文）
 // ============================================
-// 保存原始请求体用于Webhook签名验证（如Stripe）
-app.use((req, res, next) => {
-  if (req.path.includes('/webhooks/') || req.headers['stripe-signature']) {
-    const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => {
-      req.rawBody = Buffer.concat(chunks).toString('utf8');
-      next();
-    });
-  } else {
-    next();
-  }
-});
+/**
+ * 是否需要留存原始报文（用于 webhook 验签）。
+ * 支付宝/微信/Stripe 的回调都必须对**原始字节**验签，重新序列化 req.body 会改变
+ * 转义与字段顺序，导致验签必然失败，因此这里按路径/头部判定。
+ */
+function needsRawBody(req) {
+  return req.path.includes('/webhooks/') || Boolean(req.headers['stripe-signature']);
+}
 
-// ============================================
-// Body Parser with size limits
-// ============================================
-app.use(express.json({ limit: config.jsonBodyLimit }));
-app.use(express.urlencoded({ extended: false, limit: config.jsonBodyLimit }));
+/**
+ * express 的 verify 回调：在 body 解析**之前**拿到原始 Buffer。
+ *
+ * ⚠️ 这里曾是一个真实事故：原实现是**自建中间件**在 body parser 之前
+ * `req.on('data')` 读流并存成 req.rawBody。但流一旦被读走就耗尽了，
+ * 后面的 express.json()/urlencoded() 再也读不到任何数据 —— 实测所有
+ * webhook 的 req.body 都是**空对象** `{}`，且不报错。
+ *
+ * 后果链：req.body 为空 → 支付宝回调取不到 out_trade_no / trade_status
+ * → 订单永远不会被标记为已支付（用户付了钱，订阅不开通，且静默无日志）。
+ *
+ * 正确做法是用 body parser 自带的 verify 钩子（它在解析前拿到 buf，
+ * 且不影响正常解析），已用 `tmp/probe-rawbody.mjs` 复现并验证修复。
+ */
+const captureRawBody = (req, _res, buf) => {
+  if (needsRawBody(req) && buf && buf.length) {
+    req.rawBody = buf.toString('utf8');
+  }
+};
+
+app.use(express.json({ limit: config.jsonBodyLimit, verify: captureRawBody }));
+app.use(express.urlencoded({ extended: false, limit: config.jsonBodyLimit, verify: captureRawBody }));
 
 // Disable X-Powered-By
 app.disable('x-powered-by');
@@ -431,7 +444,23 @@ app.use('/api/notifications', authenticateToken, notificationRoutes);
 // 订阅管理路由
 app.use('/api/subscriptions', apiLimiter, subscriptionRoutes);
 
-// 支付管理路由
+// ============================================
+// 支付渠道回调（必须在任何认证中间件之前挂载）
+// ============================================
+// 调用方是支付宝/Stripe 的服务器：它们没有本站 JWT、也不会带 CSRF token。
+// 因此这里**只能**靠渠道签名验签 + 幂等来防护，绝不能挂
+// authenticateToken / csrfProtection —— 挂了就必然 401/403，回调永远进不来。
+//
+// 历史事故：这些 handler 原先定义在 payments.js 内，而 payments.js 挂在
+// /api/payments 下并统一加了上述两个中间件，导致
+//   POST /api/webhooks/alipay          → 404（路由不存在）
+//   POST /api/payments/webhooks/alipay → 401（被鉴权拦住）
+// 两处都不可达，真实支付无法完成（详见 routes/paymentWebhooks.js 注释）。
+//
+// 仅保留 apiLimiter 防刷（限额宽松，不会挡住渠道重试）。
+app.use('/api/webhooks', apiLimiter, paymentWebhookRoutes);
+
+// 支付管理路由（需登录：下单、查单、退款等）
 app.use('/api/payments', apiLimiter, authenticateToken, csrfProtection, paymentRoutes);
 
 // 发票管理路由

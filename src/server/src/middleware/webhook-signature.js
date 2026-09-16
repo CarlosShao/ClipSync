@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import loggerModule from '../utils/logger.js';
+import { verifyParams } from '../utils/alipay.js';
 const { logger } = loggerModule;
 
 /**
@@ -119,50 +120,65 @@ export function createWeChatSignatureVerifier(apiV3Key, mchId) {
 }
 
 /**
- * 创建支付宝 Webhook 签名验证中间件
+ * 校验支付宝异步通知/响应签名（纯函数，返回 boolean）。
+ *
+ * 为什么委托给 utils/alipay.js：
+ * 这里曾自己拼签名串，规则大体对（排 sign + sign_type、滤空值），但有三个坑：
+ *   1. **不补 PEM 头** —— 支付宝后台复制的公钥是单行 base64，直接丢给
+ *      `verifier.verify()` 会抛 `no start line`，被 catch 成 500 而不是验签失败；
+ *   2. 与下单侧（签名）各写一份规则，两边容易漂移；
+ *   3. `req.body` 曾因 rawBody 中间件被吃空（见 index.js 同名修复），
+ *      此处拿到的是 `{}`，会静默走到「缺 sign」分支。
+ * 现在统一走一处实现，并由 tests/alipay.test.js 锁定规则。
+ *
+ * @param {object} params 回调参数（已解码；勿再手动 decode）
+ * @returns {boolean}
+ */
+export function verifyAlipayNotify(params) {
+  if (!params || typeof params !== 'object') return false;
+
+  const { sign, sign_type: signType } = params;
+  if (!sign) {
+    logger.warn('Alipay notify: missing sign parameter');
+    return false;
+  }
+
+  const ok = verifyParams(params, sign, signType || 'RSA2');
+  if (ok) {
+    logger.info('Alipay notify: signature verified');
+  } else {
+    logger.warn('Alipay notify: invalid signature');
+  }
+  return ok;
+}
+
+/**
+ * 创建支付宝 Webhook 签名验证中间件（保留旧签名，供既有调用方使用）。
+ *
+ * @param {string} [alipayPublicKey] 显式公钥；省略时由 utils/alipay.js 从 env 读取
  */
 export function createAlipaySignatureVerifier(alipayPublicKey) {
   return (req, res, next) => {
     try {
-      const params = { ...req.body };
-      const sign = params.sign;
-      const signType = params.sign_type || 'RSA2';
-      
-      if (!sign) {
+      // 显式传入的公钥优先（测试用），否则回落 env
+      if (alipayPublicKey) process.env.ALIPAY_PUBLIC_KEY = alipayPublicKey;
+
+      const params = { ...(req.body || {}) };
+      if (!params.sign) {
         logger.warn('Alipay webhook: Missing sign parameter');
         return res.status(401).send('failure');
       }
-      
-      delete params.sign;
-      delete params.sign_type;
-      
-      const sortedKeys = Object.keys(params).sort();
-      const signString = sortedKeys
-        .filter(key => params[key] !== '' && params[key] != null)
-        .map(key => `${key}=${params[key]}`)
-        .join('&');
-      
-      let verifier;
-      if (signType === 'RSA2') {
-        verifier = crypto.createVerify('RSA-SHA256');
-      } else {
-        verifier = crypto.createVerify('RSA-SHA1');
-      }
-      
-      verifier.update(signString, 'utf8');
-      
-      const isValid = verifier.verify(alipayPublicKey, sign, 'base64');
-      
-      if (!isValid) {
+
+      if (!verifyParams(params, params.sign, params.sign_type || 'RSA2')) {
         logger.warn('Alipay webhook: Invalid signature');
         return res.status(401).send('failure');
       }
-      
+
       logger.info('Alipay webhook: Signature verified');
-      next();
+      return next();
     } catch (err) {
       logger.error('Alipay signature verification error:', err);
-      res.status(500).send('failure');
+      return res.status(500).send('failure');
     }
   };
 }

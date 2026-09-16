@@ -3,45 +3,113 @@ import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
-import { webhookSignatureVerifier, createWeChatSignatureVerifier, createAlipaySignatureVerifier, createStripeSignatureVerifier } from '../middleware/webhook-signature.js';
-import { webhookIdempotencyMiddleware } from '../middleware/idempotency.js';
+import { buildPagePayUrl, queryTrade, isAlipayConfigured } from '../utils/alipay.js';
+import { markOrderPaid } from '../services/orderFulfillment.js';
+// 注：渠道回调（webhook）相关的中间件与 handler 已迁至
+// routes/paymentWebhooks.js（那里不需要 authenticateToken/csrfProtection），
+// 本文件不再 import 验签与幂等中间件。
 
 
 const router = Router();
 
 /**
  * POST /api/payments/create-order
- * 创建支付订单
+ * 创建支付订单；支付宝渠道返回收银台 URL 供前端 iframe 内嵌二维码。
+ *
+ * ⚠️ 关于 `mock` 渠道：
+ * 它会把订单**直接置为已支付并开通订阅**（不经过任何渠道）。此前
+ * `paymentMethod` 的**默认值就是 `'mock'`**，即前端不传渠道时自动白送订阅 ——
+ * 生产环境等于「免费开通会员」后门。
+ * 现在：默认改为 `alipay`；`mock` 仅在非生产环境（NODE_ENV !== 'production'）
+ * 且显式传入时才可用，生产环境一律 403。自动化测试/联调因此不受影响。
  */
 router.post('/create-order', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { subscriptionId, paymentMethod = 'mock' } = req.body;
-    
-    if (!subscriptionId) {
-      return res.status(400).json({ error: 'Missing subscriptionId parameter' });
+    const { subscriptionId, planId, billingCycle = 'monthly', paymentMethod = 'alipay' } = req.body;
+
+    // 两种下单入口：
+    //   ① subscriptionId：已有订阅记录（升级/续费）
+    //   ② planId：全新订阅（用户还没有 user_subscriptions 记录），由履约时创建
+    // 二者必须给一个，但不要都要求 —— 新用户场景下 subscriptionId 并不存在。
+    if (!subscriptionId && !planId) {
+      return res.status(400).json({ error: 'Missing subscriptionId or planId parameter' });
     }
-    
-    // 验证订阅是否存在
+    if (paymentMethod === 'mock' && !subscriptionId) {
+      // mock 走的是"已有订阅直接置 active"路径，没有 subscriptionId 无法履约
+      return res.status(400).json({ error: 'mock payment requires subscriptionId' });
+    }
+
+    const ALLOWED_METHODS = new Set(['alipay', 'mock']);
+    if (!ALLOWED_METHODS.has(paymentMethod)) {
+      return res.status(400).json({
+        error: `Unsupported paymentMethod: ${paymentMethod}`,
+        allowed: [...ALLOWED_METHODS],
+      });
+    }
+
+    // 生产环境禁用 mock 渠道（历史后门，见上方注释）
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (paymentMethod === 'mock' && isProduction) {
+      logger.warn('[payments] mock channel attempted in production', { userId });
+      return res.status(403).json({ error: 'Mock payment is not available in production' });
+    }
+
+    if (paymentMethod === 'alipay' && !isAlipayConfigured()) {
+      // 未配置凭据时明确失败，绝不静默降级成 mock（那等于白送订阅）
+      logger.error('[payments] alipay channel requested but not configured');
+      return res.status(503).json({
+        error: 'Payment channel not configured',
+        code: 'ALIPAY_NOT_CONFIGURED',
+      });
+    }
+
+    // 解析计价来源：订阅记录（升级）或套餐（新订）
     // subscription_plans 无 price/currency 列（只有 price_monthly/price_yearly），
-    // 按订阅的计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）
-    const subscriptionResult = await pool.query(
-      `SELECT us.*,
-              CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END AS price,
-              'CNY' AS currency
-       FROM user_subscriptions us
-       JOIN subscription_plans sp ON us.plan_id = sp.id
-       WHERE us.id = $1 AND us.user_id = $2`,
-      [subscriptionId, userId]
-    );
-    
-    if (subscriptionResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Subscription not found' });
+    // 按计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）
+    let subscription = null;
+
+    if (subscriptionId) {
+      const subscriptionResult = await pool.query(
+        `SELECT us.*,
+                sp.name AS plan_name,
+                sp.display_name AS plan_display_name,
+                CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END AS price,
+                'CNY' AS currency
+         FROM user_subscriptions us
+         JOIN subscription_plans sp ON us.plan_id = sp.id
+         WHERE us.id = $1 AND us.user_id = $2`,
+        [subscriptionId, userId]
+      );
+
+      if (subscriptionResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Subscription not found' });
+      }
+      subscription = subscriptionResult.rows[0];
+    } else {
+      const planResult = await pool.query(
+        `SELECT id, name, display_name,
+                CASE WHEN $2 = 'yearly' THEN price_yearly ELSE price_monthly END AS price,
+                'CNY' AS currency
+           FROM subscription_plans
+          WHERE id = $1 AND is_active = true`,
+        [planId, billingCycle]
+      );
+
+      if (planResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      const plan = planResult.rows[0];
+      // 新订：此时还没有订阅记录，履约阶段（markOrderPaid）会依据 metadata.planId 创建
+      subscription = {
+        id: null,
+        plan_name: plan.name,
+        plan_display_name: plan.display_name,
+        price: plan.price,
+        currency: plan.currency,
+      };
     }
     
-    const subscription = subscriptionResult.rows[0];
-    
-    // 生成订单号
     const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
     
     // 创建订单
@@ -51,13 +119,14 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       RETURNING id, order_no, amount, currency, status, created_at
     `, [
       userId,
-      subscriptionId,
+      subscription.id,
       orderNo,
       subscription.price,
       subscription.currency,
       paymentMethod,
       'pending',
-      JSON.stringify({ subscriptionId, paymentMethod })
+      // planId 供「新订」场景在履约时创建订阅记录（见 orderFulfillment.js）
+      JSON.stringify({ subscriptionId: subscription.id, planId: planId || null, billingCycle, paymentMethod })
     ]);
     
     const order = orderResult.rows[0];
@@ -79,41 +148,22 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       userAgent: req.get('user-agent'),
     }).catch(err => logger.error('Audit log failed', { error: err.message }));
     
-    // Mock支付：直接标记为已支付
+    // Mock支付：直接标记为已支付（仅非生产环境可达，见上方守卫）
     if (paymentMethod === 'mock') {
-      await pool.query(`
-        UPDATE payment_orders 
-        SET status = $1, paid_at = NOW(), transaction_id = $2, updated_at = NOW()
-        WHERE id = $3
-      `, ['paid', `MOCK${Date.now()}`, order.id]);
-      
-      // 创建发票
-      const invoiceNo = `INV${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
-      await pool.query(`
-        INSERT INTO invoices (user_id, payment_order_id, invoice_no, amount, tax_amount, status)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [userId, order.id, invoiceNo, order.amount, 0, 'issued']);
-      
-      // 审计日志：记录支付完成
-      await logAuditEvent({
-        userId,
-        action: AUDIT_ACTIONS.PAYMENT_COMPLETE,
-        resourceType: 'payment_order',
-        resourceId: order.id.toString(),
-        details: {
-          orderNo: order.order_no,
-          amount: order.amount,
-          currency: order.currency,
-          paymentMethod,
-          transactionId: `MOCK${Date.now()}`,
-          invoiceNo,
-        },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      }).catch(err => logger.error('Audit log failed', { error: err.message }));
-      
+      // 复用统一履约入口，避免与回调路径两套逻辑漂移
+      const fulfilled = await markOrderPaid({
+        orderNo: order.order_no,
+        transactionId: `MOCK${Date.now()}`,
+        channel: 'mock',
+      });
+
+      if (!fulfilled.ok) {
+        logger.error('[payments] mock fulfillment failed', { orderNo, reason: fulfilled.reason });
+        return res.status(500).json({ error: 'Failed to complete mock payment' });
+      }
+
       logger.info(`Mock payment successful for order ${orderNo}`);
-      
+
       return res.json({
         message: 'Order created, mock payment completed',
         order: {
@@ -124,29 +174,52 @@ router.post('/create-order', authenticateToken, async (req, res) => {
           status: 'paid',
           paidAt: new Date().toISOString(),
         },
-        invoiceNo,
+        invoiceNo: fulfilled.order?.invoiceNo ?? null,
       });
     }
-    
-    // 真实支付渠道（需要外部依赖，暂时返回mock数据）
-    logger.info(`Payment order created: ${orderNo}, method: ${paymentMethod}`);
-    
-    res.json({
-      message: 'Order created, please complete payment',
-      order: {
-        id: order.id,
-        orderNo: order.order_no,
-        amount: parseFloat(order.amount),
-        currency: order.currency,
-        status: order.status,
-        paymentParams: {
-          // 这里应该返回真实支付渠道的支付参数
-          // 例如微信支付的prepay_id，支付宝的form表单等
-          mock: true,
-          redirectUrl: `/payment/mock?orderNo=${orderNo}`,
+
+    // ── 支付宝渠道：生成收银台 URL（前端 iframe 内嵌二维码） ──
+    if (paymentMethod === 'alipay') {
+      // notify_url 必须是**公网可达**的绝对地址；由 env 提供，绝不硬编码域名
+      // （此前 webhook-signature.js 里硬编码过回调路径，与实际挂载点不一致）
+      const notifyUrl = String(process.env.ALIPAY_NOTIFY_URL || '').trim();
+      if (!notifyUrl) {
+        logger.error('[payments] ALIPAY_NOTIFY_URL not configured');
+        return res.status(503).json({
+          error: 'Payment notify URL not configured',
+          code: 'ALIPAY_NOTIFY_URL_MISSING',
+        });
+      }
+
+      const payUrl = buildPagePayUrl({
+        outTradeNo: order.order_no,
+        totalAmount: order.amount,
+        subject: `ClipSync ${subscription.plan_display_name || subscription.plan_name || '订阅'}`,
+        notifyUrl,
+      });
+
+      logger.info(`Alipay order created: ${orderNo}`);
+
+      return res.json({
+        message: 'Order created, please complete payment',
+        order: {
+          id: order.id,
+          orderNo: order.order_no,
+          amount: parseFloat(order.amount),
+          currency: order.currency,
+          status: order.status,
+          paymentParams: {
+            channel: 'alipay',
+            // 前端用 <iframe src={cashierUrl}> 展示二维码（qr_pay_mode=4）
+            cashierUrl: payUrl,
+          },
         },
-      },
-    });
+      });
+    }
+
+    // 理论上不可达（上方已校验枚举），兜底避免"静默成功"
+    logger.error('[payments] unhandled paymentMethod branch', { paymentMethod, orderNo });
+    return res.status(500).json({ error: 'Unhandled payment method' });
   } catch (err) {
     logger.error('Create payment order error:', err);
     res.status(500).json({ error: 'Failed to create payment order' });
@@ -155,7 +228,16 @@ router.post('/create-order', authenticateToken, async (req, res) => {
 
 /**
  * GET /api/payments/order/:orderNo/status
- * 查询订单支付状态
+ * 查询订单支付状态（桌面端支付遮罩**轮询此接口**，TRAE 式交互）。
+ *
+ * 为什么在轮询里主动查一次支付宝：
+ * 回调可能因网络/DNS/部署问题迟迟不到（支付宝重试间隔 4m/10m/10m/1h/2h/6h/15h，
+ * 最长 24h）。若只依赖回调，用户扫完码会盯着遮罩等很久甚至一直等到超时。
+ * 因此：订单仍为 pending 且是支付宝渠道时，顺带调 `alipay.trade.query`；
+ * 查到已支付就立刻走统一履约，把结果返回给前端 —— 相当于给回调加了一条兜底路径。
+ *
+ * 代价说明：每次轮询都会打一次支付宝网关。前端轮询间隔应 ≥3s，
+ * 且订单付清后前端即停止轮询（本接口对已支付订单不再外呼）。
  */
 router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
   try {
@@ -171,8 +253,39 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
     
-    const order = orderResult.rows[0];
-    
+    let order = orderResult.rows[0];
+
+    // 兜底：pending 的支付宝订单，主动查一次渠道
+    const isAlipayOrder =
+      String(order.payment_method || '').toLowerCase() === 'alipay' ||
+      String(order.payment_channel || '').toLowerCase() === 'alipay';
+
+    if (order.status === 'pending' && isAlipayOrder && isAlipayConfigured()) {
+      try {
+        const trade = await queryTrade(order.order_no);
+        if (trade.paid) {
+          const fulfilled = await markOrderPaid({
+            orderNo: order.order_no,
+            transactionId: trade.tradeNo,
+            channel: 'alipay',
+            rawPayload: { source: 'poll_query', tradeStatus: trade.tradeStatus },
+          });
+          if (fulfilled.ok) {
+            // 重新读一次，拿到 paid_at / transaction_id 等最新字段
+            const fresh = await pool.query('SELECT * FROM payment_orders WHERE id = $1', [order.id]);
+            order = fresh.rows[0] || order;
+            logger.info('[payments] order fulfilled via poll fallback', { orderNo });
+          }
+        }
+      } catch (qErr) {
+        // 查询失败不影响本次响应：仍返回数据库中的当前状态，前端继续轮询
+        logger.warn('[payments] alipay trade.query failed during poll', {
+          orderNo,
+          error: qErr.message,
+        });
+      }
+    }
+
     res.json({
       order: {
         id: order.id,
@@ -192,214 +305,25 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
   }
 });
 
+// ============================================
+// 支付渠道回调已迁出本文件
+// ============================================
+// 原先这里定义了 /webhooks/wechat-pay、/webhooks/alipay、/webhooks/stripe 三个
+// handler，但它们随 payments.js 一起被挂在 /api/payments 之下，而该挂载点统一加了
+// authenticateToken + csrfProtection —— 渠道服务器没有 JWT、也不带 CSRF token，
+// 因此这三条路由**永远返回 401，从未被调用过**（文档里写的 /api/webhooks/* 则是 404）。
+//
+// 现已迁到 routes/paymentWebhooks.js，挂载于 /api/webhooks（无认证中间件，
+// 靠渠道签名验签 + 幂等防护），并由 services/orderFulfillment.js 统一履约。
+// 微信支付不接入（成本考虑：需已认证公众号，300 元/年认证费），故不再保留其回调实现。
+
 /**
- * POST /api/webhooks/wechat-pay
- * 微信支付回调通知处理（Mock）
+ * GET /api/payments/invoices/:id/download —— 已废弃，勿启用
+ *
+ * 此路由长期被注释，原因不明；其功能已由 routes/invoices.js 的
+ * `GET /api/invoices/:id/download` 提供（挂载于 /api/invoices，index.js 已验证）。
+ * 保留注释仅为说明「这里为什么空着」，不要取消注释造成两套实现。
  */
-router.post('/webhooks/wechat-pay', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
-  try {
-    logger.info('WeChat Pay webhook received', { orderNo: req.body.orderNo });
-    
-    // 签名验证已由 webhookSignatureVerifier 中间件完成
-    const { orderNo, transactionId, status } = req.body;
-    
-    if (status === 'SUCCESS') {
-      await pool.query(`
-        UPDATE payment_orders 
-        SET status = $1, paid_at = NOW(), transaction_id = $2, updated_at = NOW()
-        WHERE order_no = $3
-      `, ['paid', transactionId, orderNo]);
-      
-      // 更新订阅状态
-      const orderResult = await pool.query(
-        'SELECT subscription_id FROM payment_orders WHERE order_no = $1',
-        [orderNo]
-      );
-      
-      if (orderResult.rows.length > 0) {
-        await pool.query(`
-          UPDATE user_subscriptions 
-          SET status = $1, updated_at = NOW()
-          WHERE id = $2
-        `, ['active', orderResult.rows[0].subscription_id]);
-      }
-      
-      logger.info(`WeChat Pay payment successful for order ${orderNo}`);
-    }
-    
-    // 微信支付要求返回特定格式
-    res.json({ code: 'SUCCESS', message: 'Success' });
-  } catch (err) {
-    logger.error('WeChat Pay webhook error:', err);
-    res.status(500).json({ code: 'FAIL', message: 'Failed' });
-  }
-});
-
-/**
- * POST /api/webhooks/alipay
- * 支付宝异步通知处理（Mock）
- */
-router.post('/webhooks/alipay', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
-  try {
-    logger.info('Alipay webhook received', { outTradeNo: req.body.out_trade_no });
-    
-    // 签名验证已由 webhookSignatureVerifier 中间件完成
-    const { out_trade_no, trade_no, trade_status } = req.body;
-    
-    if (trade_status === 'TRADE_SUCCESS') {
-      await pool.query(`
-        UPDATE payment_orders 
-        SET status = $1, paid_at = NOW(), transaction_id = $2, updated_at = NOW()
-        WHERE order_no = $3
-      `, ['paid', trade_no, out_trade_no]);
-      
-      // 更新订阅状态
-      const orderResult = await pool.query(
-        'SELECT subscription_id FROM payment_orders WHERE order_no = $1',
-        [out_trade_no]
-      );
-      
-      if (orderResult.rows.length > 0) {
-        await pool.query(`
-          UPDATE user_subscriptions 
-          SET status = $1, updated_at = NOW()
-          WHERE id = $2
-        `, ['active', orderResult.rows[0].subscription_id]);
-      }
-      
-      logger.info(`Alipay payment successful for order ${out_trade_no}`);
-    }
-    
-    // 支付宝要求返回"success"
-    res.send('success');
-  } catch (err) {
-    logger.error('Alipay webhook error:', err);
-    res.status(500).send('failure');
-  }
-});
-
-/**
- * POST /api/webhooks/stripe
- * Stripe Webhook 事件处理
- */
-router.post('/webhooks/stripe', webhookSignatureVerifier, webhookIdempotencyMiddleware(), async (req, res) => {
-  try {
-    const sig = req.headers['stripe-signature'];
-    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET || 'mock_secret';
-    
-    logger.info('Stripe webhook received', { hasSignature: !!sig });
-    
-    // 使用验证后的事件（由webhookSignatureVerifier中间件附加）
-    const event = req.stripeEvent || req.body;
-    
-    if (!event || !event.type) {
-      logger.error('Stripe webhook: Invalid event object');
-      return res.status(400).json({ error: 'Invalid event' });
-    }
-    
-    switch (event.type) {
-      case 'checkout.session.completed':
-        const session = event.data.object;
-        const orderNo = session.client_reference_id;
-        
-        await pool.query(`
-          UPDATE payment_orders 
-          SET status = $1, paid_at = NOW(), transaction_id = $2, updated_at = NOW()
-          WHERE order_no = $3
-        `, ['paid', session.payment_intent, orderNo]);
-        
-        // 更新订阅状态
-        const orderResult = await pool.query(
-          'SELECT subscription_id FROM payment_orders WHERE order_no = $1',
-          [orderNo]
-        );
-        
-        if (orderResult.rows.length > 0) {
-          await pool.query(`
-            UPDATE user_subscriptions 
-            SET status = $1, updated_at = NOW()
-            WHERE id = $2
-          `, ['active', orderResult.rows[0].subscription_id]);
-        }
-        
-        logger.info(`Stripe payment successful for order ${orderNo}`);
-        break;
-        
-      case 'invoice.payment_failed':
-        logger.warn('Stripe payment failed', { event: event.data.object });
-        break;
-        
-      default:
-        logger.info(`Unhandled Stripe event type: ${event.type}`);
-    }
-    
-    res.json({ received: true });
-  } catch (err) {
-    logger.error('Stripe webhook error:', err);
-    res.status(500).json({ error: 'Webhook handler failed' });
-  }
-});
-
-
-/**
-router.get('/invoices/:id/download', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const invoiceId = req.params.id;
-    
-    // 查询发票
-    const invoiceResult = await pool.query(
-      'SELECT * FROM invoices WHERE id = $1 AND user_id = $2',
-      [invoiceId, userId]
-    );
-    
-    if (invoiceResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Invoice not found' });
-    }
-    
-    const invoice = invoiceResult.rows[0];
-    
-    // 查询订单
-    const orderResult = await pool.query(
-      'SELECT * FROM payment_orders WHERE id = $1 AND user_id = $2',
-      [invoice.payment_order_id, userId]
-    );
-    
-    if (orderResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    
-    const order = orderResult.rows[0];
-    
-    // 查询用户
-    const userResult = await pool.query(
-      'SELECT id, phone, email, nickname FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    const user = userResult.rows[0];
-    
-    // 生成 PDF
-    const { generateInvoicePDF } = await import('../utils/pdf-invoice.js');
-    const pdfBuffer = await generateInvoicePDF(invoice, user, order);
-    
-    // 返回 PDF
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoice_no}.pdf"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    
-    res.send(pdfBuffer);
-    
-    logger.info(`Invoice PDF downloaded: ${invoice.invoice_no}, user: ${userId}`);
-  } catch (err) {
-    logger.error('Download invoice PDF error:', err);
-    res.status(500).json({ error: 'Failed to download invoice' });
-  }
-});
 
 /**
  * POST /api/payments/refund

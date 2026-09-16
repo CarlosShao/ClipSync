@@ -4,7 +4,8 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
-import { MessageCircle, Landmark, CircleCheck, Clock } from 'lucide-vue-next'
+import AlipayScanPay from '@/components/payment/AlipayScanPay.vue'
+import { Landmark, CircleCheck, Clock } from 'lucide-vue-next'
 import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
 import './modal-shared.css'
 
@@ -46,7 +47,6 @@ function planPrice(plan: PricingPlan | null): string {
 
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
-const paymentSending = ref(false)
 const paymentResult = ref<{ kind: 'success' | 'fail' | 'pending'; message: string } | null>(null)
 
 // ===== Plan Selection → Payment Flow =====
@@ -63,14 +63,25 @@ function selectPlan(plan: PricingPlan | null) {
   emit('switch-modal', 'payment')
 }
 
-// 选择支付方式 —— C7 假实现诚实化：
-// 支付渠道（微信/支付宝）尚未接入，此前直接 POST /api/subscriptions/subscribe 并弹出
-// "订阅成功"，属于典型的假成功（用户并未付款却显示订阅生效）。
-// 现改为明确的"渠道接入中"占位，既不假装成功也不假装失败。
+// 选择支付方式 —— 2026-09-16 接入真实支付宝扫码支付。
+//
+// 历史演进（值得留痕，避免再次退化成假实现）：
+//   ① 最初：直接 POST /api/subscriptions/subscribe 并弹「订阅成功」——**假成功**，
+//      用户没付款却显示订阅生效。
+//   ② 中间态：改成「支付渠道接入中」占位 —— 诚实但不可用。
+//   ③ 现在：进入支付宝扫码面板（勾选协议 → 二维码 → 轮询订单状态 → 成功后解锁）。
+//
+// 微信支付**不接入**：需已认证公众号（300 元/年），成本不允许；产品决策见
+// docs/audit/external-dependency-audit-2026-09-09.md 的 B1 节。
 function selectPaymentMethod(_method: string) {
   const p = selectedPlan.value
   if (!p) return
-  paymentResult.value = { kind: 'pending', message: t('pay_channel_pending') }
+  emit('switch-modal', 'pay-scan')
+}
+
+/** 扫码支付成功：提示并关闭 */
+function onPaid() {
+  paymentResult.value = { kind: 'success', message: t('pay_paid_ok') }
   emit('switch-modal', 'payment-result')
 }
 </script>
@@ -101,6 +112,7 @@ function selectPaymentMethod(_method: string) {
   </ModalDialog>
 
   <!-- Payment Method -->
+  <!-- 只提供支付宝：微信支付需已认证公众号（300 元/年），成本不允许，产品决策不接入 -->
   <ModalDialog :open="showModalType === 'payment'" :title="t('modal_payment')" max-width="420px" @close="emit('close')">
     <div v-if="selectedPlan" class="pay-summary">
       <div class="pay-summary-name">{{ selectedPlan.name }}</div>
@@ -112,18 +124,28 @@ function selectPaymentMethod(_method: string) {
       <Button
         variant="outline"
         class="w-full justify-start payment-option"
-        @click="selectPaymentMethod('wechat')"
-      >
-        <MessageCircle class="pay-icon pay-icon--wechat" /> <span>{{ t('pay_wechat') }}</span>
-      </Button>
-      <Button
-        variant="outline"
-        class="w-full justify-start payment-option"
         @click="selectPaymentMethod('alipay')"
       >
         <Landmark class="pay-icon pay-icon--alipay" /> <span>{{ t('pay_alipay') }}</span>
       </Button>
     </div>
+  </ModalDialog>
+
+  <!-- Scan to Pay（勾选协议 → 二维码 → 轮询订单状态） -->
+  <ModalDialog
+    :open="showModalType === 'pay-scan'"
+    :title="t('pay_scan_title')"
+    max-width="420px"
+    @close="emit('close')"
+  >
+    <AlipayScanPay
+      v-if="selectedPlan"
+      :plan-id="selectedPlan.id"
+      :amount-label="`¥${selectedPlan.price}`"
+      :period-label="t('price_per_mo')"
+      @paid="onPaid"
+      @close="emit('close')"
+    />
   </ModalDialog>
 
   <!-- Payment Result -->

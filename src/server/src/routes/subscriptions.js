@@ -169,12 +169,66 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
     if (existingSubscription.rows.length > 0) {
       // 已有订阅，升级/降级
       const current = existingSubscription.rows[0];
-      
+
       if (current.plan_id === planId) {
         return res.status(400).json({ error: 'You are already on this plan' });
       }
-      
-      // 创建支付订单
+
+      // 创建**待支付**订单，并让调用方去走真实支付渠道。
+      //
+      // ⚠️ 此前的实现是一条严重的免费开卡漏洞（2026-09-16 修复）：
+      //   它直接 INSERT 一条 payment_method='mock'、status='paid' 的订单，
+      //   紧接着把新订阅置为 'active' —— **用户一分钱没付就拿到了付费套餐**。
+      //   而该端点只要求登录（无支付校验），任何登录用户 POST 一次即可升级。
+      //   前端虽已改成"渠道接入中"占位不再调用，但**后端接口仍是敞开的**，
+      //   直接 curl 即可白拿会员。
+      //
+      // 现在：只建 pending 订单，订阅状态不动；由 /api/payments/create-order
+      // 发起支付，支付成功后经支付宝回调 → orderFulfillment 统一开通。
+      const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
+      const orderResult = await pool.query(`
+        INSERT INTO payment_orders (user_id, subscription_id, order_no, amount, currency, payment_method, status, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, order_no
+      `, [
+        userId,
+        current.id,          // 支付成功后由履约逻辑把这条订阅置为 active
+        orderNo,
+        price,
+        'CNY',               // subscription_plans 无 currency 列，统一 CNY
+        'alipay',            // 真实渠道；不再是 mock
+        'pending',
+        JSON.stringify({ planId, billingCycle, action: 'upgrade', fromPlanId: current.plan_id }),
+      ]);
+
+      logger.info(`Upgrade order created for user ${userId} to plan ${plan.name}`, { orderNo });
+
+      await logAuditEvent({
+        userId,
+        action: AUDIT_ACTIONS.PAYMENT_CREATE,
+        resourceType: 'payment_order',
+        resourceId: orderResult.rows[0].id,
+        details: { orderNo, planId, planName: plan.name, billingCycle, price, action: 'upgrade' },
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+
+      // 明确告知「需要支付」，绝不返回成功升级
+      return res.status(202).json({
+        message: 'Order created, payment required',
+        paymentRequired: true,
+        subscriptionId: current.id,
+        orderNo,
+        amount: price,
+        currency: 'CNY',
+      });
+    } else {
+      // 新订阅：一律先建待支付订单。
+      //
+      // 原实现对「从未订阅过」的用户直接写 status='trial' 白送 7 天试用
+      // （同样不校验任何支付）。7 天试用是产品决策，但**不应由这个端点悄悄发放** ——
+      // 它既无频次限制也无风控，可被反复注册新号套取。
+      // 这里改为统一走支付；试用能力将来应作为独立、可审计的发放接口实现。
       const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
       const orderResult = await pool.query(`
         INSERT INTO payment_orders (user_id, order_no, amount, currency, payment_method, status, metadata)
@@ -184,135 +238,32 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
         userId,
         orderNo,
         price,
-        'CNY', // currency default (subscription_plans has no currency column)
-        'mock', // 暂时使用mock支付
+        'CNY',
+        'alipay',
         'pending',
-        JSON.stringify({ planId, billingCycle, action: 'upgrade' })
+        JSON.stringify({ planId, billingCycle, action: 'new' }),
       ]);
-      
-      // 暂时直接激活订阅（Mock支付成功）
-      await pool.query(`
-        UPDATE user_subscriptions 
-        SET status = $1, updated_at = NOW()
-        WHERE id = $2
-      `, ['cancelled', current.id]);
-      
-      const newSubscriptionResult = await pool.query(`
-        INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle)
-        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', $4)
-        RETURNING id
-      `, [userId, planId, 'active', billingCycle]);
-      
-      // 更新用户订阅状态
-      await pool.query(
-        'UPDATE users SET subscription_status = $1, current_subscription_id = $2 WHERE id = $3',
-        [plan.name.toLowerCase(), newSubscriptionResult.rows[0].id, userId]
-      );
-      
-      // 更新订单状态为已支付
-      await pool.query(
-        'UPDATE payment_orders SET status = $1, paid_at = NOW() WHERE order_no = $2',
-        ['paid', orderNo]
-      );
-      
-      logger.info(`User ${userId} subscribed to plan ${plan.name}`);
 
-      // 推送订阅变更 + 高级功能解锁通知
-      try {
-        await sendNotification(userId, {
-          notificationType: 'subscription_changed',
-          title: 'Subscription updated',
-          body: `Your plan was changed to ${plan.name}.`,
-          data: { planId, planName: plan.name, billingCycle },
-        });
-        if (plan.name.toLowerCase() !== 'free') {
-          await sendNotification(userId, {
-            notificationType: 'product_update',
-            title: 'Premium features unlocked',
-            body: `New premium features are now available on your ${plan.name} plan.`,
-            data: { planName: plan.name },
-          });
-        }
-      } catch (notifErr) {
-        logger.error('[Subscription] 订阅变更通知失败（已忽略）:', { error: notifErr?.message, userId });
-      }
+      logger.info(`New subscription order created for user ${userId}, plan ${plan.name}`, { orderNo });
 
-      // 审计日志：记录订阅创建
       await logAuditEvent({
         userId,
-        action: AUDIT_ACTIONS.SUBSCRIPTION_CREATE,
-        resourceType: 'subscription',
-        resourceId: newSubscriptionResult.rows[0].id,
-        details: { planId, planName: plan.name, billingCycle, price },
+        action: AUDIT_ACTIONS.PAYMENT_CREATE,
+        resourceType: 'payment_order',
+        resourceId: orderResult.rows[0].id,
+        details: { orderNo, planId, planName: plan.name, billingCycle, price, action: 'new' },
         ipAddress: req.ip,
         userAgent: req.get('user-agent'),
       });
 
-      return res.json({
-        message: 'Subscription successful',
-        subscriptionId: newSubscriptionResult.rows[0].id,
-        orderNo: orderNo,
-      });
-    } else {
-      // 新订阅（可能是试用期）
-      const hasEverSubscribed = await pool.query(
-        'SELECT id FROM user_subscriptions WHERE user_id = $1',
-        [userId]
-      );
-      
-      const isTrial = hasEverSubscribed.rows.length === 0; // 新用户给7天试用
-      const trialEnd = isTrial ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
-      
-      const subscriptionResult = await pool.query(`
-        INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle, trial_end)
-        VALUES ($1, $2, $3, NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', NOW(), NOW() + INTERVAL '1 ${billingCycle === 'yearly' ? 'year' : 'month'}', $4, $5)
-        RETURNING id
-      `, [
-        userId,
-        planId,
-        isTrial ? 'trial' : 'active',
-        billingCycle,
-        trialEnd
-      ]);
-      
-      // 更新用户订阅状态
-      await pool.query(
-        'UPDATE users SET subscription_status = $1, current_subscription_id = $2 WHERE id = $3',
-        [isTrial ? 'trial' : plan.name.toLowerCase(), subscriptionResult.rows[0].id, userId]
-      );
-      
-      logger.info(`User ${userId} started new subscription to plan ${plan.name}, trial: ${isTrial}`);
-
-      // 推送订阅开始通知
-      try {
-        await sendNotification(userId, {
-          notificationType: 'subscription_started',
-          title: isTrial ? 'Trial started' : 'Subscription activated',
-          body: isTrial
-            ? `Your ${plan.name} trial is active for 7 days.`
-            : `You're now subscribed to the ${plan.name} plan.`,
-          data: { planId, planName: plan.name, isTrial },
-        });
-      } catch (notifErr) {
-        logger.error('[Subscription] 订阅开始通知失败（已忽略）:', { error: notifErr?.message, userId });
-      }
-
-      // 审计日志：记录新订阅
-      await logAuditEvent({
-        userId,
-        action: AUDIT_ACTIONS.SUBSCRIPTION_CREATE,
-        resourceType: 'subscription',
-        resourceId: subscriptionResult.rows[0].id,
-        details: { planId, planName: plan.name, billingCycle, price, isTrial },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      });
-
-      return res.json({
-        message: isTrial ? 'Trial period started, auto-renewal in 7 days' : 'Subscription successful',
-        subscriptionId: subscriptionResult.rows[0].id,
-        isTrial,
-        trialEnd,
+      return res.status(202).json({
+        message: 'Order created, payment required',
+        paymentRequired: true,
+        orderNo,
+        amount: price,
+        currency: 'CNY',
+        // 新订阅尚无 user_subscriptions 记录，订阅将在支付成功后创建
+        subscriptionId: null,
       });
     }
   } catch (err) {

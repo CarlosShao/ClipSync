@@ -95,7 +95,16 @@ async function ensureTestUser() {
   return { userId };
 }
 
-// 幂等准备：测试用户 + 活跃订阅（无则 mock 订阅 Pro）
+// 幂等准备：测试用户 + 活跃订阅
+//
+// ⚠️ 2026-09-16 行为变更：/subscriptions/subscribe 原先会**不收款直接开通**付费套餐
+// （免费开卡漏洞，见 subscriptions.js 注释），现已改为只创建 pending 订单、
+// 返回 202 paymentRequired。因此这里不能再靠它"造"出一条活跃订阅。
+//
+// 现在分两步：
+//   1. 走 /subscriptions/subscribe 建单（验证新行为：必须 202 且 paymentRequired）
+//   2. 用 SQL 直接把该订阅置为 active —— 这是**测试夹具**，不是业务路径，
+//      仅为了让后续依赖「活跃订阅」的用例可跑（履约逻辑本身由订单/支付用例覆盖）
 async function ensureSub() {
   const { userId } = await ensureTestUser();
   const uToken = await getUserToken(TEST_PHONE);
@@ -103,7 +112,19 @@ async function ensureSub() {
   let subId = psql(`SELECT id FROM user_subscriptions WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 1`);
   if (!subId) {
     const rsub = await req('POST', '/subscriptions/subscribe', { token: uToken, body: { planId: proPlanId, billingCycle: 'monthly' } });
-    check('setup', '测试用户 mock 订阅 Pro', rsub.status === 200 || rsub.status === 201, `status=${rsub.status} body=${JSON.stringify(rsub.json)?.slice(0, 200)}`);
+    check(
+      'setup',
+      'subscribe 不再白送套餐（202 paymentRequired）',
+      rsub.status === 202 && rsub.json?.paymentRequired === true,
+      `status=${rsub.status} body=${JSON.stringify(rsub.json)?.slice(0, 200)}`,
+    );
+
+    // 夹具：按返回的 orderNo + planId 补齐一条活跃订阅
+    const orderNo = rsub.json?.orderNo;
+    check('setup', 'subscribe 返回 orderNo', !!orderNo, `orderNo=${orderNo}`);
+    psql(`INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle)
+          VALUES ('${userId}', '${proPlanId}', 'active', NOW(), NOW() + INTERVAL '1 month', NOW(), NOW() + INTERVAL '1 month', 'monthly')`);
+    psql(`UPDATE users SET subscription_status='pro', current_subscription_id=(SELECT id FROM user_subscriptions WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 1) WHERE id='${userId}'`);
     subId = psql(`SELECT id FROM user_subscriptions WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 1`);
   }
   return { userId, uToken, subId, proPlanId };

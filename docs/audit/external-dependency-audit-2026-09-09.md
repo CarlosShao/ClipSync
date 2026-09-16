@@ -209,18 +209,38 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 > ⚠️ **命名坑**：文档写的是 `WXPAY_*`、`ALIPAY_PUBLIC_KEY_PATH`（文件路径），**代码实际读 `WECHAT_PAY_*` 和 `ALIPAY_PUBLIC_KEY`（PEM 内容）**——以代码为准。
 
-#### 🚨 回调阻断项（2026-09-16 实测发现，**配凭据前必须先修**）
+#### ✅ 回调阻断项（2026-09-16 已全部修复）
 
-| # | 问题 | 证据 | 后果 |
+| # | 问题 | 原状 | 现状 |
 |---|---|---|---|
-| 1 | **回调路由不可达** | `POST https://api.clipchain.top/api/webhooks/wechat-pay` → **404** | 微信永远打不通回调 |
-| 2 | **真实路径被鉴权拦住** | `index.js:435` 把 payments 路由整体挂在 `/api/payments` 之下并加了 `authenticateToken` + `csrfProtection`；实测 `POST /api/payments/webhooks/wechat-pay` → **401 `Access token required`** | 微信服务器没有你的 JWT，必然 401 |
-| 3 | **签名格式用错** | `webhook-signature.js:51` 解析的是 `WECHATPAY2-SHA256-RSA2048` 头（**商户调微信**的格式）；微信**回调通知**实际用 `Wechatpay-Signature` / `Wechatpay-Timestamp` / `Wechatpay-Nonce` / `Wechatpay-Serial` 四个独立头 | 验签必然失败 |
-| 4 | **未解密 resource** | 回调 body 是 `{resource:{ciphertext,nonce,associated_data,algorithm}}`，需用 **APIv3 密钥做 AES-256-GCM 解密**才能拿到订单号；代码直接读 `req.body.orderNo`（顶层不存在） | 拿到回调也取不到订单号 |
-| 5 | **前端未接入** | `create-order` 的 `paymentMethod=wechat_pay` 分支只返回 `mock:true`，没有调微信「统一下单」拿 `code_url` | 用户扫不到码 |
-| 6 | **回调地址硬编码** | `webhook-signature.js:91` 写死 `const url = '/api/webhooks/wechat-pay'`，与实际挂载路径不一致 | 即使前 5 项修好，验签串拼错仍旧失败 |
+| 1 | 回调路由不可达 | `POST /api/webhooks/alipay` → 404 | ✅ 新建 `routes/paymentWebhooks.js`，挂载于 `/api/webhooks` |
+| 2 | 真实路径被鉴权拦住 | `/api/payments/webhooks/alipay` → 401 | ✅ 回调不再经过 auth/CSRF（靠渠道验签+幂等防护） |
+| 3 | 微信验签格式用错 | 解析 `WECHATPAY2-*` 头（商户调微信格式） | ✅ 微信不接入，相关死代码已删除 |
+| 4 | 未解密 resource | 直接读 `req.body.orderNo` | ✅ 不适用（微信不做）；支付宝为表单明文+验签 |
+| 5 | 下单未实现 | 返回 `mock:true` | ✅ `utils/alipay.js` 生成 `qr_pay_mode=4` 收银台 URL |
+| 6 | 回调地址硬编码 | `webhook-signature.js:91` 写死路径 | ✅ 改为 `ALIPAY_NOTIFY_URL` 环境变量 |
 
-> 结论：**微信支付不是「填 3 个环境变量就能通」**。上面 6 项都是代码改动，需要在拿到商户号**之前**完成。
+**额外修复的两个严重缺陷（本次审计发现）**：
+
+- **`rawBody` 中间件吃掉请求体**（`index.js`）：原实现在 body parser 之前自建
+  `req.on('data')` 读流，流被耗尽后 `express.json()/urlencoded()` 再也读不到数据 →
+  **所有 webhook 的 `req.body` 都是 `{}` 且不报错**。已改用 body parser 的 `verify`
+  钩子（`tmp/probe-rawbody.mjs` 复现并验证）。
+- **免费开卡漏洞**（`routes/subscriptions.js` `/subscribe`）：原实现不校验任何支付，
+  直接 INSERT 一条 `payment_method='mock'`、`status='paid'` 的订单并把订阅置为
+  `active`；新用户还额外白送 7 天 `trial`。**任何登录用户 POST 一次即可白拿付费套餐**。
+  已改为只创建 `pending` 订单、返回 `202 paymentRequired`，订阅由支付回调经
+  `services/orderFulfillment.js` 统一开通。`create-order` 的 `mock` 渠道在生产环境
+  返回 403（此前 `mock` 还是**默认值**）。
+
+**产品选型**：支付宝「电脑网站支付」（线上产品）+ `qr_pay_mode=4` 内嵌二维码。
+不能用「当面付/订单码支付」——那是线下产品，需实体门店照片；且有异地扫码被判违规
+封停收款权限的风险。微信支付不接入（需已认证公众号，300 元/年认证费）。
+
+> ⚠️ 二维码**只能通过 iframe** 呈现：支付宝不返回二维码码串（返回 `qr_code` 的
+> `alipay.trade.precreate` 属线下产品）。因此桌面端 CSP 已放行
+> `frame-src https://*.alipay.com https://*.alipaydev.com https://*.alipayobjects.com`。
+> 收银台跳转后的实际域名需在真实联调时用 DevTools 抓取确认、按需补入白名单。
 
 **验证**：后端日志出现验签通过；`GET /api/admin/orders` 出现真实渠道订单；管理台「对账报告」有数据
 
@@ -228,30 +248,59 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 ### B2 支付宝
 
+> **决策（2026-09-16）**：**只做支付宝**。微信支付不接入 —— 需已认证公众号
+> （300 元/年认证费），成本不允许。B1 保留作背景记录。
+
+**产品选型**：必须用**「电脑网站支付」**（线上产品）。
+❌ **不能用「当面付」/「订单码支付」** —— 官方归类为**线下产品**，需提交店铺名称、
+**店铺招牌照片**、经营地址（见 ideservice.alipay.com/cms/site/039qjw）。网上教程教人
+拿朋友店铺照片甚至地图截图蒙混，属造假，且异地扫码多了会被判违规**封停收款权限**。
+
 **申请步骤**
 1. 支付宝开放平台：https://open.alipay.com → 注册账号 → 实名认证
    - ⚠️ 原写「注册**企业**账号 → 实名认证（营业执照 + **对公账户**）」
      —— **个体工商户可用，且不需要对公账户**，用营业执照 + 经营者本人银行卡即可
-2. 控制台 → 创建**网页/移动应用** → 获得 `APPID`
+2. 控制台 → 创建**网页应用** → 获得 `APPID`
+   - ⚠️ **企业入驻审核通过前不要创建应用**：绑定商家账号**确认后不可变更**，
+     绑到个人账号会导致「无法接入部分产品」（电脑网站支付可能就在其中）
 3. 应用详情 → **接口加签方式** → 设置：
    - 用工具 https://opendocs.alipay.com/common/02kipk 生成 **应用公私钥（RSA2 2048）**
    - 上传应用公钥 → 支付宝返回 **支付宝公钥**
-4. 产品中心签约 **手机网站支付 / 电脑网站支付**（需审核，1-3 天）
+4. 产品中心签约 **电脑网站支付**（需审核，1-3 天）
+   - 提交：网站链接（**需 ICP 备案**）+ 营业执照
+   - ⚠️ **若网站备案主体与申请主体不同，需上传《网站授权函》**。本项目 ICP 备案主体是
+     个人（邵伟琦）、支付宝主体是个体户 → **大概率会被要求补授权函**，提前准备
+   - 额度规则：网站已上线 + 营业执照通过 → **额度不受限、长期有效**
+     （缺营业执照则单笔 ≤50 元、单日 ≤1000 元）
 5. 配置异步通知：`https://api.clipchain.top/api/webhooks/alipay`
-   - ❌ 与微信同样存在**路径不可达 + 被鉴权拦住**的问题（见 B1 回调阻断项 #1 #2）
-   - ⚠️ 支付宝回调是 `application/x-www-form-urlencoded` 表单，而 `index.js:435` 挂了
-     `csrfProtection`，**表单 POST 会被 CSRF 拦截**
+   - ✅ 该路径**已可用**（2026-09-16 新建 paymentWebhooks 路由后实测可达）
+   - ⚠️ 支付宝回调是 `application/x-www-form-urlencoded` 表单，**不能挂 csrfProtection**
+     （已确认回调路径不再经过 CSRF）
 
 **产出 & 填入**
-| 凭据 | 环境变量 | 证据 |
+| 凭据 | 环境变量 | 说明 |
 |---|---|---|
-| 支付宝公钥（PEM 内容） | `ALIPAY_PUBLIC_KEY` | `webhook-signature.js:273` |
-| 应用私钥 | 代码内使用（**当前未实现**） | — |
-| APPID | **代码未读取** | — |
+| APPID | `ALIPAY_APP_ID` | 应用详情页 |
+| 应用私钥 | `ALIPAY_PRIVATE_KEY` | 裸 base64 或 PEM 均可（代码自动补 PEM 头） |
+| 支付宝公钥 | `ALIPAY_PUBLIC_KEY` | 用于**回调验签**（不是应用公钥） |
+| 回调地址 | `ALIPAY_NOTIFY_URL` | 必须公网可达，如 `https://api.clipchain.top/api/webhooks/alipay` |
+| 沙箱开关 | `ALIPAY_SANDBOX` | `true` 时走 `openapi-sandbox.dl.alipaydev.com` |
 
-> ⚠️ 支付宝侧只有**验签**有代码，**下单、APPID、应用私钥全部未实现**。
+**实现位置**
+- `src/server/src/utils/alipay.js` —— 签名/验签/下单/查单（自实现，未引第三方 SDK）
+- `src/server/src/routes/paymentWebhooks.js` —— 异步通知入口
+- `src/server/src/services/orderFulfillment.js` —— 支付成功后统一履约（幂等）
+- `src/desktop/src/components/payment/AlipayScanPay.vue` —— 扫码支付面板
+- 单测：`src/server/tests/alipay.test.js`（21 例，锁死签名串规则与篡改失败）
 
-**验证**：同 B1
+**关键规则**（易错，已在单测中锁定）
+- 签名串：按 key **ASCII 升序**、`k=v&` 连接、末尾**无** `&`
+- **空值必须剔除**（官方 SDK `AlipaySignature.getSignCheckContentV1` 用 `areNotEmpty`）
+- 排除字段：请求签名只排 `sign`；**回调验签还要排 `sign_type`**
+- 回调成功响应体必须是**纯文本 `success`**（7 字符，无空格/HTML），否则会持续重试
+- 重试节奏：`4m/10m/10m/1h/2h/6h/15h`，最长约 24h
+
+**验证**：后端日志出现验签通过；`GET /api/admin/orders` 出现真实渠道订单；管理台「对账报告」有数据
 
 ---
 
