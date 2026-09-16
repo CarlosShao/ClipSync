@@ -2,7 +2,7 @@
  * Admin Console 系统配置 / 功能开关 / 公告下发 API 单测（Admin Console · T-A5）
  *
  * 覆盖（routes/admin/configs.js + announcements.js 挂载在 /api/admin 后的完整中间件链）：
- *  - GET   /configs        目录 5 键（含 maintenance_mode / audit_log_retention_days）+ JSONB→字符串
+ *  - GET   /configs        目录 32 键（含 maintenance_mode / audit_log_retention_days）+ JSONB→字符串
  *  - PATCH /configs/:key   requirePerm('admin.configs.manage')：未知键 404、value 空 40002、
  *                          maintenance_mode 缺原因 40003、JSONB 写入 + updated_by、审计 admin.config.update
  *  - GET   /flags          目录 5 开关
@@ -98,6 +98,10 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'maintenance_mode',
       'ai_max_tokens',
       'ai_default_provider',
+      // 071：全局联网搜索源（用户未配搜索源时的兜底；aiTools.js web_search 消费）
+      'ai_search_provider',
+      'ai_search_api_key_encrypted',
+      'ai_search_base_url',
       'session_timeout_minutes',
       'audit_log_retention_days',
       // AN-14（第二轮死配置清理）：max_collection_depth / enable_audit_log 已从目录移除（无消费方）；
