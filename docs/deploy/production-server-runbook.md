@@ -104,6 +104,78 @@ cp -a dist /opt/clipsync/nginx/sites/website
 - `npm run check` 会断言页脚出现备案号**且**是链到 `beian.miit.gov.cn` 的 `<a>`
 - 服务器上**没有 rsync**，用 `cp -a`
 
+## 3.1 发布桌面端安装包
+
+安装包**托管在自有域名** `https://www.clipchain.top/downloads/`，不走 GitHub Releases
+（国内访问不稳；且支付宝审核要求网站有真实交付物，同域更直观）。
+
+```bash
+# ① 本地构建（createUpdaterArtifacts 要求签名私钥，脚本已封装）
+pwsh -File scripts/build-desktop-installer.ps1
+#    产物：src/desktop/src-tauri/target/release/bundle/nsis/ClipSync_<ver>_x64-setup.exe
+
+# ② 上传（本地执行；SSH 走 ~/.ssh/config 的 CarlosCloudServer）
+scp <exe> <exe>.sig CarlosCloudServer:/opt/clipsync/downloads/
+
+# ③ 登记发布单（客户端自动更新读这里；不登记则 /updates/latest 返回 204）
+#    见下方 SQL；同时改 src/website/src/data/download-links.ts 的 href 并重新构建官网
+```
+
+`app_releases.platforms` 里显式写 `url` 与 `signature_file`（优先级最高，
+免得依赖 `release_download_base_url` 拼接）：
+
+```sql
+INSERT INTO app_releases (version, name, release_date, notes, platforms, is_published, published_at, rollout_percent)
+VALUES ('<ver>', 'ClipSync <ver>', CURRENT_DATE, '<更新说明>',
+  '{"windows-x86_64": {"filename": "ClipSync_<ver>_x64-setup.exe",
+    "url": "https://www.clipchain.top/downloads/ClipSync_<ver>_x64-setup.exe",
+    "signature_file": "https://www.clipchain.top/downloads/ClipSync_<ver>_x64-setup.exe.sig"}}'::jsonb,
+  true, NOW(), 100)
+ON CONFLICT (version) DO UPDATE SET platforms = EXCLUDED.platforms, is_published = true, published_at = NOW();
+```
+
+> ⚠️ `.sig` 必须与 `.exe` 一起上传。缺少它客户端会拒绝安装更新（签名校验失败）。
+> ⚠️ `system_configs.release_download_base_url` 也建议同步为
+> `"https://www.clipchain.top/downloads"`（发布单没写 url 时的兜底）。
+
+nginx 侧需要 `/downloads/` location（alias 到 `/usr/share/nginx/downloads/`，
+`Content-Disposition: attachment`），compose 挂载 `./downloads:/usr/share/nginx/downloads:ro`。
+
+## 3.2 支付宝配置
+
+`.env.production` 追加（改完**必须重建 api 镜像**，法务页/业务代码都烤进镜像）：
+
+```ini
+ALIPAY_APP_ID=            # 开放平台应用 APPID
+ALIPAY_PRIVATE_KEY=       # 应用私钥（裸 base64 或 PEM 均可，代码自动补 PEM 头）
+ALIPAY_PUBLIC_KEY=        # 支付宝公钥（回调验签用，不是应用公钥）
+ALIPAY_NOTIFY_URL=https://api.clipchain.top/api/webhooks/alipay
+ALIPAY_SANDBOX=false      # 联调期可设 true，但官方明确沙箱无法测异步通知
+```
+
+**未配置时的行为**：`POST /api/payments/create-order` 返回
+`503 ALIPAY_NOT_CONFIGURED`，**绝不静默降级成 mock**（那等于白送订阅）。
+
+**回调路由**：`POST /api/webhooks/alipay`（挂在 `/api/webhooks`，**不经过**
+`authenticateToken` / `csrfProtection` —— 支付宝服务器没有本站 JWT）。
+自测（未配置公钥时应返回 503 + `failure`，而不是 404/401）：
+
+```bash
+curl -s -o - -w '\n-> %{http_code}\n' -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'out_trade_no=TEST&trade_status=TRADE_SUCCESS' \
+  https://api.clipchain.top/api/webhooks/alipay
+# 期望：failure + 503（"未配置" = 路由已到达业务层）
+```
+
+> ⚠️ **`ALIPAY_PRIVATE_KEY` 只写在服务器 `.env.production`（权限 600）**，
+> 不要贴进对话、commit 或任何日志。
+
+> 📌 **安全约定（勿回退）**：`/api/subscriptions/subscribe` 只创建**待支付**订单
+> （202 + `paymentRequired`），不发放任何权益；7 天试用是独立端点
+> `/api/subscriptions/start-trial`（每用户终身一次）。历史上 `/subscribe` 曾
+> 不校验支付直接开卡，属严重漏洞，勿再把两者合并。
+
 ## 4. 更新管理台
 
 ```bash
