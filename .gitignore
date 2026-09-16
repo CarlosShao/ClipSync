@@ -71,7 +71,13 @@ docker-compose.override.yml
 *.tmp
 *.temp
 .temp/
-data/
+# 运行期数据目录（Postgres/MinIO 落盘）。注意：不能写成裸 `data/`——
+# 那会连带忽略 src/website/src/data/ 这类**源码**目录，
+# 导致 download-links.ts 本地构建通过却从未入库、服务器构建失败（2026-09-15 实测踩到）。
+/data/
+src/server/data/
+!src/website/src/data/
+!src/website/src/data/**
 
 # WorkBuddy (local workspace data, not project code)
 .workbuddy/
