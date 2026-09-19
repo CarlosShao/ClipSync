@@ -179,6 +179,18 @@ curl -s -o - -w '\n-> %{http_code}\n' -X POST \
 > `/api/subscriptions/start-trial`（每用户终身一次）。历史上 `/subscribe` 曾
 > 不校验支付直接开卡，属严重漏洞，勿再把两者合并。
 
+## 3.3 CORS 白名单（2026-09-19 踩坑）
+
+`.env.production` 必须有：
+
+```ini
+CORS_ORIGINS=http://tauri.localhost,http://localhost:1420,https://www.clipchain.top,https://admin.clipchain.top,https://clipchain.top
+```
+
+- 代码只读 `CORS_ORIGINS`（compose 里历史上的 `ALLOWED_ORIGINS` 是死变量，勿再依赖）。
+- 变量为空时白名单为空：**所有带 Origin 头的请求一律 403**（桌面端表现为「Failed to fetch」、管理台跨域全挂）；curl 不带 Origin 测不出来，验收必须带 `-H "Origin: http://tauri.localhost"` 看是否回显 `Access-Control-Allow-Origin`。
+- 改这个变量只需 `up -d` 重建容器；改 CORS 相关**代码**则要走第 5 节重建镜像。
+
 ## 4. 更新管理台
 
 ```bash
