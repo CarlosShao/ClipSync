@@ -112,19 +112,46 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
       }
     } else if (order.metadata?.planId) {
       const cycle = order.metadata.billingCycle === 'yearly' ? 'year' : 'month';
-      const created = await client.query(
-        `INSERT INTO user_subscriptions
-           (user_id, plan_id, status, start_date, end_date,
-            current_period_start, current_period_end, billing_cycle)
-         VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 ${cycle}',
-                 NOW(), NOW() + INTERVAL '1 ${cycle}', $3)
-         RETURNING id, plan_id`,
-        [order.user_id, order.metadata.planId, order.metadata.billingCycle || 'monthly']
+      // 同套餐已有 active 订阅时是「续费」而非「新订」：延长周期，绝不插第二行
+      // （2026-09-19 联调实测：用户重复付款曾开出两条重叠的 active 订阅）。
+      const existing = await client.query(
+        `SELECT id FROM user_subscriptions
+          WHERE user_id = $1 AND plan_id = $2 AND status = 'active'
+          ORDER BY current_period_end DESC
+          LIMIT 1`,
+        [order.user_id, order.metadata.planId]
       );
-      if (created.rows.length > 0) {
-        activatedSubscriptionId = created.rows[0].id;
-        planIdForUser = created.rows[0].plan_id;
+      if (existing.rows.length > 0) {
+        const extended = await client.query(
+          `UPDATE user_subscriptions
+              SET current_period_end = GREATEST(current_period_end, NOW()) + INTERVAL '1 ${cycle}',
+                  end_date = GREATEST(end_date, NOW()) + INTERVAL '1 ${cycle}',
+                  updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, plan_id`,
+          [existing.rows[0].id]
+        );
+        if (extended.rows.length > 0) {
+          activatedSubscriptionId = extended.rows[0].id;
+          planIdForUser = extended.rows[0].plan_id;
+        }
+      } else {
+        const created = await client.query(
+          `INSERT INTO user_subscriptions
+             (user_id, plan_id, status, start_date, end_date,
+              current_period_start, current_period_end, billing_cycle)
+           VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 ${cycle}',
+                   NOW(), NOW() + INTERVAL '1 ${cycle}', $3)
+           RETURNING id, plan_id`,
+          [order.user_id, order.metadata.planId, order.metadata.billingCycle || 'monthly']
+        );
+        if (created.rows.length > 0) {
+          activatedSubscriptionId = created.rows[0].id;
+          planIdForUser = created.rows[0].plan_id;
+        }
+      }
 
+      if (activatedSubscriptionId) {
         // 回填订单的 subscription_id，便于后续对账/退款定位
         await client.query('UPDATE payment_orders SET subscription_id = $1 WHERE id = $2', [
           activatedSubscriptionId,

@@ -7,6 +7,7 @@ import Button from '@/components/ui/button/Button.vue'
 import AlipayScanPay from '@/components/payment/AlipayScanPay.vue'
 import { Landmark, CircleCheck, Clock } from 'lucide-vue-next'
 import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
+import { fetchOrderStatus } from '@/api/payment'
 import './modal-shared.css'
 
 defineProps<{ showModalType: string }>()
@@ -47,7 +48,35 @@ function planPrice(plan: PricingPlan | null): string {
 
 // Plan selection state (for pricing → payment flow)
 const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
-const paymentResult = ref<{ kind: 'success' | 'fail' | 'pending'; message: string } | null>(null)
+interface PayDetail {
+  orderNo: string
+  amount?: string
+  plan?: string
+  paidAt?: string
+  expiresAt?: string
+}
+const paymentResult = ref<{
+  kind: 'success' | 'fail' | 'pending'
+  message: string
+  detail?: PayDetail
+} | null>(null)
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function payDetailRows(d: PayDetail): { k: string; v: string }[] {
+  const rows = [
+    { k: t('pay_result_order_no'), v: d.orderNo },
+    { k: t('pay_result_plan'), v: d.plan || '' },
+    { k: t('pay_result_amount'), v: d.amount || '' },
+    { k: t('pay_result_paid_at'), v: d.paidAt || '' },
+    { k: t('pay_result_expires_at'), v: d.expiresAt || '' },
+  ]
+  return rows.filter((r) => r.v)
+}
 
 // ===== Plan Selection → Payment Flow =====
 function selectPlan(plan: PricingPlan | null) {
@@ -79,9 +108,27 @@ function selectPaymentMethod(_method: string) {
   emit('switch-modal', 'pay-scan')
 }
 
-/** 扫码支付成功：提示并关闭 */
-function onPaid() {
-  paymentResult.value = { kind: 'success', message: t('pay_paid_ok') }
+/** 扫码支付成功：拉一次订单终态，结果页展示订单号/金额/套餐/有效期 */
+async function onPaid(orderNo: string) {
+  const detail: PayDetail = { orderNo }
+  try {
+    const res = await fetchOrderStatus(orderNo)
+    const o = res.ok ? (res.data as any)?.order : null
+    if (o) {
+      detail.amount = `¥${Number(o.amount).toFixed(2)}`
+      detail.paidAt = o.paidAt ? formatDateTime(o.paidAt) : ''
+      // 服务端履约按支付时间 +1 计费周期设 current_period_end，前端同口径展示
+      if (o.paidAt) {
+        const exp = new Date(o.paidAt)
+        exp.setMonth(exp.getMonth() + 1)
+        detail.expiresAt = formatDateTime(exp.toISOString())
+      }
+    }
+  } catch {
+    /* 详情拉取失败不阻塞成功提示，仅少几行信息 */
+  }
+  if (selectedPlan.value) detail.plan = selectedPlan.value.name
+  paymentResult.value = { kind: 'success', message: t('pay_paid_ok'), detail }
   emit('switch-modal', 'payment-result')
 }
 </script>
@@ -168,6 +215,12 @@ function onPaid() {
         <span v-else style="font-size: 48px">!</span>
       </div>
       <p class="pay-result-msg">{{ paymentResult.message }}</p>
+      <dl v-if="paymentResult.detail" class="pay-result-detail">
+        <template v-for="row in payDetailRows(paymentResult.detail)" :key="row.k">
+          <dt>{{ row.k }}</dt>
+          <dd>{{ row.v }}</dd>
+        </template>
+      </dl>
       <Button class="w-full" @click="emit('close')">{{ t('confirm_t') }}</Button>
     </div>
   </ModalDialog>
@@ -306,5 +359,26 @@ function onPaid() {
   color: var(--text-secondary);
   margin-bottom: 20px;
   line-height: 1.5;
+}
+.pay-result-detail {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+.pay-result-detail dt {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.pay-result-detail dd {
+  margin: 0;
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
 }
 </style>

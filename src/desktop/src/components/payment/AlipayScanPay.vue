@@ -32,7 +32,7 @@ const props = defineProps<{
   periodLabel?: string
 }>()
 
-const emit = defineEmits<{ paid: []; close: [] }>()
+const emit = defineEmits<{ paid: [orderNo: string]; close: [] }>()
 
 const { t } = useI18n()
 
@@ -107,7 +107,7 @@ function startPolling() {
       const status = (res.data as any)?.order?.status
       if (status === 'paid') {
         stopTimers()
-        emit('paid')
+        emit('paid', orderNo.value)
       } else if (status === 'cancelled' || status === 'failed') {
         stopTimers()
         errorMsg.value = t('pay_expired')
@@ -264,10 +264,12 @@ const showMask = computed(() => !agreed.value || loading.value || !!errorMsg.val
   background: var(--bg-surface);
 }
 
-/* 支付宝收银台二维码尺寸：qrcode_width=200，iframe 留出内边距 */
+/* 支付宝收银台二维码尺寸：qrcode_width=200，iframe 留出内边距。
+   margin-top：支付宝前置页的二维码贴页面顶部渲染（实测），留白补上视觉居中 */
 .qr-frame {
   width: 240px;
   height: 240px;
+  margin-top: 20px;
   border: 0;
   background: #fff;
 }
