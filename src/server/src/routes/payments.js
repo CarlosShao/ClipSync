@@ -329,64 +329,22 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
 
 /**
  * POST /api/payments/refund
- * 申请退款
+ * 申请退款 —— **已禁用（501）**，等待真实渠道退款接入（S2）。
+ *
+ * 原实现是假退款：只把订单标 refunded、订阅标 canceled，
+ * **从不调用支付宝退款 API**——用户视角'退款成功'但钱没退，
+ * 订阅反而没了。产品决策（2026-09-19）：退款=真实打款+订阅立即收回，
+ * 在 alipay.trade.refund 接入前，此端点必须拒绝而非误导。
  */
 router.post('/refund', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { orderId, reason = '用户申请退款' } = req.body;
-    
-    if (!orderId) {
-      return res.status(400).json({ error: 'Missing orderId parameter' });
-    }
-    
-    // 查询订单
-    const orderResult = await pool.query(
-      'SELECT * FROM payment_orders WHERE id = $1 AND user_id = $2',
-      [orderId, userId]
-    );
-    
-    if (orderResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Order not found' });
-    }
-    
-    const order = orderResult.rows[0];
-    
-    // 检查订单状态
-    if (order.status !== 'paid') {
-      return res.status(400).json({ error: 'Order is not paid, cannot refund' });
-    }
-    
-    // Mock退款：直接标记为已退款
-    await pool.query(`
-      UPDATE payment_orders 
-      SET status = 'refunded', refunded_at = NOW(), updated_at = NOW()
-      WHERE id = $1
-    `, [orderId]);
-    
-    // 更新订阅状态
-    await pool.query(`
-      UPDATE user_subscriptions 
-      SET status = 'canceled', canceled_at = NOW(), updated_at = NOW()
-      WHERE payment_order_id = $1
-    `, [orderId]);
-    
-    logger.info(`Refund successful for order ${order.order_no}, user: ${userId}`);
-    
-    res.json({
-      message: 'Refund successful',
-      order: {
-        id: order.id,
-        orderNo: order.order_no,
-        amount: parseFloat(order.amount),
-        status: 'refunded',
-        refundedAt: new Date().toISOString(),
-      },
-    });
-  } catch (err) {
-    logger.error('Refund error:', err);
-    res.status(500).json({ error: 'Failed to process refund' });
-  }
+  logger.warn('[payments] refund attempted but channel refund not integrated', {
+    userId: req.user?.userId,
+    orderId: req.body?.orderId,
+  });
+  return res.status(501).json({
+    error: 'Refund is not available yet. Please contact support.',
+    code: 'REFUND_NOT_IMPLEMENTED',
+  });
 });
 
 
