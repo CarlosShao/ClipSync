@@ -6,7 +6,7 @@ import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
 
 const { t } = useI18n()
 const toast = useSonner()
-const emit = defineEmits<{ back: [] }>()
+const emit = defineEmits<{ back: []; 'open-modal': [type: string] }>()
 
 // ===== 真实套餐价格（管理台 subscription_plans 实时数据）=====
 // 此前此处硬编码 ¥9.9/¥29，与管理台改价脱节（用户验收实测打回），
@@ -60,8 +60,9 @@ function selectPlan(plan: PricingPlan | null) {
     toast.show(t('already_free'), 'info')
     return
   }
-  // Placeholder: payment flow not yet implemented
-  toast.show(t('ft_building'), 'info')
+  // 打开真实的「套餐→支付→扫码」弹窗流（PricingPaymentModals），
+  // 此前这里是「功能建设中」占位——支付流早已在弹窗里接通，只是没接过来。
+  emit('open-modal', 'pricing')
 }
 </script>
 

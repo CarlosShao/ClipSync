@@ -809,7 +809,7 @@ function confirmAction() {
         @toggle-sensitive="onToggleSensitive"
       />
       <TemplatesView v-else-if="currentSub === 'templates'" :ai-enabled="aiEnabled" />
-      <SettingsView v-else-if="currentSub === 'settings'" :ai-enabled="aiEnabled" />
+      <SettingsView v-else-if="currentSub === 'settings'" :ai-enabled="aiEnabled" @open-modal="openModal" />
       <ProfileView v-else-if="currentSub === 'profile'" />
       <DevicesView v-else-if="currentSub === 'devices'" :ai-enabled="aiEnabled" @open-modal="openModal" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />

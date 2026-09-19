@@ -31,6 +31,7 @@ const { can } = useMenuAccess()
 const configStore = useConfigStore()
 
 const props = defineProps<{ aiEnabled?: boolean }>()
+const emit = defineEmits<{ 'open-modal': [type: string] }>()
 
 // A5「审查设置」内联结果卡：设置快照交给 AI 逐项给风险与建议（结构化 JSON，可跳转分节），不跳侧栏
 const reviewAi = useInlineAi()
@@ -300,7 +301,7 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
         <NotificationsSubPage v-else-if="activeSubPage === 'notifications'" @back="goBack" />
         <ExportSubPage v-else-if="activeSubPage === 'export'" @back="goBack" />
         <FeedbackSubPage v-else-if="activeSubPage === 'feedback'" @back="goBack" />
-        <PricingSubPage v-else-if="activeSubPage === 'pricing'" @back="goBack" />
+        <PricingSubPage v-else-if="activeSubPage === 'pricing'" @back="goBack" @open-modal="(type) => emit('open-modal', type)" />
         <BillingSubPage v-else-if="activeSubPage === 'billing'" @back="goBack" />
       </template>
 
