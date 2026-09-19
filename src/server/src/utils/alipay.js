@@ -188,11 +188,14 @@ function commonParams(method, notifyUrl) {
 }
 
 /**
- * 网关**响应**验签（S3）。
+ * 校验支付宝网关响应签名（S3）。
  *
- * 支付宝响应签名的原文是返回 JSON 中 `"<response_key>":{...}` 的**原始子串**
- * （含键名与冒号，精确到字节），不是重新序列化后的字符串——所以必须从
- * 响应文本里截取，绝不能用 JSON.parse 后 stringify（键序/数字格式会变）。
+ * ⚠️ 签名原文口径（2026-09-19 生产实测钉死）：是响应节点**值的原始 JSON 子串**
+ * （即 `"alipay_trade_refund_response":` 冒号后面的 `{...}` 本身，**不含键名与冒号**），
+ * 且必须是响应文本的原始字节——不能 JSON.parse 后重新 stringify（键序/数字格式会变）。
+ * 历史教训：最初按官方文档摘录写成 `"key":{...}`（含键名）口径，结果对真实响应
+ * **100% 验签失败**——退款实际已在支付宝侧成功却被判为渠道失败。口径变更的
+ * 判据实验（node_value_only RSA2 验签通过，其余口径全部失败）已留档。
  */
 export function verifyResponseSignature(nodeContent, signature) {
   const { publicKey } = getConfig();
@@ -207,7 +210,11 @@ export function verifyResponseSignature(nodeContent, signature) {
   }
 }
 
-/** 从响应原文中截取 `"responseKey":{...}` 原始子串（花括号配对，跳过字符串内的括号）。导出仅为测试。 */
+/**
+ * 从响应原文中截取 `"responseKey":{...}` 的**值部分**（`{` 到配对 `}`，
+ * 跳过字符串内的括号/转义）。返回的子串即验签原文——不含键名与冒号（见上）。
+ * 截不到（无该键/JSON 异常）返回 null，调用方按验签失败处理，绝不降级信任。
+ */
 export function extractResponseNode(text, responseKey) {
   const marker = `"${responseKey}":`;
   const start = text.indexOf(marker);
@@ -227,7 +234,7 @@ export function extractResponseNode(text, responseKey) {
     else if (ch === '{') depth++;
     else if (ch === '}') {
       depth--;
-      if (depth === 0) return text.slice(start, i + 1);
+      if (depth === 0) return text.slice(start + marker.length, i + 1);
     }
   }
   return null;
@@ -354,11 +361,13 @@ export async function queryTrade(outTradeNo) {
  * 因此全额退款固定用商户订单号充当（一期只做全额退款，见 routes/payments.js /refund）。
  * 换 out_request_no 即可做部分退款/多次退款（本期未开放）。
  *
- * fund_status 语义（官方口径）：
- *   'Y' 退款成功（资金已退回买家）
- *   'C' 退款失败（原资金已退回买家账户失败等，可换请求号重试）
- *   'D' 退款未知（需稍后查询确认，**不可当作成功**）
- * code !== '10000' 的业务失败由 callGateway 抛错（err.code / err.subCode）。
+ * fund_status 语义（仅旧版接口返回；现行 alipay.trade.refund 响应**没有** fund_status，
+ * 2026-09-19 生产实测确认）：'Y' 成功 / 'C' 失败 / 'D' 未知。
+ * 现行接口的成功判定：callGateway 已保证 code='10000'（非 10000 一律抛错），
+ * 退款请求即进入成功态；fund_change 只描述**本次调用**是否发生资金变动——
+ * 同一 out_request_no 幂等重放返回 code=10000 + fund_change='N'，含义是
+ * 「此前该请求已成功退款」，绝不能当作失败（否则本地永远对不上账）。
+ * 真正的失败只会以 code!=10000 出现（如 REFUND_FEE_EXCEED / TRADE_STATUS_NOT_ALLOWED）。
  *
  * @param {object} p
  * @param {string} p.outTradeNo    商户订单号（下单时的 out_trade_no）
@@ -383,11 +392,12 @@ export async function refundTrade({ outTradeNo, refundAmount, outRequestNo }) {
   const payload = await callGateway('alipay.trade.refund', bizContent);
 
   return {
-    // 只有 fund_status='Y' 才是「钱确实退出去了」；'D'（未知）与 'C'（失败）一律不算成功
-    ok: payload.fund_status === 'Y',
+    // 旧版响应带 fund_status：只有 'Y' 算成功；现行响应不带该字段：code=10000（能走到
+    // 这里就成立）即退款成功态，fund_change='N' 是幂等重放的正常表现（见上方注释）。
+    ok: payload.fund_status ? payload.fund_status === 'Y' : true,
     code: payload.code,
-    fundStatus: payload.fund_status,
-    refundAmount: payload.refund_amount || bizContent.refund_amount,
+    fundStatus: payload.fund_status || payload.fund_change || null,
+    refundAmount: payload.refund_fee || payload.refund_amount || bizContent.refund_amount,
     tradeNo: payload.trade_no,
     outTradeNo: payload.out_trade_no || outTradeNo,
     requestId: bizContent.out_request_no,

@@ -16,8 +16,9 @@ import crypto from 'node:crypto';
  *   3. 裸 base64 密钥可补成 PEM，且补出来的内容能被 crypto 真正解析
  *   4. 篡改任何一个字段（金额/订单号）都必须验签失败
  *
- * 退款（refundTrade，任务板 #10）额外锁定：请求报文口径 + 「只有 fund_status='Y'
- * 才算成功」+ 响应验签不可绕过（伪造 Y 等于凭空把订单标成已退款）。
+ * 退款（refundTrade，任务板 #10）额外锁定：请求报文口径 + 成功判定（旧版
+ * fund_status='Y'；现行接口无该字段，code=10000 即成功态、幂等重放 fund_change='N' 也算）
+ * + 响应验签不可绕过（伪造 Y 等于凭空把订单标成已退款）。
  * 全部离线：网关调用用 vi.stubGlobal('fetch') 打桩，签名/验签用测试内自生成的密钥对。
  */
 
@@ -266,8 +267,9 @@ describe('支付宝工具 - 收银台 URL', () => {
 });
 
 describe('支付宝工具 - 网关响应验签（S3）', () => {
+  // 口径（2026-09-19 生产实测钉死）：签名原文 = 响应节点**值的原始子串**，不含 "key": 前缀
   const node = (amount = '9.90') =>
-    `"alipay_trade_query_response":{"code":"10000","msg":"Success","out_trade_no":"ORD1","total_amount":"${amount}"}`;
+    `{"code":"10000","msg":"Success","out_trade_no":"ORD1","total_amount":"${amount}"}`;
 
   it('正确响应原文验签通过', async () => {
     process.env.ALIPAY_PUBLIC_KEY = PUB;
@@ -282,11 +284,19 @@ describe('支付宝工具 - 网关响应验签（S3）', () => {
     expect(mod.verifyResponseSignature(node('0.01'), sig)).toBe(false);
   });
 
-  it('extractResponseNode：字符串值内含花括号/转义不干扰配对', async () => {
+  it('含键名前缀验签必须失败（钉死口径，防止改回 `"key":{...}` 旧实现）', async () => {
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+    const mod = await loadModule();
+    const value = node();
+    const withKey = `"alipay_trade_query_response":${value}`;
+    expect(mod.verifyResponseSignature(withKey, signWith(value))).toBe(false);
+  });
+
+  it('extractResponseNode：返回节点值（不含键名），字符串值内含花括号/转义不干扰配对', async () => {
     const mod = await loadModule();
     const text = `{"alipay_trade_query_response":{"code":"10000","sub_msg":"a{\\"b\\"}c"},"sign":"xx"}`;
     expect(mod.extractResponseNode(text, 'alipay_trade_query_response')).toBe(
-      `{"alipay_trade_query_response":{"code":"10000","sub_msg":"a{\\"b\\"}c"}`.slice(1),
+      `{"code":"10000","sub_msg":"a{\\"b\\"}c"}`,
     );
   });
 
@@ -299,10 +309,10 @@ describe('支付宝工具 - 网关响应验签（S3）', () => {
 describe('支付宝工具 - 退款 refundTrade（#10）', () => {
   const REFUND_KEY = 'alipay_trade_refund_response';
 
-  /** 用测试内生成的私钥签响应原文，模拟一个"真的来自支付宝"的网关响应 */
+  /** 用测试内生成的私钥签响应原文（口径：只签节点**值**），模拟"真的来自支付宝"的网关响应 */
   function gatewayBody(payload) {
-    const nodeText = `"${REFUND_KEY}":${JSON.stringify(payload)}`;
-    return `{${nodeText},"sign":"${signWith(nodeText)}"}`;
+    const valueText = JSON.stringify(payload);
+    return `{"${REFUND_KEY}":${valueText},"sign":"${signWith(valueText)}"}`;
   }
 
   function stubGateway(payload) {
@@ -405,10 +415,46 @@ describe('支付宝工具 - 退款 refundTrade（#10）', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => JSON.stringify({ [REFUND_KEY]: successPayload }) })));
     await expect(mod.refundTrade({ outTradeNo: 'ORD123', refundAmount: 9.9 })).rejects.toThrow(/no sign/);
 
-    // 2) 有 sign 但报文被改（把 9.90 改成 99.00）
-    const tampered = `{"${REFUND_KEY}":${JSON.stringify({ ...successPayload, refund_amount: '99.00' })},"sign":"${signWith(`"${REFUND_KEY}":${JSON.stringify(successPayload)}`)}"}`;
+    // 2) 有 sign 但报文被改（把 9.90 改成 99.00，签名仍按原报文）
+    const tampered = `{"${REFUND_KEY}":${JSON.stringify({ ...successPayload, refund_amount: '99.00' })},"sign":"${signWith(JSON.stringify(successPayload))}"}`;
     vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => tampered })));
     await expect(mod.refundTrade({ outTradeNo: 'ORD123', refundAmount: 9.9 })).rejects.toThrow(/signature invalid/);
+  });
+
+  it('现行接口形态：无 fund_status，code=10000 + fund_change=Y → ok=true（2026-09-19 生产实测）', async () => {
+    configuredEnv();
+    stubGateway({
+      code: '10000',
+      msg: 'Success',
+      trade_no: '2026091922001451181401908425',
+      out_trade_no: 'ORD123',
+      fund_change: 'Y',
+      gmt_refund_pay: '2026-09-19 22:09:57',
+      refund_fee: '0.01',
+      send_back_fee: '0.00',
+    });
+    const mod = await loadModule();
+    const r = await mod.refundTrade({ outTradeNo: 'ORD123', refundAmount: 0.01 });
+    expect(r.ok).toBe(true);
+    expect(r.fundStatus).toBe('Y'); // fund_status 缺失时回退 fund_change
+    expect(r.refundAmount).toBe('0.01'); // 现行字段名是 refund_fee
+  });
+
+  it('幂等重放：code=10000 + fund_change=N（首笔已退成功）→ ok=true，对账可收敛', async () => {
+    configuredEnv();
+    stubGateway({
+      code: '10000',
+      msg: 'Success',
+      trade_no: '2026091922001451181401908425',
+      out_trade_no: 'ORD123',
+      fund_change: 'N',
+      gmt_refund_pay: '2026-09-19 22:09:57',
+      refund_fee: '0.01',
+    });
+    const mod = await loadModule();
+    const r = await mod.refundTrade({ outTradeNo: 'ORD123', refundAmount: 0.01 });
+    expect(r.ok).toBe(true);
+    expect(r.fundStatus).toBe('N');
   });
 
   it('入参非法时不发请求（缺订单号 / 金额 ≤ 0 / 非数字）', async () => {

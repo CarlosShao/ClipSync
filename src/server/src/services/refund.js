@@ -18,9 +18,11 @@
 //
 // 顺序即安全性（不可调换）：
 //   定位订单 → 状态/渠道/凭据校验 → 渠道 refundTrade（全额） →
-//   仅 fund_status='Y' 才进事务：行锁复核 → 订单 refunded + refunded_at →
+//   渠道确认成功才进事务：行锁复核 → 订单 refunded + refunded_at →
 //   订阅 canceled + canceled_at（退款即收回权益）→ users 冗余状态回 free → 审计。
 //   渠道失败/未知 → 本地一字不动，抛 502 RefundError。
+//   （渠道成功判定口径见 utils/alipay.js#refundTrade：现行接口 code=10000 即成功态，
+//    幂等重放 fund_change='N' 不算失败；旧版 fund_status 非 'Y' 仍拒。）
 //
 // 关于「行锁」的位置：渠道打款是网络调用，若在调用前 FOR UPDATE 就会把行锁
 // 横跨一次外部 HTTP（并发退款会互相排队、锁等待还可能超时后留下「钱退了库没改」）。
@@ -214,7 +216,7 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
   }
 
   if (!refund.ok) {
-    // code=10000 但 fund_status 非 'Y'（'C' 失败 / 'D' 未知）：同样不得改本地状态
+    // 仅旧版渠道会走到这里（fund_status='C' 失败 / 'D' 未知）：同样不得改本地状态
     logger.error('[refund] alipay refund not confirmed', {
       orderNo: order.order_no,
       fundStatus: refund.fundStatus,

@@ -52,8 +52,9 @@ function signWith(str) {
 
 /** 生成一个"确实来自支付宝"的响应体（原文子串 + 对应签名） */
 function stubGatewayResponse(payload) {
-  const nodeText = `"${REFUND_KEY}":${JSON.stringify(payload)}`;
-  const body = `{${nodeText},"sign":"${signWith(nodeText)}"}`;
+  // 签名口径（2026-09-19 生产实测）：只签响应节点**值**，不含 "key": 前缀
+  const valueText = JSON.stringify(payload);
+  const body = `{"${REFUND_KEY}":${valueText},"sign":"${signWith(valueText)}"}`;
   const fn = vi.fn(async () => ({ text: async () => body }));
   vi.stubGlobal('fetch', fn);
   return fn;
