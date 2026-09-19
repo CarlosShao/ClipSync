@@ -109,6 +109,15 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       CORS_ORIGINS: ${CORS_ORIGINS}
 
+      # 支付宝（电脑网站支付）——凭据值只在服务器 .env.production，此处仅插值透传。
+      # ⚠️ 此段 2026-09-19 前只存在于服务器未提交的本机改动里，曾被
+      # `git checkout -- docker-compose.prod.yml` 冲掉导致支付 503；已入仓根治。
+      ALIPAY_APP_ID: ${ALIPAY_APP_ID}
+      ALIPAY_PRIVATE_KEY: ${ALIPAY_PRIVATE_KEY}
+      ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY}
+      ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL}
+      ALIPAY_SANDBOX: ${ALIPAY_SANDBOX:-false}
+
       # 日志配置
       LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
