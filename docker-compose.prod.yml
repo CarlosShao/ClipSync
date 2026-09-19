@@ -105,8 +105,9 @@ services:
       MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
       UPLOAD_DIR: /app/uploads
 
-      # CORS 配置
+      # CORS 配置（代码读 CORS_ORIGINS；ALLOWED_ORIGINS 为历史遗留死变量）
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      CORS_ORIGINS: ${CORS_ORIGINS}
 
       # 日志配置
       LOG_LEVEL: ${LOG_LEVEL:-info}

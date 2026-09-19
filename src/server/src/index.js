@@ -112,8 +112,12 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // 生产环境：白名单
-    const allowedOrigins = (config.cors?.origins || '').split(',').filter(Boolean);
+    // 生产环境：白名单（config.js 的 CORS_ORIGINS 覆盖产出数组，
+    // 未设置时 config/production.js 给的是逗号分隔字符串，两种都要能处理）
+    const rawOrigins = config.cors?.origins || '';
+    const allowedOrigins = (Array.isArray(rawOrigins) ? rawOrigins : rawOrigins.split(','))
+      .map((s) => String(s).trim())
+      .filter(Boolean);
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
