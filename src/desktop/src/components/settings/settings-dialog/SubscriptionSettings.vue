@@ -1,23 +1,49 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+import { useConfigStore } from '@/stores/configStore'
 import { ChevronRight } from 'lucide-vue-next'
+import { formatExpiryDate, loadCurrentSubscription, resolveCurrentSubscription } from '@/composables/useSubscriptionAccess'
 
 const { t, tf } = useI18n()
+const configStore = useConfigStore()
 const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
 
-// 2026-09-19 裁定：套餐管理（升级/取消订阅/申请退款）只在「个人资料」页，
-// 设置里不再放套餐与升级入口；发票下载功能砍掉（账单历史已列付款记录）。
-// 因此本分组只剩一条账单历史入口，分组标题也从「订阅与账单」收窄为「账单」。
-// 文案用新 key sg_bill_only：旧 key sg_sub_bill 词典值仍是「订阅与账单」。
+// 2026-09-19：分组恢复为三行（当前套餐 / 账单历史 / 发票下载）。
+// 「发票下载」不再是假按钮 —— 后端 GET /api/invoices/:id/download 已能真出 PDF，
+// 与账单历史同页（BillingSubPage 每行一个下载按钮），故两行都指向 billing。
+void loadCurrentSubscription()
+const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
+const currentHint = computed(() => {
+  const plan = tf(`role_${(current.value.planName || 'Free').toLowerCase()}`, current.value.planName || 'Free')
+  const expiry = formatExpiryDate(current.value.periodEnd)
+  return expiry
+    ? tf('sub_current_plan_h_with_expiry', `当前：${plan} · 到期时间：{date}`, { plan, date: expiry })
+    : tf('sub_current_plan_h_no_expiry', `当前：${plan}`, { plan })
+})
 </script>
 
 <template>
   <div class="settings-group">
-    <div class="sg-header">{{ tf('sg_bill_only', '账单') }}</div>
+    <div class="sg-header">{{ tf('sg_sub_bill', '订阅与账单') }}</div>
+    <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'pricing')">
+      <div class="sg-label">
+        <div class="sg-name">{{ tf('sg_current_plan', '当前套餐') }}</div>
+        <div class="sg-hint">{{ currentHint }}</div>
+      </div>
+      <ChevronRight class="sg-arrow" />
+    </div>
     <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'billing')">
       <div class="sg-label">
-        <div class="sg-name">{{ t('sg_billing') }}</div>
-        <div class="sg-hint">{{ t('sg_billing_h') }}</div>
+        <div class="sg-name">{{ t('sg_billing', '账单历史') }}</div>
+        <div class="sg-hint">{{ t('sg_billing_h', '查看付款记录') }}</div>
+      </div>
+      <ChevronRight class="sg-arrow" />
+    </div>
+    <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'billing')">
+      <div class="sg-label">
+        <div class="sg-name">{{ tf('sg_invoices', '发票下载') }}</div>
+        <div class="sg-hint">{{ tf('sg_invoices_h', '查看并下载付款收据') }}</div>
       </div>
       <ChevronRight class="sg-arrow" />
     </div>

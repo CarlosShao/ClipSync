@@ -4,7 +4,14 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # AN-06：postgresql-client（pg_dump）——手动备份 trigger_backup 依赖
-RUN apk add --no-cache postgresql-client
+# font-wqy-zenhei：中文字体（wqy-zenhei.ttc）——utils/pdf-invoice.js 用 pdfkit 生成
+#   发票 PDF，pdfkit 的标准 14 字体走 WinAnsi 编码，**画不出一个中文字**，
+#   必须嵌一款含 CJK 字形的 TrueType。实测该包落盘路径：
+#     /usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc（注意不是 Debian 的 truetype/wqy）
+#   且它是 TTC 集合，pdfkit 第二个参数要传 postscript 名 `WenQuanYiZenHei`
+#   （fontkit 按 postscriptName 精确匹配，传 "WenQuanYi Zen Hei" 会报 not found in collection）。
+#   builder 与 runtime 两个 stage 都要装：docker-compose.dev.yml 跑的是 builder 目标。
+RUN apk add --no-cache postgresql-client font-wqy-zenhei
 
 # Copy package files
 COPY package*.json ./
@@ -19,7 +26,9 @@ COPY . .
 FROM node:22-alpine
 
 # Install wget for healthcheck + postgresql-client (AN-06: pg_dump for trigger_backup)
-RUN apk add --no-cache wget postgresql-client
+# + font-wqy-zenhei（发票 PDF 中文字体，理由见 builder stage 注释）。
+#   生产 stage 漏装的后果：/api/invoices/:id/download 生成 PDF 时抛「未找到中文字体」→ 500。
+RUN apk add --no-cache wget postgresql-client font-wqy-zenhei
 
 # Create non-root user
 RUN addgroup -g 1001 -S clipsync && \

@@ -14,7 +14,8 @@ import { getTestApp } from './test-helpers.js';
  * res.status(501).json(...) → 客户端拿到一个「标着 PDF 附件的 JSON」，
  * 存成 invoice_XXX.pdf 就是打不开的坏文件（G4 的顺序错误）。
  *
- * 本文件用真库把这三条钉住：能查到、字段对得上、501 是纯 JSON。
+ * 本文件用真库把只读两条钉住：能查到、字段对得上；下载只钉「错误路径必须是纯
+ * JSON」这条不变式（成功出 PDF 的用例见 tests/invoice-download.test.js）。
  */
 
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -176,16 +177,17 @@ describe('GET /api/invoices/:id —— 账单详情（G3）', () => {
   });
 });
 
-describe('GET /api/invoices/:id/download —— 明确 501，不得伪装成 PDF（G4）', () => {
-  it('501 + JSON 错误壳；响应头不带 PDF 的 Content-Type / Content-Disposition', async () => {
-    const { invoiceId } = await seedInvoice({ invoiceNo: 'INV-G4-0001' });
-
-    const res = await request(app).get(`/api/invoices/${invoiceId}/download`);
-
-    expect(res.status).toBe(501);
-    expect(res.body.code).toBe('INVOICE_PDF_NOT_IMPLEMENTED');
+describe('GET /api/invoices/:id/download —— 错误路径不得伪装成 PDF（G4 顺序不变式）', () => {
+  // 2026-09-19：下载已实现（真出 PDF），**成功路径的用例在 tests/invoice-download.test.js**。
+  // 这里只保留 G4 的那条不变式：出错时必须是纯 JSON，绝不能带附件头，
+  // 否则客户端会存下一个「装着 JSON 的 .pdf」损坏文件。
+  it('发票不存在 → 404 JSON，且不带 PDF / 附件头', async () => {
+    const res = await request(app).get(
+      '/api/invoices/00000000-0000-4000-8000-0000000000fe/download'
+    );
+    expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
-    // 关键：501 时绝不能带文件头，否则客户端存下一个打不开的 .pdf
+    // 关键：错误响应绝不能带文件头，否则存下打不开的 .pdf
     expect(res.headers['content-disposition']).toBeUndefined();
   });
 
@@ -199,12 +201,5 @@ describe('GET /api/invoices/:id/download —— 明确 501，不得伪装成 PDF
     const res = await request(app).get(`/api/invoices/${invoiceId}/download`).redirects(0);
     expect([301, 302, 307]).toContain(res.status);
     expect(res.headers.location).toBe('https://invoice.example.test/ok.pdf');
-  });
-
-  it('发票不存在 → 404', async () => {
-    const res = await request(app).get(
-      '/api/invoices/00000000-0000-4000-8000-0000000000fe/download'
-    );
-    expect(res.status).toBe(404);
   });
 });
