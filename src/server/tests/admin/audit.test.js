@@ -3,14 +3,15 @@
  *
  * 覆盖（routes/admin/audit.js 挂载在 /api/admin 后的完整中间件链）：
  *  - GET /audit-logs 分页壳 { list, total, page, pageSize } + LIMIT/OFFSET 参数位置
- *  - 筛选语义契约（src/admin-console/src/mocks/handlers.test.ts 固化）：
- *      action=auth      → user.login% / user.logout%
- *      action=payment   → payment.% / admin.refund.%
+ *  - 筛选语义契约（§4-A11 修正后口径，见 routes/admin/audit.js 头注释）：
+ *      action=auth      → user.login% / user.logout% 前缀 + IN(login, login_failed, logout, admin_login)
+ *      action=payment   → 精确 IN 清单（payment_* / subscription_* / admin.orders.refund / admin.subscriptions.grant）
  *      action=sensitive → admin.% OR IN (user.deactivate, role.assign, user.delete)
  *      action=具体串    → ILIKE %v%（includes 匹配）
  *      operator=end_user → 操作者角色 user；operator=昵称 → u.nickname 精确匹配
  *      result=failed     → status <> 'success'；非法 result → 400
  *      ip / dateFrom / dateTo / q
+ *    ⚠️ 真实数据上的命中验证在 tests/admin-payment-surfaces.test.js（真库）。
  *  - 行映射契约（AuditLog）：details JSONB → key=value 摘要字符串（超长截断）、
  *      敏感标记、操作者昵称/打码手机号回退、operatorRole 三值映射、createdAt 'YYYY-MM-DD HH:mm:ss'
  *
@@ -211,24 +212,47 @@ describe('GET /api/admin/audit-logs —— details 序列化', () => {
 });
 
 describe('GET /api/admin/audit-logs —— 筛选语义契约（handlers.test.ts 固化）', () => {
-  it('action=auth：命中 user.login% / user.logout% 前缀', async () => {
+  it('action=auth：保留 user.login%/user.logout% 前缀 + 精确清单（真实值 login/logout/...）', async () => {
     mockPoolDefaults();
 
     const res = await request(buildApp()).get('/api/admin/audit-logs?action=auth');
     expect(res.status).toBe(200);
 
-    const [listSql] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
+    const [listSql, params] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
     expect(listSql).toContain("al.action LIKE 'user.login%'");
     expect(listSql).toContain("al.action LIKE 'user.logout%'");
+    // §4-A11 同源：库里真实写的是 'login' / 'login_failed' / 'logout' / 'admin_login'
+    expect(listSql).toContain('al.action IN ($1, $2, $3, $4)');
+    expect(params.slice(0, 4)).toEqual(['login', 'login_failed', 'logout', 'admin_login']);
   });
 
-  it('action=payment：命中 payment.% / admin.refund.% 前缀', async () => {
+  it('action=payment：精确 IN 清单（§4-A11，旧的 LIKE payment.% 在真实数据上恒 0 命中）', async () => {
     mockPoolDefaults();
 
     await request(buildApp()).get('/api/admin/audit-logs?action=payment');
-    const [listSql] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
-    expect(listSql).toContain("al.action LIKE 'payment.%'");
-    expect(listSql).toContain("al.action LIKE 'admin.refund.%'");
+    const [countSql, countParams] = pool.query.mock.calls.find(([s]) => s.includes('COUNT(*)'));
+    const [listSql, params] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
+
+    // 不再出现 LIKE 前缀写法
+    expect(listSql).not.toContain("LIKE 'payment.%'");
+    expect(listSql).not.toContain("LIKE 'admin.refund.%'");
+    expect(listSql).toContain('al.action IN (');
+    // 清单必须是**参数化**的（不得把动作名拼进 SQL 文本）
+    expect(listSql).toContain('$1, $2');
+    expect(params).toEqual(
+      expect.arrayContaining([
+        'payment_create',
+        'payment_complete',
+        'payment_auto_close',
+        'payment_refund',
+        'admin.orders.refund',
+        'admin.subscriptions.grant',
+      ])
+    );
+    expect(params).not.toContain('payment');
+    // COUNT 与列表必须同一份 WHERE（分页 total 才会对上）
+    expect(countSql).toContain('al.action IN (');
+    expect(countParams).toEqual(params.slice(0, countParams.length));
   });
 
   it('action=sensitive：admin.% 前缀 OR 三个精确动作', async () => {
@@ -334,7 +358,7 @@ describe('GET /api/admin/audit-logs —— 筛选语义契约（handlers.test.ts
     const [listSql, listParams] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
 
     // COUNT 子查询与列表查询携带相同筛选条件
-    expect(countSql).toContain("al.action LIKE 'payment.%'");
+    expect(countSql).toContain('al.action IN (');
     expect(countSql).toContain("r.role_key = 'user'");
     expect(countParams).toEqual(listParams.slice(0, countParams.length));
     // 分页参数追加在筛选之后（page=3, pageSize=20 → offset=40）

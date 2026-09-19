@@ -5,11 +5,15 @@
  *  - GET  /orders        分页壳 { list, total, page, pageSize } + 行字段映射（Order 契约）
  *  - GET  /orders?status=refunding 伪状态口径（refunded 且 metadata 无 refund_amount）
  *  - GET  /orders/:orderNo 详情与 404
- *  - POST /orders/:orderNo/refund 退款成功（状态/审计/年付全额退款取消订阅联动）
- *  - 退款金额超限 400 / 非 paid 订单 400 / 缺原因 400 / 无权限 403
- *  - GET  /reconciliation 三渠道对账行（含空渠道补 0）+ 无权限 403
+ *  - POST /orders/:orderNo/refund —— §4-A1 改造后本路由是**薄壳**：
+ *      权限/原因/部分退款闸在前，资金动作全部委托 services/refund.js#refundPaidOrder
+ *      （本文件用 vi.mock 把它换成可编程的桩，只验接线与错误壳映射）；
+ *      真实退款的资金不变量在 tests/payment-refund.test.js 与
+ *      tests/refund-service.test.js（真库）里锁。
+ *  - GET  /reconciliation 三渠道对账行（含空渠道补 0）+ 未识别渠道行（§4-A4）
+ *  - 无权限 403
  *
- * 全离线：vi.mock db/pool + middleware/auth（authenticateToken 按用例注入身份），
+ * 全离线：vi.mock db/pool + middleware/auth + services/refund，
  * pool.query 以 SQL 片段特征分发 mock 结果（与 adminRoutes.test.js 同风格）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -33,10 +37,33 @@ vi.mock('../../src/middleware/auth.js', () => ({
   optionalAuth: vi.fn((req, _res, next) => next()),
 }));
 
+// 退款服务薄壳化：路由只负责「权限 + 入参闸 + 错误壳映射 + 管理动作审计」，
+// 打款/落库由 services/refund.js 承担 —— 真实实现在真库测试里跑。
+// RefundError 必须是**同一个类**，否则路由里的 `err instanceof RefundError` 失效。
+const refundState = vi.hoisted(() => ({ impl: null }));
+
+vi.mock('../../src/services/refund.js', () => {
+  class RefundError extends Error {
+    constructor(status, code, message, extra = {}) {
+      super(message);
+      this.name = 'RefundError';
+      this.status = status;
+      this.code = code;
+      this.extra = extra;
+    }
+  }
+  const refundPaidOrder = vi.fn(async (arg) => {
+    if (refundState.impl) return refundState.impl(arg);
+    throw new Error('refundPaidOrder 桩未设置');
+  });
+  return { RefundError, refundPaidOrder, default: { RefundError, refundPaidOrder } };
+});
+
 import express from 'express';
 import request from 'supertest';
 import { pool } from '../../src/db/pool.js';
 import { clearPermCache } from '../../src/middleware/adminAuth.js';
+import { refundPaidOrder } from '../../src/services/refund.js';
 import adminRouter from '../../src/routes/admin/index.js';
 
 function buildApp() {
@@ -50,6 +77,8 @@ beforeEach(() => {
   clearPermCache();
   pool.query.mockClear();
   pool.query.mockReset();
+  refundPaidOrder.mockClear();
+  refundState.impl = null;
   // 默认身份：super_admin（退款/对账权限用例的基准身份）
   authState.user = { userId: 'u-super', roleKey: 'super_admin', roleLevel: 100, isAdmin: true };
 });
@@ -225,36 +254,76 @@ describe('GET /api/admin/orders/:orderNo —— 订单详情', () => {
   });
 });
 
-describe('POST /api/admin/orders/:orderNo/refund —— 退款（高危）', () => {
+describe('POST /api/admin/orders/:orderNo/refund —— 退款（§4-A1 薄壳）', () => {
   const REFUND_BODY = { amount: 99, reason: '用户重复支付' };
 
-  function mockRefundFlow(orderRow, captured) {
+  /** 服务层成功返回值（与 services/refund.js 的实现同形状） */
+  function serviceResult(orderRow, refundAmount = 99) {
+    return {
+      ok: true,
+      order: {
+        id: orderRow.id,
+        orderNo: orderRow.order_no,
+        amount: Number(orderRow.amount),
+        refundAmount,
+        currency: orderRow.currency,
+        status: 'refunded',
+        refundedAt: '2026-09-19T10:00:00.000Z',
+      },
+      entitlement: { subscriptionId: orderRow.subscription_id, subscriptionCanceled: true },
+      channel: {
+        name: 'alipay',
+        fund_status: 'Y',
+        trade_no: '202609192200000000',
+        out_request_no: orderRow.order_no,
+      },
+    };
+  }
+
+  /**
+   * 桩：权限放行 + 订单定位 + 审计写入 + 退款后回读。
+   * 第 1 次 ORDER_SELECT 返回原始（paid）行，第 2 次（退款后回读）返回 refunded 行。
+   */
+  function mockRefundFlow(orderRow, captured, { found = true } = {}) {
+    let selects = 0;
     pool.query.mockImplementation(async (sql, params) => {
-      // 权限校验（requirePerm）→ 放行
-      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.refund' }], rowCount: 1 };
-      // 退款回读订单
+      if (sql.includes('perm_key')) {
+        return { rows: [{ perm_key: 'admin.orders.refund' }], rowCount: 1 };
+      }
       if (sql.includes('FROM payment_orders po') && sql.includes('WHERE po.order_no = $1')) {
-        return { rows: [orderRow], rowCount: 1 };
-      }
-      if (sql.includes('UPDATE payment_orders')) {
-        captured.updateOrder = { sql, params };
-        return { rows: [], rowCount: 1 };
-      }
-      if (sql.includes('UPDATE user_subscriptions')) {
-        captured.updateSub = { sql, params };
-        return { rows: [], rowCount: 1 };
+        selects += 1;
+        if (!found) return { rows: [], rowCount: 0 };
+        if (selects === 1) return { rows: [orderRow], rowCount: 1 };
+        return {
+          rows: [{ ...orderRow, status: 'refunded', refund_amount: '99.00' }],
+          rowCount: 1,
+        };
       }
       if (sql.includes('INSERT INTO audit_logs')) {
-        captured.audit = { sql, params };
+        // 注意：superAdminAudit 中间件也会写一条 action='super_admin_action' 的行，
+        // 因此这里收集全部审计写入，断言时按 action 精挑。
+        captured.audits = (captured.audits || []).concat([{ sql, params }]);
+        return { rows: [], rowCount: 1 };
+      }
+      // 真实退款服务已被 vi.mock 接管；这里若被调用说明路由绕过了服务
+      if (sql.includes('UPDATE payment_orders') || sql.includes('UPDATE user_subscriptions')) {
+        captured.illegalDirectWrite = sql;
         return { rows: [], rowCount: 1 };
       }
       return { rows: [], rowCount: 0 };
     });
   }
 
-  it('年付全额退款成功：订单置 refunded、metadata 落退款信息、审计、订阅联动取消', async () => {
+  /** 从全部审计写入里挑出本路由自己写的管理动作行（superAdminAudit 也会写一行） */
+  function adminRefundAudit(captured) {
+    return (captured.audits || []).find((a) => a.params[1] === 'admin.orders.refund');
+  }
+
+  it('委托 refundPaidOrder：全额退款成功，响应仍是 Order 契约（回读映射）', async () => {
     const captured = {};
-    mockRefundFlow(makeOrderRow(), captured);
+    const orderRow = makeOrderRow();
+    mockRefundFlow(orderRow, captured);
+    refundState.impl = async () => serviceResult(orderRow);
 
     const res = await request(buildApp())
       .post('/api/admin/orders/CS20260905204188/refund')
@@ -268,86 +337,166 @@ describe('POST /api/admin/orders/:orderNo/refund —— 退款（高危）', () 
       refundAmount: 99,
     });
 
-    // 订单更新：status='refunded' + metadata 退款四要素
-    expect(captured.updateOrder.sql).toContain("status = 'refunded'");
-    expect(captured.updateOrder.sql).toContain('metadata');
-    const meta = JSON.parse(captured.updateOrder.params[1]);
-    expect(meta.refund_amount).toBe(99);
-    expect(meta.refund_reason).toBe('用户重复支付');
-    expect(meta.refund_by).toBe('u-super');
-    expect(meta.refunded_at).toBeTruthy();
+    // 只把「谁授权、为什么退、从哪来」交给服务；不带 amount（服务一律全额）
+    expect(refundPaidOrder).toHaveBeenCalledTimes(1);
+    expect(refundPaidOrder.mock.calls[0][0]).toMatchObject({
+      orderNo: 'CS20260905204188',
+      actorUserId: 'u-super',
+      reason: '用户重复支付',
+    });
+    expect(refundPaidOrder.mock.calls[0][0]).not.toHaveProperty('amount');
 
-    // 年付全额退款 → 订阅联动取消（status='canceled'）
-    expect(captured.updateSub).toBeTruthy();
-    expect(captured.updateSub.sql).toContain("'canceled'");
-    expect(captured.updateSub.params[0]).toBe('a1b2c3d4-1111-4aaa-9bbb-00000000aaaa');
+    // 路由不得再自己改订单/订阅（假退款实现的痕迹必须清零）
+    expect(captured.illegalDirectWrite).toBeUndefined();
 
-    // 审计：action=admin.orders.refund，details 含 orderNo/amount/reason
-    // （logAuditEvent INSERT 参数序：[$1 user_id, $2 action, $3 resource_type, $4 resource_id, $5 details, ...]）
-    expect(captured.audit).toBeTruthy();
-    expect(captured.audit.params[0]).toBe('u-super');
-    expect(captured.audit.params[1]).toBe('admin.orders.refund');
-    expect(captured.audit.params[2]).toBe('payment_order');
-    const details = JSON.parse(captured.audit.params[4]);
+    // 管理动作审计（资金审计 payment_refund 由服务写，两者并存）
+    const audit = adminRefundAudit(captured);
+    expect(audit).toBeTruthy();
+    expect(audit.params[0]).toBe('u-super');
+    expect(audit.params[2]).toBe('payment_order');
+    const details = JSON.parse(audit.params[4]);
     expect(details).toMatchObject({
       orderNo: 'CS20260905204188',
       amount: 99,
       reason: '用户重复支付',
+      channel: 'alipay',
+      fund_status: 'Y',
+      subscriptionCanceled: true,
     });
   });
 
-  it('月付部分退款成功但不联动取消订阅', async () => {
+  it('amount 缺省 = 全额放行；amount 等于订单全额（含 99 与 99.00）同样放行', async () => {
     const captured = {};
-    mockRefundFlow(makeOrderRow({ billing_cycle: 'monthly' }), captured);
+    const orderRow = makeOrderRow(); // amount '99.00'
+    mockRefundFlow(orderRow, captured);
+    refundState.impl = async () => serviceResult(orderRow);
+
+    expect(
+      (await request(buildApp()).post('/api/admin/orders/CS20260905204188/refund').send({ reason: 'a' }))
+        .status
+    ).toBe(200);
+    expect(
+      (await request(buildApp())
+        .post('/api/admin/orders/CS20260905204188/refund')
+        .send({ amount: '99.00', reason: 'a' })).status
+    ).toBe(200);
+    expect(refundPaidOrder).toHaveBeenCalledTimes(2);
+  });
+
+  it('部分退款一律 400 PARTIAL_REFUND_NOT_SUPPORTED，且不碰服务（§4-A1 本期不支持部分退款）', async () => {
+    const captured = {};
+    mockRefundFlow(makeOrderRow(), captured);
+    refundState.impl = async () => {
+      throw new Error('不应被调用');
+    };
+
+    for (const bad of [9.9, 50, 100, 'abc', 0]) {
+      const res = await request(buildApp())
+        .post('/api/admin/orders/CS20260905204188/refund')
+        .send({ amount: bad, reason: '协商部分退款' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(4000);
+      expect(res.body.error_code).toBe('PARTIAL_REFUND_NOT_SUPPORTED');
+      expect(res.body.orderAmount).toBe(99);
+    }
+    expect(refundPaidOrder).not.toHaveBeenCalled();
+    expect(adminRefundAudit(captured)).toBeUndefined();
+  });
+
+  it('月付订单全额退款同样走真实退款（旧「年付才收回权益」口径已废）', async () => {
+    const captured = {};
+    const orderRow = makeOrderRow({ billing_cycle: 'monthly', amount: '9.90' });
+    mockRefundFlow(orderRow, captured);
+    refundState.impl = async () => serviceResult(orderRow, 9.9);
 
     const res = await request(buildApp())
       .post('/api/admin/orders/CS20260905204188/refund')
-      .send({ amount: 9.9, reason: '部分退款' });
+      .send({ reason: '月付误购' });
 
     expect(res.status).toBe(200);
-    expect(res.body.data.refundAmount).toBe(9.9);
-    expect(captured.updateSub).toBeUndefined(); // 非年付全额退款不取消订阅
+    expect(refundPaidOrder).toHaveBeenCalledTimes(1);
   });
 
-  it('年付但部分退款不取消订阅', async () => {
-    const captured = {};
-    mockRefundFlow(makeOrderRow(), captured);
-
-    await request(buildApp())
-      .post('/api/admin/orders/CS20260905204188/refund')
-      .send({ amount: 50, reason: '协商部分退款' });
-
-    expect(captured.updateSub).toBeUndefined();
-  });
-
-  it('退款金额超限返回 400 { code: 4000 }，且不产生任何写操作', async () => {
-    const captured = {};
-    mockRefundFlow(makeOrderRow(), captured);
-
-    const res = await request(buildApp())
-      .post('/api/admin/orders/CS20260905204188/refund')
-      .send({ amount: 100, reason: '超额退款' });
-
-    expect(res.status).toBe(400);
-    expect(res.body.code).toBe(4000);
-    expect(captured.updateOrder).toBeUndefined();
-    expect(captured.updateSub).toBeUndefined();
-  });
-
-  it('非 paid 订单返回 400 { code: 40005 }', async () => {
+  it('服务抛 ORDER_NOT_REFUNDABLE → 400 { code: 40005 }，不写管理审计', async () => {
     const captured = {};
     mockRefundFlow(makeOrderRow({ status: 'pending' }), captured);
+    const { RefundError } = await import('../../src/services/refund.js');
+    refundState.impl = async () => {
+      throw new RefundError(400, 'ORDER_NOT_REFUNDABLE', 'Order is not paid, cannot refund', {
+        orderNo: 'CS20260905204188',
+        status: 'pending',
+      });
+    };
 
     const res = await request(buildApp())
       .post('/api/admin/orders/CS20260905204188/refund')
-      .send(REFUND_BODY);
+      .send({ reason: '未支付就想退' });
 
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe(40005);
-    expect(captured.updateOrder).toBeUndefined();
+    expect(res.body).toMatchObject({ code: 40005, refundCode: 'ORDER_NOT_REFUNDABLE' });
+    expect(adminRefundAudit(captured)).toBeUndefined();
   });
 
-  it('缺退款原因返回 400 { code: 4000 }', async () => {
+  it('服务抛 REFUND_CHANNEL_FAILED → 502 + 中文 message + channelError（钱没退就不显示已退款）', async () => {
+    const captured = {};
+    mockRefundFlow(makeOrderRow(), captured);
+    const { RefundError } = await import('../../src/services/refund.js');
+    refundState.impl = async () => {
+      throw new RefundError(502, 'REFUND_CHANNEL_FAILED', 'Refund failed at payment channel', {
+        orderNo: 'CS20260905204188',
+        channelError: { code: '40004', subCode: 'REFUND_AMOUNT_EXCEED', message: 'x' },
+      });
+    };
+
+    const res = await request(buildApp())
+      .post('/api/admin/orders/CS20260905204188/refund')
+      .send({ reason: '渠道失败' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe(5020);
+    expect(res.body.message).toContain('订单保持已支付');
+    expect(res.body.channelError).toMatchObject({ code: '40004' });
+    expect(adminRefundAudit(captured)).toBeUndefined();
+  });
+
+  it('服务抛 ALREADY_REFUNDED → 409 { code: 40901 }', async () => {
+    const captured = {};
+    mockRefundFlow(makeOrderRow({ status: 'refunded' }), captured);
+    const { RefundError } = await import('../../src/services/refund.js');
+    refundState.impl = async () => {
+      throw new RefundError(409, 'ALREADY_REFUNDED', 'Order already refunded', {
+        orderNo: 'CS20260905204188',
+      });
+    };
+
+    const res = await request(buildApp())
+      .post('/api/admin/orders/CS20260905204188/refund')
+      .send({ reason: '重复点' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe(40901);
+  });
+
+  it('非支付宝渠道：订单定位后由服务抛 REFUND_CHANNEL_UNSUPPORTED → 400 { code: 40006 }', async () => {
+    const captured = {};
+    mockRefundFlow(makeOrderRow(), captured);
+    const { RefundError } = await import('../../src/services/refund.js');
+    refundState.impl = async () => {
+      throw new RefundError(400, 'REFUND_CHANNEL_UNSUPPORTED', 'Channel mock cannot be refunded online', {
+        orderNo: 'CS20260905204188',
+        channel: 'mock',
+      });
+    };
+
+    const res = await request(buildApp())
+      .post('/api/admin/orders/CS20260905204188/refund')
+      .send({ reason: 'mock 单' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe(40006);
+    expect(res.body.refundCode).toBe('REFUND_CHANNEL_UNSUPPORTED');
+  });
+
+  it('缺退款原因返回 400 { code: 4000 }，不调服务', async () => {
     const captured = {};
     mockRefundFlow(makeOrderRow(), captured);
 
@@ -357,7 +506,19 @@ describe('POST /api/admin/orders/:orderNo/refund —— 退款（高危）', () 
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe(4000);
-    expect(captured.updateOrder).toBeUndefined();
+    expect(refundPaidOrder).not.toHaveBeenCalled();
+  });
+
+  it('订单不存在返回 404 { code: 40404 }，不调服务', async () => {
+    mockRefundFlow(makeOrderRow(), {}, { found: false });
+
+    const res = await request(buildApp())
+      .post('/api/admin/orders/CS99999999999999/refund')
+      .send({ reason: '不存在' });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ code: 40404, message: '订单不存在' });
+    expect(refundPaidOrder).not.toHaveBeenCalled();
   });
 
   it('无 admin.orders.refund 权限返回 403 { code: 4030 }，不执行退款', async () => {
@@ -373,16 +534,17 @@ describe('POST /api/admin/orders/:orderNo/refund —— 退款（高危）', () 
 
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ code: 4030, message: '缺少权限: admin.orders.refund' });
+    expect(refundPaidOrder).not.toHaveBeenCalled();
   });
 });
 
 describe('GET /api/admin/reconciliation —— 对账报告', () => {
-  it('返回固定三渠道行（无数据渠道补 0）与近 30 天口径', async () => {
+  it('返回固定三渠道行（无数据渠道补 0）与近 30 天口径；未识别渠道不混入微信', async () => {
     pool.query.mockImplementation(async (sql) => {
       if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.reconcile' }], rowCount: 1 };
       if (sql.includes('GROUP BY 1')) {
         return {
-          rows: [{ channel: 'wechat', paid_count: 86, paid_amount: 28410, refund_amount: 119.6 }],
+          rows: [{ channel: 'alipay', paid_count: 86, paid_amount: 28410, refund_amount: 119.6 }],
           rowCount: 1,
         };
       }
@@ -395,19 +557,49 @@ describe('GET /api/admin/reconciliation —— 对账报告', () => {
     expect(res.body.code).toBe(0);
     expect(typeof res.body.data.generatedAt).toBe('string');
     expect(res.body.data.rows).toHaveLength(3);
-    expect(res.body.data.rows[0]).toEqual({
-      channel: 'wechat',
-      label: '微信支付',
+    expect(res.body.data.rows[1]).toEqual({
+      channel: 'alipay',
+      label: '支付宝',
       paidCount: 86,
       paidAmount: 28410,
       refundAmount: 119.6,
     });
-    expect(res.body.data.rows[1]).toMatchObject({ channel: 'alipay', label: '支付宝', paidCount: 0 });
+    expect(res.body.data.rows[0]).toMatchObject({ channel: 'wechat', label: '微信支付', paidCount: 0 });
     expect(res.body.data.rows[2]).toMatchObject({ channel: 'stripe', label: 'Stripe', paidCount: 0 });
 
     const [aggSql] = pool.query.mock.calls.find(([s]) => s.includes('GROUP BY 1'));
     expect(aggSql).toContain("INTERVAL '30 days'");
     expect(aggSql).toContain("po.status IN ('paid', 'refunded')");
+    // §4-A4：认不出的渠道归 unknown，绝不再兜底成 wechat
+    expect(aggSql).toContain("ELSE 'unknown'");
+    expect(aggSql).not.toContain("ELSE 'wechat'");
+  });
+
+  it('存在未识别渠道订单时追加第 4 行（合计不得静默少钱，§4-A4）', async () => {
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.reconcile' }], rowCount: 1 };
+      if (sql.includes('GROUP BY 1')) {
+        return {
+          rows: [
+            { channel: 'alipay', paid_count: 3, paid_amount: 30, refund_amount: 0 },
+            { channel: 'unknown', paid_count: 2, paid_amount: 20, refund_amount: 5 },
+          ],
+          rowCount: 2,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await request(buildApp()).get('/api/admin/reconciliation');
+    const rows = res.body.data.rows;
+    expect(rows).toHaveLength(4);
+    expect(rows[3]).toEqual({
+      channel: 'unknown',
+      label: '未识别渠道（mock/历史单）',
+      paidCount: 2,
+      paidAmount: 20,
+      refundAmount: 5,
+    });
   });
 
   it('无 admin.orders.reconcile 权限返回 403 { code: 4030 }', async () => {

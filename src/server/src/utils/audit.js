@@ -259,4 +259,10 @@ export const AUDIT_ACTIONS = {
   SUBSCRIPTION_CREATE: 'subscription_create',
   SUBSCRIPTION_CANCEL: 'subscription_cancel',
   SUBSCRIPTION_RENEW: 'subscription_renew',
+  // POST /api/subscriptions/resume（routes/subscriptions.js:472）在用它，但常量此前
+  // 漏定义 → `AUDIT_ACTIONS.SUBSCRIPTION_RESUME` 求值为 undefined → logAuditEvent
+  // 以 action=NULL 插入 → 违反 NOT NULL 后整条审计静默丢失（审计页永远查不到恢复订阅）。
+  // ⚠️ 同类漏键还有 CLIPBOARD_CREATE / CLIPBOARD_DELETE（routes/clipboard.js:710,1069），
+  // 本次未一并处理（不在支付审计范围），见交付报告「未尽事项」。
+  SUBSCRIPTION_RESUME: 'subscription_resume',
 };

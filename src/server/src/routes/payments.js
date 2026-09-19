@@ -5,6 +5,9 @@ import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { buildPagePayUrl, queryTrade, isAlipayConfigured } from '../utils/alipay.js';
 import { markOrderPaid } from '../services/orderFulfillment.js';
+import { computeProration, decidePlanChange, roundToCent } from '../services/proration.js';
+import { refundPaidOrder, RefundError } from '../services/refund.js';
+import { isFlagEnabled } from '../utils/featureFlags.js';
 // 注：渠道回调（webhook）相关的中间件与 handler 已迁至
 // routes/paymentWebhooks.js（那里不需要 authenticateToken/csrfProtection），
 // 本文件不再 import 验签与幂等中间件。
@@ -13,8 +16,38 @@ import { markOrderPaid } from '../services/orderFulfillment.js';
 const router = Router();
 
 /**
+ * F2 修复：enable_subscription 开关的服务端强制点（收钱/退款两端各一道闸）。
+ *
+ * 历史：开关只影响**权益判定**（planFeature/subscriptionCheck 按 Free 处理），
+ * 收钱链路（create-order / refund / 履约）完全不看它 —— 管理台关掉订阅功能后，
+ * 老客户端或 curl 照样能建单收款、照样能退款，「开关」形同虚设。
+ * 现在：关闭时 503 { code: 'SUBSCRIPTION_DISABLED' }（不返回 403，语义是
+ * 「该功能暂时不可用」而非「你没权限」，客户端可据此重试/提示）。
+ *
+ * 用 isFlagEnabled 而非 requireFlag 中间件：requireFlag 的 403 形状与本文件
+ * 的 { error, code } 错误壳不一致；键名写成字面量以便 featureFlags 的
+ * AN-10 强制点自检扫到（否则 /api/admin/flags 的 enforced 会如实报 false）。
+ */
+async function subscriptionDisabled(res) {
+  return res.status(503).json({
+    error: 'Subscription feature is disabled by administrator',
+    code: 'SUBSCRIPTION_DISABLED',
+    flagDisabled: 'enable_subscription',
+  });
+}
+
+/**
  * POST /api/payments/create-order
  * 创建支付订单；支付宝渠道返回收银台 URL 供前端 iframe 内嵌二维码。
+ *
+ * body: { planId? , subscriptionId?, billingCycle? = 'monthly', paymentMethod? = 'alipay' }
+ *
+ * 升级差价折抵（任务板 #15）：调用方**只需照常传 planId + billingCycle**，
+ * 服务端自己识别「用户已持有 active 订阅」并处理三种结果 ——
+ *   档位更高 → 按残值折抵后建单（200，order.amount 即实付，metadata/响应带 proration）
+ *   同一套餐 → 409 ALREADY_SUBSCRIBED
+ *   档位更低（或同价）→ 409 DOWNGRADE_NOT_ALLOWED
+ * 无 active 订阅的用户维持全价新订（含 billingCycle='yearly'）。
  *
  * ⚠️ 关于 `mock` 渠道：
  * 它会把订单**直接置为已支付并开通订阅**（不经过任何渠道）。此前
@@ -28,9 +61,15 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const { subscriptionId, planId, billingCycle = 'monthly', paymentMethod = 'alipay' } = req.body;
 
+    // F2：开关关闭时不建单（在建单/校验之前拦，绝不留下永远付不掉的 pending 单）
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      logger.warn('[payments] create-order blocked: enable_subscription disabled', { userId });
+      return subscriptionDisabled(res);
+    }
+
     // 两种下单入口：
-    //   ① subscriptionId：已有订阅记录（升级/续费）
-    //   ② planId：全新订阅（用户还没有 user_subscriptions 记录），由履约时创建
+    //   ① planId：新订 / 升级（升级也走这个入口，服务端自行识别 active 订阅并折抵差价）
+    //   ② subscriptionId：已有订阅记录（历史入口；不给 planId 时按该订阅自身套餐计价）
     // 二者必须给一个，但不要都要求 —— 新用户场景下 subscriptionId 并不存在。
     if (!subscriptionId && !planId) {
       return res.status(400).json({ error: 'Missing subscriptionId or planId parameter' });
@@ -64,18 +103,38 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       });
     }
 
-    // 解析计价来源：订阅记录（升级）或套餐（新订）
+    // ── 解析目标套餐与计价 ──
     // subscription_plans 无 price/currency 列（只有 price_monthly/price_yearly），
-    // 按计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）
+    // 按计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）。
+    //
+    // 两种下单入口，目标套餐的确定规则：
+    //   ① 只给 planId       → 目标套餐 = planId（新订 / 升级）
+    //   ② 只给 subscriptionId → 目标套餐 = 该订阅所属套餐（历史行为：按该订阅自身周期计价）
+    //   ③ 二者都给且不同     → 以 planId 为目标（升级单：subscriptionId 指向被取代的旧订阅）
+    let targetPlan = null;
     let subscription = null;
+
+    if (planId) {
+      const planResult = await pool.query(
+        `SELECT id, name, display_name, price_monthly, price_yearly
+           FROM subscription_plans
+          WHERE id = $1 AND is_active = true`,
+        [planId]
+      );
+      if (planResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Plan not found' });
+      }
+      targetPlan = planResult.rows[0];
+    }
 
     if (subscriptionId) {
       const subscriptionResult = await pool.query(
-        `SELECT us.*,
+        `SELECT us.id, us.user_id, us.plan_id, us.billing_cycle,
+                us.current_period_start, us.current_period_end,
                 sp.name AS plan_name,
                 sp.display_name AS plan_display_name,
-                CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END AS price,
-                'CNY' AS currency
+                sp.price_monthly AS plan_price_monthly,
+                sp.price_yearly AS plan_price_yearly
          FROM user_subscriptions us
          JOIN subscription_plans sp ON us.plan_id = sp.id
          WHERE us.id = $1 AND us.user_id = $2`,
@@ -86,47 +145,150 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         return res.status(404).json({ error: 'Subscription not found' });
       }
       subscription = subscriptionResult.rows[0];
-    } else {
-      const planResult = await pool.query(
-        `SELECT id, name, display_name,
-                CASE WHEN $2 = 'yearly' THEN price_yearly ELSE price_monthly END AS price,
-                'CNY' AS currency
-           FROM subscription_plans
-          WHERE id = $1 AND is_active = true`,
-        [planId, billingCycle]
-      );
-
-      if (planResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Plan not found' });
-      }
-      const plan = planResult.rows[0];
-      // 新订：此时还没有订阅记录，履约阶段（markOrderPaid）会依据 metadata.planId 创建
-      subscription = {
-        id: null,
-        plan_name: plan.name,
-        plan_display_name: plan.display_name,
-        price: plan.price,
-        currency: plan.currency,
+      // 未显式指定 planId 时，目标套餐就是这条订阅当前的套餐
+      targetPlan = targetPlan || {
+        id: subscription.plan_id,
+        name: subscription.plan_name,
+        display_name: subscription.plan_display_name,
+        price_monthly: subscription.plan_price_monthly,
+        price_yearly: subscription.plan_price_yearly,
       };
     }
-    
+
+    // 计费周期：显式 planId 入口按请求参数；仅 subscriptionId 入口沿用该订阅自身周期
+    const effectiveCycle = planId
+      ? (billingCycle === 'yearly' ? 'yearly' : 'monthly')
+      : (subscription?.billing_cycle === 'yearly' ? 'yearly' : 'monthly');
+    const listPrice = roundToCent(
+      effectiveCycle === 'yearly' ? targetPlan.price_yearly : targetPlan.price_monthly
+    );
+    const currency = 'CNY';
+
+    // 套餐没配价（price_* 为 NULL，或 Free 这类 0 元套餐）：不能建 0 元订单——
+    // 支付宝会直接拒单，库里留下一条永远付不掉的 pending 单；Free 也不需要下单。
+    if (!(listPrice > 0)) {
+      logger.warn('[payments] plan price not configured, refusing to create order', {
+        userId,
+        planId: targetPlan.id,
+        billingCycle: effectiveCycle,
+      });
+      return res.status(400).json({
+        error: 'Plan price is not configured for the selected billing cycle',
+        code: 'PLAN_PRICE_MISSING',
+      });
+    }
+
+    // ── 升级差价折抵（任务板 #15）──
+    // 只认「status=active 且未到期」的订阅作为折抵依据：
+    //  - 已到期（哪怕状态还没被清扫任务改成 expired）不再有钱可折，按全价新订；
+    //  - 实付金额取该订阅最近一条已支付订单的金额（升级单本身是折抵后的价，
+    //    按实付折抵才不会把「上次的折扣」再折一遍），无支付订单时回退套餐标价
+    //    （mock/赠送/历史数据）。
+    const currentResult = await pool.query(
+      `SELECT us.id, us.plan_id, us.billing_cycle,
+              us.current_period_start, us.current_period_end,
+              sp.name AS plan_name,
+              sp.price_monthly AS plan_price_monthly,
+              COALESCE(
+                (SELECT po.amount
+                   FROM payment_orders po
+                  WHERE po.subscription_id = us.id AND po.status = 'paid'
+                  ORDER BY po.paid_at DESC NULLS LAST
+                  LIMIT 1),
+                CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END
+              ) AS paid_amount
+         FROM user_subscriptions us
+         JOIN subscription_plans sp ON sp.id = us.plan_id
+        WHERE us.user_id = $1 AND us.status = 'active' AND us.current_period_end > NOW()
+        ORDER BY us.current_period_end DESC
+        LIMIT 1`,
+      [userId]
+    );
+    const currentSubscription = currentResult.rows[0] || null;
+
+    let proration = null;
+    if (currentSubscription) {
+      const decision = decidePlanChange({
+        currentPlanId: currentSubscription.plan_id,
+        targetPlanId: targetPlan.id,
+        currentTierPrice: currentSubscription.plan_price_monthly,
+        targetTierPrice: targetPlan.price_monthly,
+      });
+
+      if (decision.kind === 'same') {
+        // 同套餐重复购买：既不折抵也不该再开一条，交给前端提示「已在该套餐」。
+        // 副作用：同套餐续费也因此被拦（#13 订阅入口治理的产品口径 —— 续费入口本期不提供，
+        // 到期后再订；履约侧仍保留"同套餐 active 则顺延周期"的兜底逻辑）。
+        logger.info('[payments] duplicate plan purchase blocked', {
+          userId,
+          planId: targetPlan.id,
+          subscriptionId: currentSubscription.id,
+        });
+        return res.status(409).json({
+          error: 'You are already subscribed to this plan',
+          code: 'ALREADY_SUBSCRIBED',
+          subscriptionId: currentSubscription.id,
+        });
+      }
+      if (decision.kind === 'downgrade') {
+        // 降档不做差价（低档位全额重购没有统一的公平口径），引导走客服/到期后重订
+        logger.info('[payments] downgrade purchase blocked', {
+          userId,
+          fromPlanId: currentSubscription.plan_id,
+          toPlanId: targetPlan.id,
+        });
+        return res.status(409).json({
+          error: 'Downgrade is not supported. Please wait for the current plan to expire, or contact support.',
+          code: 'DOWNGRADE_NOT_ALLOWED',
+        });
+      }
+
+      const base = computeProration({
+        paidAmount: currentSubscription.paid_amount,
+        periodStart: currentSubscription.current_period_start,
+        periodEnd: currentSubscription.current_period_end,
+        newPrice: listPrice,
+      });
+      proration = {
+        originalPrice: base.originalPrice,
+        creditAmount: base.creditAmount,
+        finalAmount: base.finalAmount,
+        remainingDays: base.remainingDays,
+        cycleDays: base.cycleDays,
+        oldSubscriptionId: currentSubscription.id,
+        oldPlanId: currentSubscription.plan_id,
+        newPlanId: targetPlan.id,
+      };
+    }
+
+    // 订单实付金额：升级单用折抵后价，其余用套餐标价
+    const amount = proration ? proration.finalAmount : listPrice;
+
     const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
     
     // 创建订单
     const orderResult = await pool.query(`
-      INSERT INTO payment_orders (user_id, subscription_id, order_no, amount, currency, payment_method, status, metadata)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO payment_orders (user_id, subscription_id, plan_id, order_no, amount, currency, payment_method, status, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING id, order_no, amount, currency, status, created_at
     `, [
       userId,
-      subscription.id,
+      subscription?.id || null,
+      targetPlan.id,
       orderNo,
-      subscription.price,
-      subscription.currency,
+      amount,
+      currency,
       paymentMethod,
       'pending',
-      // planId 供「新订」场景在履约时创建订阅记录（见 orderFulfillment.js）
-      JSON.stringify({ subscriptionId: subscription.id, planId: planId || null, billingCycle, paymentMethod })
+      // planId 供「新订/升级」场景在履约时创建订阅记录（见 orderFulfillment.js）；
+      // proration 是升级单标记，履约据此终止旧订阅（见 services/proration.js）
+      JSON.stringify({
+        subscriptionId: subscription?.id || null,
+        planId: targetPlan.id,
+        billingCycle: effectiveCycle,
+        paymentMethod,
+        ...(proration ? { proration } : {}),
+      })
     ]);
     
     const order = orderResult.rows[0];
@@ -143,6 +305,9 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         currency: order.currency,
         paymentMethod,
         subscriptionId,
+        planId: targetPlan.id,
+        billingCycle: effectiveCycle,
+        ...(proration ? { proration } : {}),
       },
       ipAddress: req.ip,
       userAgent: req.get('user-agent'),
@@ -174,6 +339,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
           status: 'paid',
           paidAt: new Date().toISOString(),
         },
+        proration,
         invoiceNo: fulfilled.order?.invoiceNo ?? null,
       });
     }
@@ -194,7 +360,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       const payUrl = buildPagePayUrl({
         outTradeNo: order.order_no,
         totalAmount: order.amount,
-        subject: `ClipSync ${subscription.plan_display_name || subscription.plan_name || '订阅'}`,
+        subject: `ClipSync ${targetPlan.display_name || targetPlan.name || '订阅'}`,
         notifyUrl,
       });
 
@@ -206,6 +372,9 @@ router.post('/create-order', authenticateToken, async (req, res) => {
           id: order.id,
           orderNo: order.order_no,
           amount: parseFloat(order.amount),
+          // 升级折抵时给前端把「原价 / 折抵 / 实付」摊开展示，避免用户对金额产生疑问
+          originalAmount: proration ? proration.originalPrice : parseFloat(order.amount),
+          creditAmount: proration ? proration.creditAmount : 0,
           currency: order.currency,
           status: order.status,
           paymentParams: {
@@ -214,6 +383,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
             cashierUrl: payUrl,
           },
         },
+        proration,
       });
     }
 
@@ -328,23 +498,67 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
  */
 
 /**
- * POST /api/payments/refund
- * 申请退款 —— **已禁用（501）**，等待真实渠道退款接入（S2）。
+ * POST /api/payments/refund —— 真实退款（客服通道）
  *
- * 原实现是假退款：只把订单标 refunded、订阅标 canceled，
- * **从不调用支付宝退款 API**——用户视角'退款成功'但钱没退，
- * 订阅反而没了。产品决策（2026-09-19）：退款=真实打款+订阅立即收回，
- * 在 alipay.trade.refund 接入前，此端点必须拒绝而非误导。
+ * body: { orderId | orderNo, reason? }
+ *  - orderId（UUID 主键）/ orderNo（业务单号）二选一，服务端按入参形状定位；
+ *  - 管理员校验：查 users.is_admin，非管理员 403 —— 产品决策：退款是**客服通道**，
+ *    应用内不做用户自助入口（自助退款会被拿来薅「先付款开权益→退款留权益」的羊毛）。
+ *
+ * ⚠️ §4-A1 重构：本路由只剩「权限 + 响应壳」，资金动作全部在
+ *   services/refund.js#refundPaidOrder —— 管理与用户侧两条退款端点自此共用同一
+ *   份真打款实现（旧的记账式实现在 admin/orders.js，已删除）。
+ *   流程、顺序与错误码见该文件头注释；简言之：
+ *   paid+alipay 校验 → alipay.trade.refund 全额 → 仅 fund_status='Y' 才
+ *   事务落库（订单 refunded + 订阅 canceled + users 回 free + 审计）。
+ *
+ * 权限模型说明（§4-A2 遗留）：本端点仍用 users.is_admin 布尔列；管理台端点用
+ * RBAC（roles/permissions）。两套口径的收敛不在本次改动范围内。
  */
 router.post('/refund', authenticateToken, async (req, res) => {
-  logger.warn('[payments] refund attempted but channel refund not integrated', {
-    userId: req.user?.userId,
-    orderId: req.body?.orderId,
-  });
-  return res.status(501).json({
-    error: 'Refund is not available yet. Please contact support.',
-    code: 'REFUND_NOT_IMPLEMENTED',
-  });
+  try {
+    const operatorId = req.user.userId;
+    const { orderId, orderNo, reason } = req.body || {};
+    const key = String(orderId || orderNo || '').trim();
+
+    if (!key) {
+      return res.status(400).json({ error: 'Missing orderId or orderNo parameter' });
+    }
+
+    // 管理员校验（客服通道，见函数头注释）
+    const adminResult = await pool.query('SELECT is_admin FROM users WHERE id = $1', [operatorId]);
+    if (adminResult.rows.length === 0 || !adminResult.rows[0].is_admin) {
+      logger.warn('[payments] refund denied: not admin', { operatorId, orderKey: key });
+      return res.status(403).json({ error: 'Admin access required', code: 'ADMIN_REQUIRED' });
+    }
+
+    // F2：开关关闭时不走退款（放在管理员校验之后，避免向未授权调用方泄露功能状态）
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      logger.warn('[payments] refund blocked: enable_subscription disabled', {
+        operatorId,
+        orderKey: key,
+      });
+      return subscriptionDisabled(res);
+    }
+
+    const result = await refundPaidOrder({
+      orderId,
+      orderNo,
+      actorUserId: operatorId,
+      reason,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    return res.json({ message: 'Refund successful', ...result });
+  } catch (err) {
+    if (err instanceof RefundError) {
+      // 服务层错误 → 本端点既有的 { error, code, ...extra } 错误壳（契约不变）
+      return res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
+    }
+    logger.error('Refund error:', err);
+    res.status(500).json({ error: 'Failed to process refund' });
+  }
 });
 
 

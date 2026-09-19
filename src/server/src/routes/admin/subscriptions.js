@@ -162,7 +162,9 @@ router.get('/stats', requirePerm('admin.subscriptions.view'), async (req, res) =
 /**
  * POST /api/admin/subscriptions/:id/grant  body { planId, months, reason }
  * 人工赠期/调整套餐（requirePerm('admin.subscriptions.grant')）：
- *  - 若 planId 与当前套餐不同 → 切换 plan_id；
+ *  - planId 兼容两种写法（§4-A12）：套餐 UUID 主键 **或** 套餐名（'pro'/'Enterprise'，
+ *    大小写不敏感）—— 管理台前端发的是后者，旧实现只收 UUID，人工赠期必 400；
+ *  - 若解析出的套餐与当前不同 → 切换 plan_id；
  *  - current_period_end 自「当前期末与 NOW() 的较大者」起延长 months 个月
  *    （GREATEST 防止对已过期订阅追加时长被 NOW() 之前的旧期末吞掉）；
  *  - status 置 'active'（赠期即恢复权益）；
@@ -178,11 +180,14 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
     if (!id || typeof id !== 'string' || !UUID_RE.test(id)) {
       return res.status(400).json({ code: 4000, message: '订阅 ID 不合法' });
     }
-    if (!planId || typeof planId !== 'string' || !UUID_RE.test(planId)) {
-      return res.status(400).json({ code: 4000, message: 'planId 必填且须为合法 UUID' });
+    if (!planId || typeof planId !== 'string' || !planId.trim()) {
+      return res.status(400).json({ code: 4000, message: 'planId 必填（套餐 UUID 或套餐名）' });
     }
-    if (!Number.isInteger(months) || months < 1 || months > 120) {
-      return res.status(400).json({ code: 4000, message: 'months 必须为 1-120 的整数' });
+    // 月数上限：前端 GrantSubscriptionModal 的 InputNumber 是 1-12，
+    // 服务端**刻意放宽到 1-36** —— 客服/续约补偿一次给 24~36 个月是合理运维动作，
+    // 不该被 UI 控件的保守上限卡住；同时保留硬上限，避免误输入成 1200 个月。
+    if (!Number.isInteger(months) || months < 1 || months > 36) {
+      return res.status(400).json({ code: 4000, message: 'months 必须为 1-36 的整数' });
     }
     if (!trimmedReason) {
       return res.status(400).json({ code: 4000, message: '赠期原因必填（写入审计日志）' });
@@ -194,9 +199,15 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
     }
     const subscription = subRows[0];
 
+    // §4-A12：UUID 与套餐名两条查询分支**必须分流**，不能写成 `id = $1 OR name = $1` ——
+    // PostgreSQL 会把非 UUID 字符串（'pro'）直接以 22P02 invalid input syntax 抛错，
+    // 整个 OR 条件根本走不到 name 那一侧。
+    const planIsUuid = UUID_RE.test(planId.trim());
     const { rows: planRows } = await pool.query(
-      'SELECT id, name, display_name FROM subscription_plans WHERE id = $1',
-      [planId]
+      planIsUuid
+        ? 'SELECT id, name, display_name FROM subscription_plans WHERE id = $1 AND is_active = true'
+        : 'SELECT id, name, display_name FROM subscription_plans WHERE lower(name) = lower($1) AND is_active = true',
+      [planId.trim()]
     );
     if (planRows.length === 0) {
       return res.status(404).json({ code: 40404, message: '套餐不存在' });
@@ -211,7 +222,7 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [id, planId, months]
+      [id, plan.id, months]
     );
     const updated = updatedRows[0];
 
@@ -231,11 +242,13 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
       resourceId: id,
       details: {
         targetUserId: subscription.user_id,
-        planId,
+        planId: plan.id,
+        // 原始入参一并留痕：管理台常按套餐名（'pro'）发指令，事后核对要看当时给的是什么
+        planIdInput: planId.trim(),
         planName: plan.display_name || plan.name,
         months,
         reason: trimmedReason,
-        switchedPlan: subscription.plan_id !== planId,
+        switchedPlan: subscription.plan_id !== plan.id,
       },
       ipAddress: req.ip,
       userAgent: req.headers ? req.headers['user-agent'] : undefined,
@@ -243,7 +256,8 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
 
     logger.info('[admin/subscriptions] grant executed', {
       subscriptionId: id,
-      planId,
+      planId: plan.id,
+      planIdInput: planId.trim(),
       months,
       operator: req.user?.userId,
     });

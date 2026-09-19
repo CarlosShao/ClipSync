@@ -35,14 +35,18 @@ import { logger } from '../../utils/logger.js';
 
 const router = Router();
 
-// 渠道归一化（与 orders.js CHANNEL_CASE_SQL 同口径：payment_channel 优先，回退 payment_method，
-// 识别不出归入 wechat，保证与前端 PaymentChannel 三值类型兼容）
+// 渠道归一化（与 orders.js CHANNEL_CASE_SQL 同口径：payment_channel 优先，回退 payment_method）
+// §4-A4：认不出渠道归入 'unknown' 而非 'wechat' —— 项目没有微信渠道，
+// 把 mock/空渠道算成微信支付会让看板渠道占比虚高。
+// 副作用（已知且刻意）：占比分母含 unknown，但固定三行不展示它 →
+// 存在未识别渠道时三行百分比之和 < 100（宁可少显，不可谎报）。
 const CHANNEL_EXPR = "lower(coalesce(nullif(po.payment_channel, ''), po.payment_method, ''))";
 const CHANNEL_CASE_SQL = `
   CASE
     WHEN ${CHANNEL_EXPR} LIKE '%stripe%' THEN 'stripe'
     WHEN ${CHANNEL_EXPR} LIKE '%alipay%' THEN 'alipay'
-    ELSE 'wechat'
+    WHEN ${CHANNEL_EXPR} LIKE '%wechat%' THEN 'wechat'
+    ELSE 'unknown'
   END`;
 
 const CHANNEL_LABELS = { wechat: '微信支付', alipay: '支付宝', stripe: 'Stripe' };

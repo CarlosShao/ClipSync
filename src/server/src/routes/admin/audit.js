@@ -13,8 +13,11 @@
 //   如 `amount=9.90, reason="用户重复支付"`；前端 parseDetailsToJson 可反向解析。
 //
 // 筛选语义契约（src/admin-console/src/mocks/handlers.test.ts 固化）：
-//   - action=auth      → action 前缀 user.login* / user.logout*
-//   - action=payment   → action 前缀 payment.* / admin.refund.*
+//   - action=auth      → 精确清单 { login, login_failed, logout, admin_login }
+//                        + 历史前缀 user.login* / user.logout*（§4-A11 同源修正）
+//   - action=payment   → 精确清单 PAYMENT_GROUP_ACTIONS（payment_* / subscription_*
+//                        / admin.orders.refund / admin.subscriptions.grant）
+//                        旧实现 LIKE 'payment.%' 在真实数据上恒 0 命中，已废
 //   - action=sensitive → action 前缀 admin.* 或 ∈ { user.deactivate, role.assign, user.delete }
 //   - action=其他串    → 具体动作 includes 匹配（ILIKE %v%）
 //   - operator=end_user → 操作者角色为 user（终端用户）；其他值 → 昵称精确匹配
@@ -25,6 +28,7 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+import { AUDIT_ACTIONS } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 
 const router = Router();
@@ -37,6 +41,46 @@ const VALID_ACTOR_LEVELS = new Set(['super_admin', 'admin', 'user']);
 const SENSITIVE_EXACT_ACTIONS = new Set(['user.deactivate', 'role.assign', 'user.delete']);
 // 摘要字符串最大长度（超长截断，防止大对象 details 撑爆表格/CSV）
 const MAX_DETAILS_LENGTH = 500;
+
+/**
+ * §4-A11：「支付相关」动作组的**精确清单**。
+ *
+ * 旧实现是 `action LIKE 'payment.%' OR action LIKE 'admin.refund.%'`，
+ * 而库里真实写入的是下划线形态（payment_create / payment_complete /
+ * payment_auto_close / payment_refund）与管理台动作 admin.orders.refund ——
+ * 一个 `%` 在 LIKE 里是通配、`.` 才是字面点号，所以这条筛选在生产**恒为 0 命中**。
+ * mock handlers 用的又是另一套值（admin.refund.execute），把漂移完全遮住了。
+ *
+ * 因此改为 IN 精确清单：值来自 utils/audit.js 的 AUDIT_ACTIONS（支付/订阅段）
+ * 与管理台路由实际写入的字面量。**新增支付类动作时必须同步这里**，
+ * 否则会退化成「审计页看不见但库里确有」的老毛病；
+ * tests/admin/audit.test.js + tests/admin-payment-surfaces.test.js 双向锁住。
+ */
+const PAYMENT_GROUP_ACTIONS = [
+  AUDIT_ACTIONS.PAYMENT_CREATE, // payment_create
+  AUDIT_ACTIONS.PAYMENT_COMPLETE, // payment_complete
+  AUDIT_ACTIONS.PAYMENT_FAILED, // payment_failed
+  AUDIT_ACTIONS.PAYMENT_REFUND, // payment_refund
+  AUDIT_ACTIONS.PAYMENT_AUTO_CLOSE, // payment_auto_close
+  AUDIT_ACTIONS.SUBSCRIPTION_CREATE, // subscription_create
+  AUDIT_ACTIONS.SUBSCRIPTION_CANCEL, // subscription_cancel
+  AUDIT_ACTIONS.SUBSCRIPTION_RENEW, // subscription_renew
+  AUDIT_ACTIONS.SUBSCRIPTION_RESUME, // subscription_resume
+  // AI 工具侧的档位变更（routes/aiTools.js 直接写字符串，不走 AUDIT_ACTIONS）
+  'subscription_upgrade',
+  'subscription_downgrade',
+  // 管理台动作（routes/admin/orders.js、admin/subscriptions.js 写入）
+  'admin.orders.refund',
+  'admin.subscriptions.grant',
+];
+
+/** 「登录/登出」组的精确清单（同 A11 病因，值取自 AUDIT_ACTIONS，勿再写前缀） */
+const AUTH_GROUP_ACTIONS = [
+  AUDIT_ACTIONS.LOGIN, // login
+  AUDIT_ACTIONS.LOGIN_FAILED, // login_failed
+  AUDIT_ACTIONS.LOGOUT, // logout
+  AUDIT_ACTIONS.ADMIN_LOGIN, // admin_login
+];
 
 /** 手机号打码：138****2765（与 routes/admin/orders.js 口径一致） */
 function maskPhone(phone) {
@@ -129,9 +173,20 @@ function buildAuditFilters(query, params) {
 
   if (action && action !== 'all') {
     if (action === 'auth') {
-      where.push(`(al.action LIKE 'user.login%' OR al.action LIKE 'user.logout%')`);
+      // 同 §4-A11 的病因：真实登录审计写的是 'login' / 'login_failed' / 'logout'
+      // （utils/audit.js AUDIT_ACTIONS），而这里只匹配 'user.login%' 前缀 → 命中 0。
+      // 前缀分支保留（历史行/其他写入方），精确清单负责今天真实写入的值。
+      const placeholders = AUTH_GROUP_ACTIONS.map((_, i) => `$${params.length + i + 1}`);
+      params.push(...AUTH_GROUP_ACTIONS);
+      where.push(
+        `(al.action LIKE 'user.login%' OR al.action LIKE 'user.logout%' ` +
+          `OR al.action IN (${placeholders.join(', ')}))`
+      );
     } else if (action === 'payment') {
-      where.push(`(al.action LIKE 'payment.%' OR al.action LIKE 'admin.refund.%')`);
+      // §4-A11：精确 IN 清单（参数化），不再用 LIKE 'payment.%' 前缀 —— 见 PAYMENT_GROUP_ACTIONS 注释
+      const placeholders = PAYMENT_GROUP_ACTIONS.map((_, i) => `$${params.length + i + 1}`);
+      params.push(...PAYMENT_GROUP_ACTIONS);
+      where.push(`al.action IN (${placeholders.join(', ')})`);
     } else if (action === 'sensitive') {
       const list = [...SENSITIVE_EXACT_ACTIONS].map((a) => `'${a}'`).join(', ');
       where.push(`(al.action LIKE 'admin.%' OR al.action IN (${list}))`);

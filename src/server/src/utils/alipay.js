@@ -5,7 +5,7 @@ import { logger } from './logger.js';
  * 支付宝开放平台客户端（自实现，不引第三方 SDK）。
  *
  * 为什么手写而不装 `alipay-sdk`：
- *  1. 本项目只用两个接口（电脑网站支付下单 + 交易查询）和回调验签，
+ *  1. 本项目只用三个服务端接口（电脑网站支付下单 + 交易查询 + 退款）和回调验签，
  *     SDK 带来的体积/传递依赖不划算；
  *  2. 回调验签本就必须自己控制「原始报文」与「排序规则」，SDK 反而遮住了细节；
  *  3. 项目已有手写 crypto 验签的先例（`middleware/webhook-signature.js`）。
@@ -344,11 +344,63 @@ export async function queryTrade(outTradeNo) {
   };
 }
 
+/**
+ * 发起退款（alipay.trade.refund）。
+ *
+ * 与 queryTrade 同样走 callGateway —— 响应**强制验签**，否则伪造的
+ * `fund_status: "Y"` 能让服务端在钱没退出去的情况下把订单标成 refunded。
+ *
+ * 幂等：`out_request_no` 是支付宝侧的退款请求号，同一笔请求重复提交不会重复扣款，
+ * 因此全额退款固定用商户订单号充当（一期只做全额退款，见 routes/payments.js /refund）。
+ * 换 out_request_no 即可做部分退款/多次退款（本期未开放）。
+ *
+ * fund_status 语义（官方口径）：
+ *   'Y' 退款成功（资金已退回买家）
+ *   'C' 退款失败（原资金已退回买家账户失败等，可换请求号重试）
+ *   'D' 退款未知（需稍后查询确认，**不可当作成功**）
+ * code !== '10000' 的业务失败由 callGateway 抛错（err.code / err.subCode）。
+ *
+ * @param {object} p
+ * @param {string} p.outTradeNo    商户订单号（下单时的 out_trade_no）
+ * @param {number|string} p.refundAmount 退款金额（元，最多两位小数）
+ * @param {string} [p.outRequestNo] 退款请求号；缺省时用 outTradeNo（全额退款幂等键）
+ * @returns {Promise<{ok:boolean, code:string, fundStatus:string, refundAmount:string,
+ *                    tradeNo:string, outTradeNo:string, requestId:string, payload:object}>}
+ */
+export async function refundTrade({ outTradeNo, refundAmount, outRequestNo }) {
+  if (!outTradeNo) throw new Error('refundTrade: outTradeNo is required');
+  const amount = Number(refundAmount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`refundTrade: invalid refundAmount ${refundAmount}`);
+  }
+
+  const bizContent = {
+    out_trade_no: outTradeNo,
+    refund_amount: amount.toFixed(2),
+    out_request_no: String(outRequestNo || outTradeNo),
+  };
+
+  const payload = await callGateway('alipay.trade.refund', bizContent);
+
+  return {
+    // 只有 fund_status='Y' 才是「钱确实退出去了」；'D'（未知）与 'C'（失败）一律不算成功
+    ok: payload.fund_status === 'Y',
+    code: payload.code,
+    fundStatus: payload.fund_status,
+    refundAmount: payload.refund_amount || bizContent.refund_amount,
+    tradeNo: payload.trade_no,
+    outTradeNo: payload.out_trade_no || outTradeNo,
+    requestId: bizContent.out_request_no,
+    payload,
+  };
+}
+
 export default {
   isAlipayConfigured,
   isAlipayNotifyConfigured,
   buildPagePayUrl,
   queryTrade,
+  refundTrade,
   signParams,
   verifyParams,
   verifyResponseSignature,

@@ -22,6 +22,53 @@ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 const PAID_STATES = new Set(['paid', 'refunded']);
 
 /**
+ * 按套餐激活/新建订阅（**必须在事务内调用**，第一参数是 client 不是 pool）。
+ *
+ * 不变量：同一用户、同一套餐最多只有一条 active 订阅。
+ * 已有 active 记录 → 顺延一个周期（续费，含升级单被重复支付的兜底）；
+ * 没有 → 新建一条，周期从 NOW() 起完整一个 billingCycle。
+ * （2026-09-19 联调实测：用户重复付款曾开出两条重叠的 active 订阅。）
+ *
+ * @returns {Promise<{id:string, plan_id:string}|null>}
+ */
+async function activatePlanSubscription(client, { userId, planId, billingCycle }) {
+  const yearly = billingCycle === 'yearly';
+  const cycle = yearly ? 'year' : 'month';
+
+  const existing = await client.query(
+    `SELECT id FROM user_subscriptions
+      WHERE user_id = $1 AND plan_id = $2 AND status = 'active'
+      ORDER BY current_period_end DESC
+      LIMIT 1`,
+    [userId, planId]
+  );
+
+  if (existing.rows.length > 0) {
+    const extended = await client.query(
+      `UPDATE user_subscriptions
+          SET current_period_end = GREATEST(current_period_end, NOW()) + INTERVAL '1 ${cycle}',
+              end_date = GREATEST(end_date, NOW()) + INTERVAL '1 ${cycle}',
+              updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, plan_id`,
+      [existing.rows[0].id]
+    );
+    return extended.rows[0] || null;
+  }
+
+  const created = await client.query(
+    `INSERT INTO user_subscriptions
+       (user_id, plan_id, status, start_date, end_date,
+        current_period_start, current_period_end, billing_cycle)
+     VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 ${cycle}',
+             NOW(), NOW() + INTERVAL '1 ${cycle}', $3)
+     RETURNING id, plan_id`,
+    [userId, planId, yearly ? 'yearly' : 'monthly']
+  );
+  return created.rows[0] || null;
+}
+
+/**
  * 将订单标记为已支付，并完成订阅开通与发票开具。
  *
  * @param {object} params
@@ -113,12 +160,70 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
     );
 
     // 开通订阅
-    //  ① 升级场景：订单已关联一条 user_subscriptions（建单时写入），直接置 active
-    //  ② 新订阅场景：建单时用户还没有订阅记录，需按 metadata 里的 planId/billingCycle 创建
+    //  ① 升级单：订单目标是**更高档位的新套餐**（下单侧已按残值折抵，见 services/proration.js）。
+    //     处理 = 为新套餐新建 active 订阅（周期从 NOW() 起完整一个 billingCycle）
+    //          + 把旧订阅立即终止。
+    //     为什么旧订阅要立即终止：残值已经把旧订阅剩余天数的钱折进本单了，
+    //     旧周期若继续挂着等于「一次折抵、两段权益」。
+    //     为什么写 canceled 而不是 superseded：user_subscriptions 的 status CHECK 约束
+    //     （迁移 048）不含 superseded，为「被升级取代」这一种来源去放宽约束不划算；
+    //     canceled 已是终止态、与退订/退款同口径，下游读侧一律按 status='active' 过滤，
+    //     取代来源另外记在 metadata.proration.oldSubscriptionId 与审计日志里，可追溯。
+    //  ② 续费/直接激活：订单已挂 user_subscriptions（建单时写入），置 active
+    //  ③ 新订阅：建单时用户还没有订阅记录，按 metadata.planId/billingCycle 创建
     let activatedSubscriptionId = null;
     let planIdForUser = null;
+    let supersededSubscriptionId = null;
 
+    const targetPlanId = order.metadata?.planId || null;
+    const declaredOldSubscriptionId = order.metadata?.proration?.oldSubscriptionId || null;
+
+    // 订单所挂订阅的套餐：用于识别 /subscriptions/subscribe 那种
+    // 「subscription_id 指向旧订阅 + metadata.planId 指向新套餐」的升级单
+    let linkedPlanId = null;
     if (order.subscription_id) {
+      const linked = await client.query(
+        'SELECT plan_id FROM user_subscriptions WHERE id = $1',
+        [order.subscription_id]
+      );
+      linkedPlanId = linked.rows[0]?.plan_id || null;
+    }
+
+    const isUpgradeOrder = Boolean(
+      targetPlanId && (declaredOldSubscriptionId || (linkedPlanId && linkedPlanId !== targetPlanId))
+    );
+
+    if (isUpgradeOrder) {
+      // 旧订阅：优先取下单时锁定的那条（metadata），退化用订单所挂订阅
+      supersededSubscriptionId = declaredOldSubscriptionId || order.subscription_id;
+      if (supersededSubscriptionId) {
+        await client.query(
+          `UPDATE user_subscriptions
+              SET status = 'canceled',
+                  canceled_at = NOW(),
+                  auto_renew = false,
+                  updated_at = NOW()
+            WHERE id = $1
+              AND status IN ('active', 'trial', 'past_due')`,
+          [supersededSubscriptionId]
+        );
+      }
+
+      const activated = await activatePlanSubscription(client, {
+        userId: order.user_id,
+        planId: targetPlanId,
+        billingCycle: order.metadata.billingCycle,
+      });
+      activatedSubscriptionId = activated?.id || null;
+      planIdForUser = activated?.plan_id || null;
+
+      if (activatedSubscriptionId) {
+        await client.query('UPDATE payment_orders SET subscription_id = $1 WHERE id = $2', [
+          activatedSubscriptionId,
+          order.id,
+        ]);
+      }
+    } else if (order.subscription_id) {
       const subRes = await client.query(
         `UPDATE user_subscriptions
             SET status = 'active', updated_at = NOW()
@@ -130,46 +235,14 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
         activatedSubscriptionId = subRes.rows[0].id;
         planIdForUser = subRes.rows[0].plan_id;
       }
-    } else if (order.metadata?.planId) {
-      const cycle = order.metadata.billingCycle === 'yearly' ? 'year' : 'month';
-      // 同套餐已有 active 订阅时是「续费」而非「新订」：延长周期，绝不插第二行
-      // （2026-09-19 联调实测：用户重复付款曾开出两条重叠的 active 订阅）。
-      const existing = await client.query(
-        `SELECT id FROM user_subscriptions
-          WHERE user_id = $1 AND plan_id = $2 AND status = 'active'
-          ORDER BY current_period_end DESC
-          LIMIT 1`,
-        [order.user_id, order.metadata.planId]
-      );
-      if (existing.rows.length > 0) {
-        const extended = await client.query(
-          `UPDATE user_subscriptions
-              SET current_period_end = GREATEST(current_period_end, NOW()) + INTERVAL '1 ${cycle}',
-                  end_date = GREATEST(end_date, NOW()) + INTERVAL '1 ${cycle}',
-                  updated_at = NOW()
-            WHERE id = $1
-            RETURNING id, plan_id`,
-          [existing.rows[0].id]
-        );
-        if (extended.rows.length > 0) {
-          activatedSubscriptionId = extended.rows[0].id;
-          planIdForUser = extended.rows[0].plan_id;
-        }
-      } else {
-        const created = await client.query(
-          `INSERT INTO user_subscriptions
-             (user_id, plan_id, status, start_date, end_date,
-              current_period_start, current_period_end, billing_cycle)
-           VALUES ($1, $2, 'active', NOW(), NOW() + INTERVAL '1 ${cycle}',
-                   NOW(), NOW() + INTERVAL '1 ${cycle}', $3)
-           RETURNING id, plan_id`,
-          [order.user_id, order.metadata.planId, order.metadata.billingCycle || 'monthly']
-        );
-        if (created.rows.length > 0) {
-          activatedSubscriptionId = created.rows[0].id;
-          planIdForUser = created.rows[0].plan_id;
-        }
-      }
+    } else if (targetPlanId) {
+      const activated = await activatePlanSubscription(client, {
+        userId: order.user_id,
+        planId: targetPlanId,
+        billingCycle: order.metadata.billingCycle,
+      });
+      activatedSubscriptionId = activated?.id || null;
+      planIdForUser = activated?.plan_id || null;
 
       if (activatedSubscriptionId) {
         // 回填订单的 subscription_id，便于后续对账/退款定位
@@ -227,6 +300,7 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
       channel,
       transactionId,
       subscriptionId: activatedSubscriptionId,
+      supersededSubscriptionId,
       invoiceNo,
     });
 
@@ -242,7 +316,13 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
     return {
       ok: true,
       changed: true,
-      order: { ...order, status: 'paid', invoiceNo, subscriptionId: activatedSubscriptionId },
+      order: {
+        ...order,
+        status: 'paid',
+        invoiceNo,
+        subscriptionId: activatedSubscriptionId,
+        supersededSubscriptionId,
+      },
     };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});

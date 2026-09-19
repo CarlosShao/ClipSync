@@ -137,10 +137,14 @@ describe('POST /api/admin/subscriptions/:id/grant —— 人工赠期/换套餐'
           ? { rows: [subscription], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
+      // §4-A12：UUID 与套餐名两条 SQL 分支（PG 不允许把 'pro' 拿去和 uuid 列比）
       if (sql.includes('FROM subscription_plans') && sql.includes('WHERE id = $1')) {
-        return plan
-          ? { rows: [plan], rowCount: 1 }
-          : { rows: [], rowCount: 0 };
+        captured.planBy = 'id';
+        return plan ? { rows: [plan], rowCount: 1 } : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes('FROM subscription_plans') && sql.includes('lower(name) = lower($1)')) {
+        captured.planBy = 'name';
+        return plan ? { rows: [plan], rowCount: 1 } : { rows: [], rowCount: 0 };
       }
       if (sql.includes('UPDATE user_subscriptions')) {
         captured.update = { sql, params };
@@ -154,6 +158,10 @@ describe('POST /api/admin/subscriptions/:id/grant —— 人工赠期/换套餐'
           ],
           rowCount: 1,
         };
+      }
+      if (sql.includes('UPDATE users')) {
+        captured.updateUser = { sql, params };
+        return { rows: [], rowCount: 1 };
       }
       if (sql.includes('INSERT INTO audit_logs')) {
         captured.audit = { sql, params };
@@ -213,6 +221,101 @@ describe('POST /api/admin/subscriptions/:id/grant —— 人工赠期/换套餐'
     expect(captured.update.params).toEqual([SUB_ID, PLAN_B_ID, 1]);
     const details = JSON.parse(captured.audit.params[4]);
     expect(details.switchedPlan).toBe(true);
+  });
+
+  it('planId 发套餐名（管理台实际口径 "pro"）：按 lower(name) 查，赠期成功（§4-A12）', async () => {
+    const captured = {};
+    mockGrantFlow(
+      { plan: { id: PLAN_A_ID, name: 'Pro', display_name: '专业版' } },
+      captured
+    );
+
+    const res = await request(buildApp())
+      .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+      .send({ planId: 'pro', months: 1, reason: '客服补偿 · 工单 #4821' });
+
+    expect(res.status).toBe(200);
+    expect(captured.planBy).toBe('name');
+    // 落库用的是解析出的 UUID 主键，绝不把 'pro' 塞进 uuid 列
+    expect(captured.update.params).toEqual([SUB_ID, PLAN_A_ID, 1]);
+    expect(res.body.data.planId).toBe(PLAN_A_ID);
+    const details = JSON.parse(captured.audit.params[4]);
+    expect(details).toMatchObject({ planId: PLAN_A_ID, planIdInput: 'pro', months: 1 });
+  });
+
+  it('planId 大小写不敏感（"Enterprise" 也能命中），且非法名不会打炸 SQL', async () => {
+    const captured = {};
+    mockGrantFlow(
+      { plan: { id: PLAN_B_ID, name: 'Enterprise', display_name: '企业版' } },
+      captured
+    );
+
+    const res = await request(buildApp())
+      .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+      .send({ planId: 'Enterprise', months: 2, reason: '大客户赠期' });
+
+    expect(res.status).toBe(200);
+    expect(captured.planBy).toBe('name');
+    expect(captured.update.params).toEqual([SUB_ID, PLAN_B_ID, 2]);
+  });
+
+  it('planId 是 UUID 时走主键分支（保证用索引，不退化成 name 全表扫）', async () => {
+    const captured = {};
+    mockGrantFlow({ plan: { id: PLAN_B_ID, name: 'Enterprise', display_name: '企业版' } }, captured);
+
+    const res = await request(buildApp())
+      .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+      .send({ planId: PLAN_B_ID, months: 1, reason: '按 UUID 赠期' });
+
+    expect(res.status).toBe(200);
+    expect(captured.planBy).toBe('id');
+  });
+
+  it('planId 不存在（名字拼错）→ 404 套餐不存在，不更新订阅', async () => {
+    const captured = {};
+    mockGrantFlow({ plan: null }, captured);
+
+    const res = await request(buildApp())
+      .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+      .send({ planId: 'enetprise', months: 1, reason: 'x' });
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ code: 40404, message: '套餐不存在' });
+    expect(captured.update).toBeUndefined();
+  });
+
+  it('months 上限与服务端 1-36 对齐（前端 UI 只放到 12，服务端更宽）', async () => {
+    const captured = {};
+    mockGrantFlow({ plan: { id: PLAN_A_ID, name: 'Pro', display_name: '专业版' } }, captured);
+
+    // 36 个月：放行（前端 GrantSubscriptionModal 的 max=12 只是 UI 保守值）
+    expect(
+      (await request(buildApp())
+        .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+        .send({ planId: PLAN_A_ID, months: 36, reason: '年度补偿' })).status
+    ).toBe(200);
+
+    // 37：拒绝（旧实现是 120，等于没有上限）
+    const tooBig = await request(buildApp())
+      .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+      .send({ planId: PLAN_A_ID, months: 37, reason: 'x' });
+    expect(tooBig.status).toBe(400);
+    expect(tooBig.body.message).toContain('1-36');
+    expect(captured.update.params).toEqual([SUB_ID, PLAN_A_ID, 36]);
+  });
+
+  it('planId 空串/缺失 → 400（旧实现因只收 UUID，管理台真实入参一律 400）', async () => {
+    const captured = {};
+    mockGrantFlow({}, captured);
+
+    for (const bad of ['', '   ', null, undefined]) {
+      const res = await request(buildApp())
+        .post(`/api/admin/subscriptions/${SUB_ID}/grant`)
+        .send({ planId: bad, months: 1, reason: 'x' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe(4000);
+    }
+    expect(captured.update).toBeUndefined();
   });
 
   it('缺 reason 返回 400 { code: 4000 }，不执行更新', async () => {
