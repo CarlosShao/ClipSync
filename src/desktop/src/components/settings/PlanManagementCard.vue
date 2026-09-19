@@ -94,6 +94,39 @@ function backToList() {
   selected.value = null
 }
 
+/**
+ * 退款错误码 → 中文文案（服务端 messages.js/路由返回的是英文，中文环境直接
+ * 展示等于没做国际化——2026-09-19 用户实测打回）。未知码回落服务端 message，
+ * 绝不吞错误；code 走 api() 的 data 透传（client.ts 错误分支带 data=json）。
+ */
+function refundErrorText(res: { error?: string; data?: any }): string {
+  const code = res.data?.code
+  switch (code) {
+    case 'REFUND_CHANNEL_FAILED':
+    case 'REFUND_NOT_CONFIRMED':
+      return t('refund_err_channel')
+    case 'REFUND_WINDOW_EXPIRED':
+      return t('refund_reason_REFUND_WINDOW_EXPIRED', { days: windowDays.value })
+    case 'NOT_LATEST_PAID_ORDER':
+      return t('refund_reason_NOT_LATEST_PAID_ORDER')
+    case 'ALREADY_REFUNDED':
+      return t('refund_reason_ALREADY_REFUNDED')
+    case 'CHANNEL_UNSUPPORTED':
+    case 'REFUND_CHANNEL_UNSUPPORTED':
+      return t('refund_reason_CHANNEL_UNSUPPORTED')
+    case 'REFUND_STATE_CONFLICT':
+      return t('refund_err_conflict')
+    case 'REFUND_LOCAL_UPDATE_FAILED':
+      return t('refund_err_local_update_failed')
+    case 'SUBSCRIPTION_DISABLED':
+      return t('refund_err_disabled')
+    case 'ORDER_NOT_FOUND':
+      return t('refund_err_not_found')
+    default:
+      return res.error || t('refund_fail_generic')
+  }
+}
+
 async function confirmRefund() {
   const o = selected.value
   if (!o || submitting.value) return
@@ -111,8 +144,8 @@ async function confirmRefund() {
     void configStore.fetchUserProfile()
     window.dispatchEvent(new CustomEvent('clipsync:subscription-changed'))
   } else {
-    // 服务端拒绝（超窗/非最近一笔/渠道…）：如实展示，不自动重试
-    toast.show(res.error || t('refund_fail_generic'), 'error')
+    // 服务端拒绝（超窗/非最近一笔/渠道…）：错误码映射中文，如实展示，不自动重试
+    toast.show(refundErrorText(res), 'error')
     refundStep.value = 'list'
     selected.value = null
     void loadOrders()
@@ -172,7 +205,7 @@ function reasonText(code: string | null): string {
     <ModalDialog
       :open="refundOpen"
       :title="refundStep === 'list' ? t('refund_request_btn') : t('refund_confirm_title')"
-      max-width="480px"
+      max-width="640px"
       @close="refundOpen = false"
     >
       <template v-if="refundStep === 'list'">

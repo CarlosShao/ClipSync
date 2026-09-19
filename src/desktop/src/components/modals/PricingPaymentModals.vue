@@ -181,7 +181,7 @@ async function onPaid(orderNo: string) {
 
 <template>
   <!-- Pricing -->
-  <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="620px" @close="emit('close')">
+  <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="720px" @close="emit('close')">
     <!-- enable_subscription 关闭：不给购买入口，也不报错——按「功能建设中」如实占位 -->
     <PlanCards v-if="can('nav.subscription')" @select="onPlanSelect" />
     <div v-else class="modal-state">{{ t('ft_building') }}</div>

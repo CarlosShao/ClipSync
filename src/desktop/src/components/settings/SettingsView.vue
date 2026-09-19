@@ -35,6 +35,7 @@ import SessionsSubPage from './settings-dialog/sub-pages/SessionsSubPage.vue'
 import NotificationsSubPage from './settings-dialog/sub-pages/NotificationsSubPage.vue'
 import ExportSubPage from './settings-dialog/sub-pages/ExportSubPage.vue'
 import FeedbackSubPage from './settings-dialog/sub-pages/FeedbackSubPage.vue'
+import PricingSubPage from './settings-dialog/sub-pages/PricingSubPage.vue'
 import BillingSubPage from './settings-dialog/sub-pages/BillingSubPage.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
@@ -45,9 +46,8 @@ const { can } = useMenuAccess()
 const configStore = useConfigStore()
 
 const props = defineProps<{ aiEnabled?: boolean }>()
-// 事件声明保留：HomeView 仍在本组件上绑定 @open-modal。设置内原先只有 PricingSubPage 会触发它，
-// 2026-09-19 裁定后套餐/升级入口已全部收进「个人资料」页，这里不再有实际触发点（删声明要同步改 HomeView）。
-defineEmits<{ 'open-modal': [type: string] }>()
+// open-modal：设置内「当前套餐」子页（PricingSubPage）点开升级弹窗流时上抛，HomeView 绑定
+const emit = defineEmits<{ 'open-modal': [type: string] }>()
 
 // A5「审查设置」内联结果卡：设置快照交给 AI 逐项给风险与建议（结构化 JSON，可跳转分节），不跳侧栏
 const reviewAi = useInlineAi()
@@ -158,9 +158,6 @@ const SECTION_ICONS: Record<string, unknown> = {
   about: Info,
 }
 const sections = computed<Section[]>(() => {
-  // 「订阅」分组已收敛为纯账单入口（2026-09-19 裁定：套餐管理只在个人资料页）。
-  // 文案走 tf 的新 key：sg_sub_bill / set_d_sub 在词典里仍是「订阅与账单」「当前套餐…」，
-  // 直接复用会把砍掉的入口名又显示回来（locales 本次不在改动范围内）。
   const all: Section[] = [
     { key: 'general', icon: Settings2, label: t('sg_gen'), desc: tf('set_d_general', '启动、语言与服务器连接') },
     { key: 'appearance', icon: Palette, label: t('sg_appear'), desc: tf('set_d_appearance', '主题、字号与界面风格') },
@@ -171,8 +168,8 @@ const sections = computed<Section[]>(() => {
     {
       key: 'subscription',
       icon: CreditCard,
-      label: tf('sg_bill_only', '账单'),
-      desc: tf('sg_bill_only_d', '查看付款记录与账单历史'),
+      label: t('sg_sub_bill'),
+      desc: tf('set_d_sub', '当前套餐与账单'),
       gated: true,
     },
     { key: 'data', icon: Database, label: t('sg_data'), desc: tf('set_d_data', '导出、导入与清理') },
@@ -191,6 +188,7 @@ const subPageRegistry: Record<string, string> = {
   notifications: 'sg_notifp',
   export: 'sg_export',
   feedback: 'fb_title',
+  pricing: 'sg_current_plan',
   billing: 'sg_billing',
 }
 const subPageLabel = computed(() => {
@@ -252,11 +250,15 @@ const {
   scrollToSection,
 })
 
-// 原型逻辑：区块顶边越过滚动区上部 35% 分界线即成为当前项；滚到底时强制末项
+// 原型逻辑：区块顶边越过滚动区上方 96px 判定线即成为当前项；滚到底时强制末项。
+// 判定线用固定小偏移而非 35% 视口高：短分组（如「订阅与账单」只有三行）返回时
+// 整组都落在 35% 带内，高亮会被后面的分组抢走（2026-09-19 用户实测：从账单历史
+// 返回后锚点错选「安全设置」）。scrollToSection/goBack 都是 block:'start' 对齐
+// 顶边，96px 带保证被导航的那个分组胜出。
 function updateActiveSection() {
   const root = rootRef.value
   if (!root) return
-  const band = root.getBoundingClientRect().top + root.clientHeight * 0.35
+  const band = root.getBoundingClientRect().top + 96
   let current = sections.value[0]?.key ?? 'general'
   for (const s of sections.value) {
     const el = root.querySelector('#sec-' + s.key) as HTMLElement | null
@@ -405,6 +407,7 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
         <NotificationsSubPage v-else-if="activeSubPage === 'notifications'" @back="goBack" />
         <ExportSubPage v-else-if="activeSubPage === 'export'" @back="goBack" />
         <FeedbackSubPage v-else-if="activeSubPage === 'feedback'" @back="goBack" />
+        <PricingSubPage v-else-if="activeSubPage === 'pricing'" @back="goBack" @open-modal="(type) => emit('open-modal', type)" />
         <BillingSubPage v-else-if="activeSubPage === 'billing'" @back="goBack" />
       </template>
 
