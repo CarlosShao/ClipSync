@@ -11,6 +11,11 @@
 //   正是 2026-09-19 用户侧被 501 阻断的那起事故在管理侧的复现。
 //   现在两个端点都只保留**权限判定 + 响应形状**，资金动作全部走本文件。
 //
+// 调用方（本文件不做任何权限/风控判定，谁调都一样退得动）：
+//   ① POST /api/payments/refund —— 订单**属主自助**退款（带风控闸，见
+//      services/refundPolicy.js）与管理员客服通道，产品决策 2026-09-19 变更；
+//   ② POST /api/admin/orders/:orderNo/refund —— 管理台 RBAC，不受自助风控闸限制。
+//
 // 顺序即安全性（不可调换）：
 //   定位订单 → 状态/渠道/凭据校验 → 渠道 refundTrade（全额） →
 //   仅 fund_status='Y' 才进事务：行锁复核 → 订单 refunded + refunded_at →
@@ -41,7 +46,48 @@ import { roundToCent } from './proration.js';
 
 // orderId 是 UUID 主键、orderNo 是业务单号：按形状分流，保证两条查询都走索引
 // （写成 `id::text = $1` 会让主键退化成全表扫描，且非 UUID 入参会直接抛错）
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+//
+// 这个形状判别 + 定位查询是「哪一笔订单被退」的**唯一裁判**，属主自助退款路由
+// （routes/payments.js 的 /refund、/refundable-orders）也要靠它先取到订单再判权限。
+// 因此下面 export 了 UUID_ORDER_ID_RE / locateOrder：路由侧一律复用，
+// **不要再抄一份正则**（两份正则一旦漂移，就会出现「路由认为是单号、服务认为是主键」
+// 这种定位错位 —— 那是会退错订单的 bug，不是风格问题）。
+export const UUID_ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 退款资金动作所需的订单列（refundPaidOrder 的取数口径）。
+ * 调用方需要别的列时用 locateOrder 的 columns 参数显式声明（白名单常量，
+ * 绝不接受请求体里的字符串 —— 那是 SQL 注入面）。
+ */
+export const REFUND_ORDER_COLUMNS = `id, user_id, subscription_id, order_no, amount, currency,
+       payment_method, payment_channel, status, transaction_id`;
+
+/** key 命中 UUID 形状 → 按主键定位，否则按业务单号定位 */
+export function orderKeyColumn(key) {
+  return UUID_ORDER_ID_RE.test(String(key ?? '').trim()) ? 'id' : 'order_no';
+}
+
+/**
+ * 按 orderId（UUID 主键）或 orderNo（业务单号）定位一条订单。
+ *
+ * @param {string} key      两种键都给同一个参数即可，形状自动分流
+ * @param {string} [columns] 取哪些列，必须是本文件/调用方硬编码的常量
+ * @returns {Promise<object|null>} 找到返回行，找不到返回 null（不抛错，
+ *          由调用方决定错误码 —— 属主自助退款要把「不存在」和「不是你的单」
+ *          统一成 404 以免被探测订单是否存在）
+ */
+export async function locateOrder(key, columns = REFUND_ORDER_COLUMNS) {
+  const trimmed = String(key ?? '').trim();
+  if (!trimmed) return null;
+  const { rows } = await pool.query(
+    `SELECT ${columns}
+       FROM payment_orders
+      WHERE ${orderKeyColumn(trimmed)} = $1
+      LIMIT 1`,
+    [trimmed]
+  );
+  return rows[0] || null;
+}
 
 /**
  * 退款领域错误。`status` 是建议的 HTTP 状态码，`code` 是机器可读错误码，
@@ -63,8 +109,9 @@ export class RefundError extends Error {
  * @param {object} p
  * @param {string} [p.orderId]  payment_orders.id（UUID）或 order_no（按形状自动判别）
  * @param {string} [p.orderNo]  业务单号；与 orderId 等价，二者给一个即可
- * @param {string} p.actorUserId 操作者（管理员）用户 id —— 权限由**调用方路由**判定，
- *        本服务不做任何权限校验（payments 用 users.is_admin，admin 用 RBAC requirePerm）
+ * @param {string} p.actorUserId 操作者用户 id（管理员客服退款时是管理员；属主自助退款时
+ *        就是订单属主本人）—— 权限与风控由**调用方路由**判定，本服务不做任何权限校验
+ *        （payments 用 users.is_admin + 属主判定，admin 用 RBAC requirePerm）
  * @param {string} [p.reason]   退款原因（必填语义由调用方校验；此处兜底默认值并截 200 字）
  * @param {string} [p.ip]        审计用 IP
  * @param {string} [p.userAgent] 审计用 UA
@@ -83,18 +130,10 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
   }
   const refundReason = String(reason || '管理员退款').slice(0, 200);
 
-  const orderResult = await pool.query(
-    `SELECT id, user_id, subscription_id, order_no, amount, currency,
-            payment_method, payment_channel, status, transaction_id
-       FROM payment_orders
-      WHERE ${UUID_RE.test(key) ? 'id = $1' : 'order_no = $1'}
-      LIMIT 1`,
-    [key]
-  );
-  if (orderResult.rows.length === 0) {
+  const order = await locateOrder(key);
+  if (!order) {
     throw new RefundError(404, 'ORDER_NOT_FOUND', 'Order not found', { orderNo: key });
   }
-  const order = orderResult.rows[0];
 
   if (order.status === 'refunded') {
     throw new RefundError(409, 'ALREADY_REFUNDED', 'Order already refunded', {

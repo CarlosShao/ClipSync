@@ -6,7 +6,16 @@ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { buildPagePayUrl, queryTrade, isAlipayConfigured } from '../utils/alipay.js';
 import { markOrderPaid } from '../services/orderFulfillment.js';
 import { computeProration, decidePlanChange, roundToCent } from '../services/proration.js';
-import { refundPaidOrder, RefundError } from '../services/refund.js';
+import { refundPaidOrder, RefundError, locateOrder } from '../services/refund.js';
+import {
+  SELF_REFUND_WINDOW_DAYS,
+  SELF_REFUND_ORDER_COLUMNS,
+  REFUNDABLE_ORDERS_LIMIT,
+  SELF_REFUND_GATE_CODES,
+  evaluateSelfRefund,
+  findLatestPaidOrderId,
+  listRefundCandidateOrders,
+} from '../services/refundPolicy.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // 注：渠道回调（webhook）相关的中间件与 handler 已迁至
 // routes/paymentWebhooks.js（那里不需要 authenticateToken/csrfProtection），
@@ -34,6 +43,16 @@ async function subscriptionDisabled(res) {
     code: 'SUBSCRIPTION_DISABLED',
     flagDisabled: 'enable_subscription',
   });
+}
+
+/**
+ * metadata 里的金额字段取值：JSON 数值/字符串都可能（历史数据、跨版本写入），
+ * 非法值一律回退到 fallback —— 展示字段宁可退回实付金额，也不能出 NaN 或 0 元
+ * 这种「看起来像免费」的数字（refundable-orders 的 originalAmount/creditAmount 用）。
+ */
+function toFiniteAmount(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? roundToCent(n) : fallback;
 }
 
 /**
@@ -498,21 +517,33 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
  */
 
 /**
- * POST /api/payments/refund —— 真实退款（客服通道）
+ * POST /api/payments/refund —— 真实退款（属主自助 + 客服通道）
  *
  * body: { orderId | orderNo, reason? }
- *  - orderId（UUID 主键）/ orderNo（业务单号）二选一，服务端按入参形状定位；
- *  - 管理员校验：查 users.is_admin，非管理员 403 —— 产品决策：退款是**客服通道**，
- *    应用内不做用户自助入口（自助退款会被拿来薅「先付款开权益→退款留权益」的羊毛）。
+ *  - orderId（UUID 主键）/ orderNo（业务单号）二选一，服务端按入参形状定位
+ *    （形状判别只有 services/refund.js#locateOrder 一份实现，路由不再抄正则）；
+ *  - 权限模型（产品决策 2026-09-19 变更，原 PD4「用户侧无退款入口」已废）：
+ *      ① **订单属主本人**可自助退款 —— 客户端个人资料页「申请退款」入口，但要过
+ *         三道风控闸（判定实现见 services/refundPolicy.js，与 GET /refundable-orders
+ *         同源，绝不两处各写一份）：
+ *           · 必须是该用户**最近一笔已支付订单** → 否则 409 NOT_LATEST_PAID_ORDER
+ *             （退旧单会把 users 状态打回 free，而权益实际由新单支撑，属主自助不允许
+ *              这种错乱；管理台仍可强退）；
+ *           · paid_at 距今 ≤ SELF_REFUND_WINDOW_DAYS(7) 天 → 否则 409 REFUND_WINDOW_EXPIRED；
+ *           · status / 渠道（非 alipay）不在此重复报错，一律交 refundPaidOrder 裁决。
+ *      ② **非属主** → 仍需 users.is_admin（管理员退款**不受**上面两道闸限制）。
+ *  - 防探测：调用方既不是属主也不是管理员时，返回与「订单不存在」完全同壳的
+ *    404 ORDER_NOT_FOUND —— 不在任何未授权响应里承认「这笔订单存在」。
  *
- * ⚠️ §4-A1 重构：本路由只剩「权限 + 响应壳」，资金动作全部在
+ * ⚠️ §4-A1 重构：本路由只剩「权限 + 风控 + 响应壳」，资金动作全部在
  *   services/refund.js#refundPaidOrder —— 管理与用户侧两条退款端点自此共用同一
  *   份真打款实现（旧的记账式实现在 admin/orders.js，已删除）。
  *   流程、顺序与错误码见该文件头注释；简言之：
  *   paid+alipay 校验 → alipay.trade.refund 全额 → 仅 fund_status='Y' 才
  *   事务落库（订单 refunded + 订阅 canceled + users 回 free + 审计）。
+ *   退款即收回权益，所以自助退款没有「退了钱权益还在」的羊毛可薅。
  *
- * 权限模型说明（§4-A2 遗留）：本端点仍用 users.is_admin 布尔列；管理台端点用
+ * 权限模型说明（§4-A2 遗留）：管理员分支仍用 users.is_admin 布尔列；管理台端点用
  * RBAC（roles/permissions）。两套口径的收敛不在本次改动范围内。
  */
 router.post('/refund', authenticateToken, async (req, res) => {
@@ -525,30 +556,71 @@ router.post('/refund', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Missing orderId or orderNo parameter' });
     }
 
-    // 管理员校验（客服通道，见函数头注释）
-    const adminResult = await pool.query('SELECT is_admin FROM users WHERE id = $1', [operatorId]);
-    if (adminResult.rows.length === 0 || !adminResult.rows[0].is_admin) {
-      logger.warn('[payments] refund denied: not admin', { operatorId, orderKey: key });
-      return res.status(403).json({ error: 'Admin access required', code: 'ADMIN_REQUIRED' });
+    // 先定位订单：属主分支要求在读到 user_id 之后才能判权限
+    const order = await locateOrder(key, SELF_REFUND_ORDER_COLUMNS);
+    const notFound = () => res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND', orderNo: key });
+    if (!order) return notFound();
+
+    const isOwner = String(order.user_id) === String(operatorId);
+    if (!isOwner) {
+      // 管理员校验（客服通道）：只有管理员能退别人的单
+      const adminResult = await pool.query('SELECT is_admin FROM users WHERE id = $1', [operatorId]);
+      if (adminResult.rows.length === 0) {
+        logger.warn('[payments] refund denied: operator account not found', {
+          operatorId,
+          orderKey: key,
+        });
+        return res.status(403).json({ error: 'Admin access required', code: 'ADMIN_REQUIRED' });
+      }
+      if (!adminResult.rows[0].is_admin) {
+        logger.warn('[payments] refund denied: neither owner nor admin', { operatorId, orderKey: key });
+        // 防探测：与「订单不存在」同壳，绝不泄露「该订单存在、只是不是你的」
+        return notFound();
+      }
     }
 
-    // F2：开关关闭时不走退款（放在管理员校验之后，避免向未授权调用方泄露功能状态）
+    // F2：开关关闭时不走退款（放在权限判定之后，避免向未授权调用方泄露功能状态）
     if (!(await isFlagEnabled('enable_subscription'))) {
       logger.warn('[payments] refund blocked: enable_subscription disabled', {
         operatorId,
         orderKey: key,
+        selfService: isOwner,
       });
       return subscriptionDisabled(res);
     }
 
+    // 属主自助分支的风控闸（管理员分支直接跳过，仍可强退任意单）
+    if (isOwner) {
+      const latestPaidOrderId = await findLatestPaidOrderId(operatorId);
+      const verdict = evaluateSelfRefund({ order, latestPaidOrderId, now: new Date() });
+      // 只拦「自助专属」的两道闸；status/渠道由 refundPaidOrder 统一报错，不双重报错
+      if (!verdict.refundable && SELF_REFUND_GATE_CODES.includes(verdict.reasonCode)) {
+        logger.warn('[payments] self-service refund denied', {
+          operatorId,
+          orderKey: key,
+          reasonCode: verdict.reasonCode,
+          ...verdict.extra,
+        });
+        return res.status(409).json({ error: verdict.message, code: verdict.reasonCode, ...verdict.extra });
+      }
+    }
+
     const result = await refundPaidOrder({
-      orderId,
-      orderNo,
+      // 用**已定位到的主键**去退，避免二次按 key 解析（形状判别的口径此时已确定）
+      orderId: String(order.id),
       actorUserId: operatorId,
-      reason,
+      reason: isOwner ? String(reason || '').trim() || '用户自助退款' : reason,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     });
+
+    if (isOwner) {
+      logger.info('[payments] self-service refund completed', {
+        operatorId,
+        orderNo: result.order.orderNo,
+        refundAmount: result.order.refundAmount,
+      });
+    }
 
     return res.json({ message: 'Refund successful', ...result });
   } catch (err) {
@@ -558,6 +630,68 @@ router.post('/refund', authenticateToken, async (req, res) => {
     }
     logger.error('Refund error:', err);
     res.status(500).json({ error: 'Failed to process refund' });
+  }
+});
+
+
+/**
+ * GET /api/payments/refundable-orders —— 客户端「申请退款」弹窗的候选清单
+ *
+ * 返回当前用户最近 REFUNDABLE_ORDERS_LIMIT(10) 条 status IN ('paid','refunded')
+ * 的订单（按 paid_at 倒序），每条带 refundable + reasonCode：
+ *   { orders: [ { orderId, orderNo, amount, originalAmount, creditAmount,
+ *                 paidAt, status, refundable, reasonCode } ] }
+ *
+ * - 只查自己的单（user_id 条件），无越权面；不返回任何用户/设备隐私字段。
+ * - originalAmount/creditAmount 取 metadata.proration（升级折抵单）：升级单实付是
+ *   折抵后的差价，弹窗要把「原价/折抵/实付」摊开，否则用户会以为退多了。**退款金额
+ *   本身永远是 amount（实付全额）**，这两个字段只用于展示。
+ * - refundable 与 reasonCode 与 POST /refund 的属主分支同源（同一个
+ *   evaluateSelfRefund），所以列表说可退就一定退得动、说不可退的理由就是实际拒绝理由。
+ * - enable_subscription 关闭时 503 SUBSCRIPTION_DISABLED（与收款/退款端点同口径）。
+ */
+router.get('/refundable-orders', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      logger.warn('[payments] refundable-orders blocked: enable_subscription disabled', { userId });
+      return subscriptionDisabled(res);
+    }
+
+    const [orders, latestPaidOrderId] = await Promise.all([
+      listRefundCandidateOrders(userId, REFUNDABLE_ORDERS_LIMIT),
+      findLatestPaidOrderId(userId),
+    ]);
+
+    const now = new Date();
+    res.json({
+      orders: orders.map((order) => {
+        const amount = roundToCent(order.amount);
+        const proration = order.metadata && typeof order.metadata === 'object' ? order.metadata.proration : null;
+        const originalAmount = toFiniteAmount(proration?.originalPrice, amount);
+        const creditAmount = toFiniteAmount(proration?.creditAmount, 0);
+        const verdict = evaluateSelfRefund({ order, latestPaidOrderId, now });
+        const paidAt = order.paid_at ? new Date(order.paid_at) : null;
+
+        return {
+          orderId: String(order.id),
+          orderNo: order.order_no ?? null,
+          amount,
+          originalAmount,
+          creditAmount,
+          currency: order.currency || 'CNY',
+          paidAt: paidAt && !Number.isNaN(paidAt.getTime()) ? paidAt.toISOString() : null,
+          status: order.status,
+          refundable: verdict.refundable,
+          reasonCode: verdict.reasonCode,
+        };
+      }),
+      windowDays: SELF_REFUND_WINDOW_DAYS,
+    });
+  } catch (err) {
+    logger.error('Get refundable orders error:', err);
+    res.status(500).json({ error: 'Failed to list refundable orders' });
   }
 });
 

@@ -21,7 +21,8 @@ import { invalidateFlagsCache, isFlagEnforced } from '../src/utils/featureFlags.
  *   3. AN-10 自检：enable_subscription 在 featureFlags 的强制点扫描里必须是 true
  *      （否则管理台 flags 接口的 enforced 会如实报 false，等于又回到「有开关无强制点」）。
  *
- * 顺序细节：/refund 的闸在**管理员校验之后** —— 未授权调用方只能看到 403，
+ * 顺序细节：/refund 的闸在**权限判定之后** —— 未授权调用方只能看到 404
+ * （「不存在」与「不是你的单」同壳，2026-09-19 属主自助退款上线后的口径），
  * 不会从 503 里读出「这个功能被关了」。
  */
 
@@ -172,13 +173,15 @@ describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () =
     expect(after.rows[0].refunded_at).toBeNull();
   });
 
-  it('非管理员即便开关关闭也先吃 403（不从 503 泄露功能状态）', async () => {
+  it('非属主（非管理员）即便开关关闭也吃 404（先判权限/存在性，不从 503 泄露功能状态）', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     await setFlag('enable_subscription', false);
 
     const res = await request(app).post('/api/payments/refund').send({ orderNo: 'ORDNOTEXIST000001' });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('ADMIN_REQUIRED');
+    // 属主自助退款上线后（2026-09-19），/refund 先定位订单再判权限：
+    // 「不存在」与「不是你的单」一律 404 ORDER_NOT_FOUND，未授权调用方永远读不到开关状态
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('ORDER_NOT_FOUND');
   });
 });
 
