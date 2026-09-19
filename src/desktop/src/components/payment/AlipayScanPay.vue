@@ -41,10 +41,15 @@ const loading = ref(false)
 const cashierUrl = ref('')
 const orderNo = ref('')
 const errorMsg = ref('')
-/** 轮询超时（支付宝二维码 ~120s 有效，留出余量到 150s） */
+/** 轮询超时（码失效后转 expired 态，见 PAY_TIMEOUT_MS 注释） */
 const expired = ref(false)
 
-const PAY_TIMEOUT_MS = 150_000
+/**
+ * 轮询超时：支付宝实测报文 qrExpirySeconds=99（收银台 HTML 隐藏域），
+ * 码 99s 即失效；旧值 150s 会留 51s「假活码」。取 95s 留 4s 余量，
+ * 到期立即转过期态引导重新下单。
+ */
+const PAY_TIMEOUT_MS = 95_000
 const POLL_INTERVAL_MS = 3_000
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

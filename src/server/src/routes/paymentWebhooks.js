@@ -71,6 +71,8 @@ router.post('/alipay', webhookIdempotencyMiddleware(), async (req, res) => {
       orderNo: outTradeNo,
       transactionId: tradeNo,
       channel: 'alipay',
+      // S1：官方要求接收方校验金额——报文 total_amount 必须等于订单金额
+      expectedAmount: params.total_amount,
       rawPayload: { tradeStatus, tradeNo },
     });
 

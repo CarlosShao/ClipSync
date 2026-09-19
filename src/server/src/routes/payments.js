@@ -268,6 +268,8 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
             orderNo: order.order_no,
             transactionId: trade.tradeNo,
             channel: 'alipay',
+            // S1：查询结果同样带金额，兜底路径也要校验，与回调路径同一道闸
+            expectedAmount: trade.raw?.total_amount,
             rawPayload: { source: 'poll_query', tradeStatus: trade.tradeStatus },
           });
           if (fulfilled.ok) {

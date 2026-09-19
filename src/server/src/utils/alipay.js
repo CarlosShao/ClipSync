@@ -188,6 +188,52 @@ function commonParams(method, notifyUrl) {
 }
 
 /**
+ * 网关**响应**验签（S3）。
+ *
+ * 支付宝响应签名的原文是返回 JSON 中 `"<response_key>":{...}` 的**原始子串**
+ * （含键名与冒号，精确到字节），不是重新序列化后的字符串——所以必须从
+ * 响应文本里截取，绝不能用 JSON.parse 后 stringify（键序/数字格式会变）。
+ */
+export function verifyResponseSignature(nodeContent, signature) {
+  const { publicKey } = getConfig();
+  if (!publicKey || !signature || !nodeContent) return false;
+  try {
+    const verifier = crypto.createVerify('RSA-SHA256');
+    verifier.update(nodeContent, 'utf8');
+    return verifier.verify(toPem(publicKey, 'PUBLIC'), signature, 'base64');
+  } catch (err) {
+    logger.error('[alipay] verifyResponseSignature error', { error: err.message });
+    return false;
+  }
+}
+
+/** 从响应原文中截取 `"responseKey":{...}` 原始子串（花括号配对，跳过字符串内的括号）。导出仅为测试。 */
+export function extractResponseNode(text, responseKey) {
+  const marker = `"${responseKey}":`;
+  const start = text.indexOf(marker);
+  if (start < 0) return null;
+  let i = start + marker.length;
+  if (text[i] !== '{') return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+    } else if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
  * 发起一次网关调用（application/x-www-form-urlencoded POST）。
  *
  * 注意：这里用 POST + 表单，是支付宝**服务端接口**的标准调用方式；
@@ -222,6 +268,17 @@ async function callGateway(method, bizContent, notifyUrl) {
   if (!payload) {
     throw new Error(`alipay response missing ${responseKey}: ${text.slice(0, 200)}`);
   }
+
+  // S3：响应必须验签后才可信（含错误响应——伪造 code!=10000 可制造假故障）。
+  // 缺 sign / 截不到原文 / 验签失败，一律拒绝，绝不降级信任。
+  if (!json.sign) {
+    throw new Error(`alipay response for ${method} has no sign field`);
+  }
+  const nodeContent = extractResponseNode(text, responseKey);
+  if (!nodeContent || !verifyResponseSignature(nodeContent, json.sign)) {
+    throw new Error(`alipay response signature invalid for ${method}`);
+  }
+
   if (payload.code && payload.code !== '10000') {
     const err = new Error(`alipay error ${payload.code}: ${payload.sub_msg || payload.msg}`);
     err.code = payload.code;
@@ -294,6 +351,8 @@ export default {
   queryTrade,
   signParams,
   verifyParams,
+  verifyResponseSignature,
+  extractResponseNode,
   buildSignString,
   toPem,
 };

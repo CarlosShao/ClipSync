@@ -259,3 +259,34 @@ describe('支付宝工具 - 收银台 URL', () => {
     expect(url).toContain('openapi-sandbox.dl.alipaydev.com');
   });
 });
+
+describe('支付宝工具 - 网关响应验签（S3）', () => {
+  const node = (amount = '9.90') =>
+    `"alipay_trade_query_response":{"code":"10000","msg":"Success","out_trade_no":"ORD1","total_amount":"${amount}"}`;
+
+  it('正确响应原文验签通过', async () => {
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+    const mod = await loadModule();
+    expect(mod.verifyResponseSignature(node(), signWith(node()))).toBe(true);
+  });
+
+  it('响应金额被篡改 → 验签失败', async () => {
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+    const mod = await loadModule();
+    const sig = signWith(node('9.90'));
+    expect(mod.verifyResponseSignature(node('0.01'), sig)).toBe(false);
+  });
+
+  it('extractResponseNode：字符串值内含花括号/转义不干扰配对', async () => {
+    const mod = await loadModule();
+    const text = `{"alipay_trade_query_response":{"code":"10000","sub_msg":"a{\\"b\\"}c"},"sign":"xx"}`;
+    expect(mod.extractResponseNode(text, 'alipay_trade_query_response')).toBe(
+      `{"alipay_trade_query_response":{"code":"10000","sub_msg":"a{\\"b\\"}c"}`.slice(1),
+    );
+  });
+
+  it('extractResponseNode：键不存在返回 null', async () => {
+    const mod = await loadModule();
+    expect(mod.extractResponseNode('{"other":{}}', 'alipay_trade_query_response')).toBeNull();
+  });
+});

@@ -29,9 +29,12 @@ const PAID_STATES = new Set(['paid', 'refunded']);
  * @param {string} [params.transactionId] 渠道交易号（支付宝 trade_no）
  * @param {string} [params.channel]      渠道标识（alipay / wechat / stripe）
  * @param {object} [params.rawPayload]   渠道原始报文摘要（留痕，勿存敏感字段）
+ * @param {number|string} [params.expectedAmount] 渠道侧金额（回调 total_amount /
+ *        查询返回金额）。提供时与订单金额比对，不符**拒绝履约**（S1：
+ *        支付宝官方要求接收方校验 total_amount，防低价单被冒用类攻击）。
  * @returns {Promise<{ok:boolean, changed:boolean, reason?:string, order?:object}>}
  */
-export async function markOrderPaid({ orderNo, transactionId = null, channel = null, rawPayload = null }) {
+export async function markOrderPaid({ orderNo, transactionId = null, channel = null, rawPayload = null, expectedAmount = null }) {
   if (!orderNo) {
     return { ok: false, changed: false, reason: 'missing_order_no' };
   }
@@ -73,6 +76,23 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
         channel,
       });
       return { ok: false, changed: false, reason: `order_${order.status}`, order };
+    }
+
+    // S1：渠道金额与订单金额必须一致（分级容差 0.005 元覆盖浮点表示误差）。
+    // 不符时不履约、返回 failure 让渠道重试并留错误日志，转人工排查。
+    if (expectedAmount != null && expectedAmount !== '') {
+      const channelAmt = Number(expectedAmount);
+      const orderAmt = Number(order.amount);
+      if (!Number.isFinite(channelAmt) || !Number.isFinite(orderAmt) || Math.abs(channelAmt - orderAmt) > 0.005) {
+        await client.query('ROLLBACK');
+        logger.error('[fulfillment] amount mismatch, refusing fulfillment', {
+          orderNo,
+          orderAmount: order.amount,
+          channelAmount: expectedAmount,
+          channel,
+        });
+        return { ok: false, changed: false, reason: 'amount_mismatch', order };
+      }
     }
 
     await client.query(
