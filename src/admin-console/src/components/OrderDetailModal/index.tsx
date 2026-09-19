@@ -104,8 +104,13 @@ export function OrderDetailModal({ open, orderNo, onClose }: OrderDetailModalPro
             <dd>{data.planLabel}</dd>
             <dt>渠道</dt>
             <dd>{channelLabel[data.channel]}</dd>
+            {/*
+              商户单号（out_trade_no）：后端 create-order 从不写 payment_orders.out_trade_no，
+              真实支付宝单的商户单号就是 order_no（buildPagePayUrl 以 out_trade_no=order_no 下单），
+              故空值回退「—」而非留白；要按商户单号检索可直接用订单号列。
+            */}
             <dt>商户单号</dt>
-            <dd className="mono">{data.outTradeNo}</dd>
+            <dd className="mono">{data.outTradeNo || '—'}</dd>
             <dt>第三方流水号</dt>
             <dd className="mono">{data.transactionId ?? '—'}</dd>
             <dt>币种</dt>

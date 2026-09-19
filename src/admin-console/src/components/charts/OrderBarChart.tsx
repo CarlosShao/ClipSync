@@ -43,10 +43,21 @@ export function OrderBarChart({ data, height = 190 }: OrderBarChartProps) {
       },
       xAxis: {
         type: 'category',
-        data: data.map((d) => d.date.slice(5).replace('-', '-')),
+        // 日期已是 'MM-DD'（截掉年份），原先挂在这里的 .replace('-','-') 是空操作，删掉
+        data: data.map((d) => d.date.slice(5)),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: '#e6e8f0' } },
-        axisLabel: { color: '#9298a8', fontSize: 10, interval: Math.max(0, data.length - 4) },
+        axisLabel: {
+          color: '#9298a8',
+          fontSize: 10,
+          /*
+           * ECharts 的 interval 是「间隔跳过的类目数」：0=每根都显示。
+           * 原写法 Math.max(0, data.length - 4) 在 14 天数据上 = 10，
+           * 整条轴只剩第 1 根和第 12 根两个刻度，看板读不出趋势。
+           * 这里按「最多显示约 7 个刻度」换算，且始终 >= 0。
+           */
+          interval: Math.max(0, Math.ceil(data.length / 7) - 1),
+        },
       },
       yAxis: {
         type: 'value',

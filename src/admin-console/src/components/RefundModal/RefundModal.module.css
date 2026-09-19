@@ -8,3 +8,52 @@
 .orderLine b {
   color: var(--text);
 }
+
+.alert {
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+
+/* 退款金额：只读展示订单全额（服务端拒绝部分退款，故不提供输入框） */
+.amountRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.amountLabel {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.amountValue {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.amountTag {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: 4px;
+}
+
+.amountNote {
+  margin: 0 0 14px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-3);
+}
+
+.amountNote b {
+  color: var(--text-2);
+}

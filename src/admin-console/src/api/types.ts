@@ -117,16 +117,25 @@ export type OrderStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunde
 export type PaymentChannel = 'wechat' | 'alipay' | 'stripe';
 
 export interface Order {
-  /** payment_orders.order_no，如 CS20260905204188 */
+  /** payment_orders.order_no，如 ORD1755...；支付宝侧的 out_trade_no 就是这个值 */
   orderNo: string;
-  /** payment_orders.out_trade_no */
+  /**
+   * payment_orders.out_trade_no —— 后端 create-order/subscribe **从不写这一列**，
+   * 真实数据恒为空串（旧注释「payment_orders.out_trade_no」会让人误以为有值）。
+   * 展示须回退占位，检索请直接按订单号（它就是发给支付宝的商户单号）。
+   */
   outTradeNo: string;
   /** 第三方流水号 */
   transactionId: string | null;
   userId: string;
   /** 列表展示用打码标识（昵称或手机号） */
   userLabel: string;
-  /** 展示文案，如 "Pro · 年付" */
+  /**
+   * 展示文案，如 "专业版 · 年付"。两个已知数据缺口（服务端 mapOrderRow）：
+   *  ① 未履约订单：无 subscription_id 且旧建单不写 plan_id → 恒为空串
+   *     （2026-09-19 起 create-order 已补写 plan_id，历史 pending 单仍为空）；
+   *  ② 计费周期取自关联订阅：新订在履约前订阅还不存在 → 年付单也会显示「月付」。
+   */
   planLabel: string;
   channel: PaymentChannel;
   currency: string;
@@ -147,7 +156,12 @@ export interface OrderListParams extends ListParams {
 }
 
 export interface RefundPayload {
-  /** 退款金额（元），不超过订单金额 */
+  /**
+   * 退款金额（元）——**恒等于订单金额**（2026-09-20 口径收敛）。
+   * 管理台已改接真实渠道退款：一期只做全额，部分金额会被服务端以
+   * 400 PARTIAL_REFUND_NOT_SUPPORTED 拒绝，旧的「记账式部分退款」语义不复存在。
+   * 字段保留只为对齐后端契约，UI 侧已无金额输入（RefundModal 只读展示全额）。
+   */
   amount: number;
   /** 退款原因（必填，写入审计日志） */
   reason: string;
@@ -641,19 +655,28 @@ export interface OrderListQuery extends Omit<OrderListParams, 'status'> {
 
 /** 对账报告 · 单渠道行 */
 export interface ReconciliationRow {
+  /**
+   * 渠道归一化只有三值：stripe / alipay / **其余全部**（服务端 CHANNEL_CASE_SQL
+   * 的 ELSE 分支）。历史 mock 单、payment_channel 未落值的单都会被计进「微信支付」，
+   * 而本项目实际只接了支付宝（微信未接入）—— 微信/Stripe 两行的非零值都需当作数据问题排查。
+   */
   channel: PaymentChannel;
   label: string;
   /** 已支付笔数（含事后退款订单） */
   paidCount: number;
   /** 成交额（元） */
   paidAmount: number;
-  /** 退款额（元） */
+  /** 退款额（元）：取 metadata.refund_amount，按**支付当日**归属而非退款日 */
   refundAmount: number;
 }
 
-/** 对账报告（GET /api/admin/reconciliation，日终对账快照） */
+/**
+ * 对账报告（GET /api/admin/reconciliation）。
+ * 真实口径：本站 payment_orders 近 30 天 paid/refunded 订单按渠道聚合，
+ * generatedAt = 本次请求的服务器时刻 —— 不是渠道日终对账文件、也不是凌晨快照。
+ */
 export interface ReconciliationReport {
-  /** 快照生成时间，如 2026-09-05 02:00 */
+  /** 快照生成时间（请求时刻），如 2026-09-19 18:20 */
   generatedAt: string;
   rows: ReconciliationRow[];
 }

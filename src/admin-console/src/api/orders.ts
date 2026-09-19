@@ -17,12 +17,25 @@ export function getOrder(orderNo: string): Promise<Order> {
   return apiGet<Order>(`/admin/orders/${orderNo}`);
 }
 
-/** 执行退款（仅 super_admin；原因必填并写入审计日志） */
+/**
+ * 执行退款 —— **真实渠道退款（全额、不可撤销）**：服务端调支付宝 alipay.trade.refund
+ * 按订单全额原路退回，仅当渠道确认到账才落库：订单置 refunded + 关联订阅立即 canceled
+ * （权益当场收回）+ 写审计。渠道侧失败时订单保持 paid 不动，可原样重试（幂等键=订单号）。
+ *
+ * ⚠️ 旧口径已废除：这条链路不再是「记账式人工标记」，也**不支持部分退款**——
+ * payload.amount 恒等于订单金额（RefundModal 已去掉金额输入框），传部分金额会被
+ * 400 PARTIAL_REFUND_NOT_SUPPORTED 拒绝。
+ * 权限：requirePerm('admin.orders.refund')（superAdminOnly）；原因必填并写入审计日志。
+ */
 export function refundOrder(orderNo: string, payload: RefundPayload): Promise<Order> {
   return apiPost<Order>(`/admin/orders/${orderNo}/refund`, payload);
 }
 
-/** 对账报告（按渠道汇总笔数 / 成交额 / 退款额，日终快照） */
+/**
+ * 对账报告（按渠道汇总笔数 / 成交额 / 退款额）。
+ * 服务端口径：本站 payment_orders 近 30 天 paid/refunded 订单聚合，
+ * generatedAt = 请求时刻（不是渠道日终对账文件）。
+ */
 export function getReconciliation(): Promise<ReconciliationReport> {
   return apiGet<ReconciliationReport>('/admin/reconciliation');
 }

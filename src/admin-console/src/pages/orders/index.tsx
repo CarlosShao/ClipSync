@@ -46,6 +46,13 @@ const STATUS_TABS: { key: OrderStatusFilter; label: string }[] = [
   { key: 'refunding', label: '退款处理中' },
   { key: 'refunded', label: '已退款' },
   { key: 'failed', label: '已失败' },
+  /*
+   * 已关闭 = payment_orders.status='cancelled'：AF-15 起唯一来源是服务端
+   * orderCloseSweep（pending 超 24h 自动关单，metadata.auto_closed='timeout_unpaid'）。
+   * 缺这个 Tab 时「待支付订单超 24 小时」待办点进来只能看到还没清扫的订单，
+   * 已清扫完的无处可查——而「关单后钱才到账」正是必须人工介入的场景。
+   */
+  { key: 'cancelled', label: '已关闭' },
 ];
 
 const CHANNEL_OPTIONS: { value: PaymentChannel | 'all'; label: string }[] = [
@@ -107,14 +114,41 @@ export default function OrdersPage() {
     }),
   });
 
+  /**
+   * 退款成功后的失效面（真实退款口径：全额退回 + 订阅立即 canceled）：
+   *  - ['orders']   列表 + 各 Tab 计数 + 订单详情（['orders','detail',orderNo] 同前缀）
+   *  - ['reconciliation'] 对账弹窗独立 key，不失效会读到退款前的金额
+   *  - ['audit-logs']     退款当场落一条审计，审计页缓存要跟上
+   *  - ['subscriptions'] / ['users'] 订阅被取消：订阅页列表与统计、用户行的套餐/有效期全变
+   *  - queryKeys.overview() 看板 KPI（成交额/退款率）与待办计数
+   */
+  const invalidateRefundScope = () => {
+    for (const key of [
+      ['orders'],
+      ['reconciliation'],
+      ['audit-logs'],
+      ['subscriptions'],
+      ['users'],
+      queryKeys.overview(),
+    ]) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
+  };
+
   const refundMutation = useMutation({
     mutationFn: (payload: { orderNo: string; payload: RefundPayload }) =>
       refundOrder(payload.orderNo, payload.payload),
     onSuccess: (order) => {
-      void queryClient.invalidateQueries({ queryKey: ['orders'] });
-      // AF-40：口径对齐——系统不做渠道退款，仅人工标记
-      void message.success(`已标记退款：${fmtMoney(order.refundAmount)}（线下退款完成后标记）`);
+      invalidateRefundScope();
+      void message.success(
+        `退款成功：${fmtMoney(order.refundAmount ?? order.amount)} 已原路退回，对应订阅权益已取消`
+      );
       setRefundTarget(null);
+    },
+    onError: () => {
+      // 渠道退款失败/状态冲突时服务端可能已改动订单（如渠道已退成、本地未落账），
+      // 同样要重新拉取，让操作员看到真实状态再决定重试（弹窗保持打开）。
+      invalidateRefundScope();
     },
   });
 
@@ -198,7 +232,7 @@ export default function OrdersPage() {
             详情
           </Button>
           {record.status === 'paid' ? (
-            <Tooltip title={canRefund ? '' : '缺少权限'}>
+            <Tooltip title={canRefund ? '全额退款：款项原路退回，对应订阅立即取消' : '缺少权限'}>
               <span>
                 <Button
                   danger
@@ -224,7 +258,7 @@ export default function OrdersPage() {
     <>
       <PageHeader
         title="订单与支付"
-        description="订单与退款流水 · 支持按状态/渠道/时间筛选 · 退款等敏感操作写入审计日志"
+        description="订单与退款流水 · 支持按状态/渠道/时间筛选 · 退款为全额原路退回并立即取消订阅，操作写入审计日志"
       />
 
       <Card styles={{ body: { padding: 0 } }}>

@@ -35,7 +35,15 @@ const COLUMNS: ColumnsType<ReconciliationRow> = [
   },
 ];
 
-/** 对账报告弹窗（T-A4）：微信 / 支付宝 / Stripe 三行汇总，数据走 GET /admin/reconciliation */
+/**
+ * 对账报告弹窗（T-A4）：微信 / 支付宝 / Stripe 三行汇总，数据走 GET /admin/reconciliation。
+ *
+ * ⚠️ 口径（对照服务端 routes/admin/orders.js 的 reconciliationRouter，2026-09-19 核对）：
+ * 数字来自**本站 payment_orders** 按渠道聚合的近 30 天 paid/refunded 订单
+ * （成交额按 paid_at 归日，退款额取 metadata.refund_amount 同样归到支付当日），
+ * generatedAt 是**本次请求的服务器时刻**——不是渠道日终对账文件，也不是凌晨快照。
+ * 故本报告仅供运营自查，不能当作与支付宝账单的核销依据（差异需另行人工核对）。
+ */
 export function ReconciliationModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ['reconciliation'],
@@ -70,7 +78,8 @@ export function ReconciliationModal({ open, onClose }: { open: boolean; onClose:
             <span className="num">{fmtMoney(totals.refundAmount)}</span>
           </p>
         ) : null}
-        快照生成于 {data?.generatedAt ?? '—'} · 数据来源各支付渠道日终对账文件，仅供运营核对
+        快照生成于 {data?.generatedAt ?? '—'} · 口径：本站订单表近 30 天聚合（按支付日期归属），
+        非渠道对账单核销依据
       </div>
     </Modal>
   );
