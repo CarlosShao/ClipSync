@@ -1,58 +1,83 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+/**
+ * /app/subscription 订阅页。
+ *
+ * 两件事与旧版不同，都源于「本产品没有自动续费」这一事实（个体户资质开不了
+ * 支付宝商家扣款，已实测被拒）：
+ *  ① 「变更套餐」→「升级套餐」，并按只升不降渲染套餐卡（当前档置灰、低档已包含）；
+ *  ② 「取消订阅」→「到期时间 + 关闭到期提醒」——没有周期扣款，就没有可取消的订阅，
+ *     旧按钮点下去只会 toast「功能建设中」，属误导性 UI。
+ *
+ * 数据源 GET /api/subscriptions/current 收敛到 useSubscriptionAccess 的 60s 快照
+ * （与套餐卡、侧栏档位判定同一份），不再本页单独请求。
+ * 后端暂无用量统计接口（同步条数/流量/分享数），三项诚实显示「—」，
+ * 禁止硬编码 0 / 0 MB 伪造（C7）。
+ */
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { api } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
+import { useMenuAccess } from '@/composables/useMenuAccess'
+import PlanCards from '@/components/pricing/PlanCards.vue'
 import Button from '@/components/ui/button/Button.vue'
+import {
+  formatExpiryDate,
+  hasUpgradeHeadroom,
+  loadCurrentSubscription,
+  resolveCurrentSubscription,
+} from '@/composables/useSubscriptionAccess'
 
-const { t, tf } = useI18n()
 const emit = defineEmits<{ 'open-modal': [type: string] }>()
 
-// 订阅与套餐：接真实接口 GET /api/subscriptions/current。
-// 后端暂无用量统计接口（同步条数 / 传输流量 / 分享链接数），
-// 因此三项用量统计诚实显示"—"，禁止再用硬编码 0 / 0 MB 伪造数据（C7）。
+const { t } = useI18n()
+const configStore = useConfigStore()
+const { can } = useMenuAccess()
+
 const NO_DATA = '—'
 const loading = ref(true)
 const loadFailed = ref(false)
-const planName = ref('')
-const planPrice = ref<number | null>(null)
-const planFeatures = ref<string[]>([])
 
-/** features 可能是 JSON 字符串、字符串数组或 {label|name} 对象数组，统一归一为字符串数组 */
-function normalizeFeatures(raw: any): string[] {
-  let arr: any = raw
-  if (typeof arr === 'string') {
-    try {
-      arr = JSON.parse(arr)
-    } catch {
-      return []
-    }
-  }
-  if (!Array.isArray(arr)) return []
-  return arr
-    .map((f: any) => (typeof f === 'string' ? f : String(f?.label ?? f?.name ?? '')))
-    .filter(Boolean)
-}
-
-async function loadSubscription() {
+async function loadSubscription(force = false) {
   loading.value = true
   loadFailed.value = false
-  try {
-    const res = await api('GET', '/api/subscriptions/current')
-    if (res.ok && res.data) {
-      const plan = (res.data as any).plan
-      planName.value = plan?.name || ''
-      planPrice.value = typeof plan?.price === 'number' ? plan.price : null
-      planFeatures.value = normalizeFeatures(plan?.features)
-    } else {
-      loadFailed.value = true
-    }
-  } catch {
-    loadFailed.value = true
-  }
+  const snap = await loadCurrentSubscription(force)
+  // null = 从未成功拿到快照：如实报错给重试入口，不拿 fallback 冒充已加载
+  loadFailed.value = !snap
   loading.value = false
 }
 
-onMounted(loadSubscription)
+/** 支付成功后弹窗广播订阅变更：本页与套餐卡立即重算档位（不等 60s TTL） */
+function onSubscriptionChanged() {
+  void loadSubscription(true)
+  planCardsRef.value?.refresh()
+}
+
+const planCardsRef = ref<{ refresh: () => void } | null>(null)
+
+onMounted(() => {
+  void loadSubscription()
+  window.addEventListener('clipsync:subscription-changed', onSubscriptionChanged)
+})
+onUnmounted(() => window.removeEventListener('clipsync:subscription-changed', onSubscriptionChanged))
+
+const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
+const expiryText = computed(() => formatExpiryDate(current.value.periodEnd))
+const canBuy = computed(() => can('nav.subscription'))
+const upgradable = computed(() => canBuy.value && hasUpgradeHeadroom(current.value.planName))
+
+/**
+ * 页面内套餐卡的 CTA 不直接起单：统一进弹窗流的 pricing 步。
+ * 支付状态机（selectedPlan / 下单 / 轮询）只有 PricingPaymentModals 一份，
+ * 在页面里另接一套 create-order 等于把刚联调通过的链路复制一遍。
+ */
+function onPlanSelect() {
+  emit('open-modal', 'pricing')
+}
+
+/** 当前档月付：/current 的 plan.price 即 price_monthly，Free 为 0 不显示价格行 */
+const currentPriceText = computed(() => {
+  const p = current.value.priceMonthly
+  return p > 0 ? `¥${p}` : ''
+})
 </script>
 
 <template>
@@ -79,38 +104,57 @@ onMounted(loadSubscription)
     <div class="sg-header" style="margin-top: 24px">{{ t('sg_current_plan') }}</div>
     <div class="plan-card">
       <template v-if="loading">
-        <div class="plan-name plan-loading">{{ tf('sub_loading', '加载中…') }}</div>
+        <div class="plan-name plan-loading">{{ t('sub_loading') }}</div>
         <div class="plan-price plan-loading">{{ NO_DATA }}</div>
       </template>
       <template v-else-if="loadFailed">
         <div class="plan-name">{{ NO_DATA }}</div>
         <div class="plan-price">{{ NO_DATA }}</div>
-        <Button variant="outline" class="w-full" style="margin-bottom: 12px" @click="loadSubscription">
-          {{ tf('retry', '重试') }}
+        <Button variant="outline" class="w-full" style="margin-bottom: 12px" @click="loadSubscription(true)">
+          {{ t('retry') }}
         </Button>
       </template>
       <template v-else>
-        <div class="plan-name">{{ planName || NO_DATA }}</div>
-        <div class="plan-price">
-          <template v-if="planPrice !== null">
-            ¥{{ planPrice }}<span class="plan-period">{{ t('price_per_mo') }}</span>
-          </template>
-          <template v-else>{{ NO_DATA }}</template>
+        <div class="plan-name">{{ t('role_' + (current.planName || 'Free').toLowerCase()) }}</div>
+        <div v-if="currentPriceText" class="plan-price">
+          {{ currentPriceText }}<span class="plan-period">{{ t('price_per_mo') }}</span>
         </div>
-        <ul v-if="planFeatures.length > 0" class="plan-feats">
-          <li v-for="(f, i) in planFeatures" :key="i">✓ {{ f }}</li>
+        <ul v-if="current.features.length > 0" class="plan-feats">
+          <li v-for="(f, i) in current.features" :key="i">✓ {{ f }}</li>
         </ul>
-      </template>
+        <!-- 无自动续费：到期时间是本屏最重要的事实，不是「续费」 -->
+        <div class="plan-expiry">
+          <template v-if="expiryText">{{ t('sub_expiry_date', { date: expiryText }) }}</template>
+          <template v-else>{{ t('sub_expiry_none') }}</template>
+        </div>
+        <div class="plan-expiry-hint">{{ t('cycle_once_note') }}</div>
 
-      <Button class="w-full" @click="emit('open-modal', 'pricing')">{{ t('sub_change_plan') }}</Button>
-      <Button
-        variant="outline"
-        class="w-full"
-        style="margin-top: 8px; color: var(--danger)"
-        @click="emit('open-modal', 'cancel-subscription')"
-        >{{ t('sub_cancel') }}</Button
-      >
+        <Button v-if="upgradable" class="w-full" style="margin-top: 12px" @click="emit('open-modal', 'pricing')">
+          {{ t('sub_upgrade_plan') }}
+        </Button>
+        <!--
+          「关闭到期提醒」= 纯占位，disabled：
+          服务端 notification_preferences 通用可写（PUT /api/notifications/preferences
+          type=subscription_expiring），但**没有任何任务会产生到期提醒**（全仓无
+          subscription_expiring 发送点、无到期扫描 cron）。现在就给可点开关 =
+          用户"关掉了本不存在的东西"，属假成功，故仅占位。
+          后端补齐发送端后：改为 Switch + savePreference('subscription_expiring', v)。
+          外层 span 承载 title（disabled 按钮自身不吃 hover，tooltip 不会显示），
+          并让按钮 pointer-events:none —— 既点不动，又能看到「即将上线」。
+        -->
+        <span class="reminder-slot" :title="t('soon_coming')">
+          <Button variant="outline" class="w-full reminder-btn" disabled>
+            {{ t('sub_close_expiry_reminder') }}
+          </Button>
+        </span>
+      </template>
     </div>
+
+    <!-- ===== 升级套餐（只升不降；当前档置灰「当前套餐」、低档「已包含」）===== -->
+    <template v-if="upgradable">
+      <div class="sg-header" style="margin-top: 28px">{{ t('sub_upgrade_plan') }}</div>
+      <PlanCards ref="planCardsRef" @select="onPlanSelect" />
+    </template>
   </div>
 </template>
 
@@ -177,7 +221,7 @@ onMounted(loadSubscription)
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  max-width: 320px;
+  max-width: 340px;
 }
 .plan-name {
   font-size: 16px;
@@ -206,5 +250,27 @@ onMounted(loadSubscription)
   font-size: 13px;
   color: var(--text-secondary);
   line-height: 2;
+}
+.plan-expiry {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.plan-expiry-hint {
+  margin-top: 2px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+/* 到期提醒占位：disabled 按钮不响应 hover，tooltip 挂在外层 span 上，
+   故按钮必须 pointer-events:none，鼠标才能落到 span 触发 title。 */
+.reminder-slot {
+  display: block;
+  margin-top: 8px;
+}
+.reminder-slot :deep(.reminder-btn) {
+  pointer-events: none;
+  color: var(--text-tertiary);
+  border-color: var(--border-subtle);
 }
 </style>

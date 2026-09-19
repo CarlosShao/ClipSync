@@ -21,20 +21,47 @@ import { useI18n } from '@/composables/useI18n'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import Button from '@/components/ui/button/Button.vue'
 import { createPaymentOrder, fetchOrderStatus } from '@/api/payment'
+import type { BillingCycle } from '@/composables/useSubscriptionAccess'
 
 const props = defineProps<{
   /** 要开通的套餐 id（新订） */
   planId?: string
   /** 已有订阅 id（升级场景）；与 planId 二选一 */
   subscriptionId?: string
+  /**
+   * 计费周期（月付/年付），透传服务端 create-order。
+   * 缺省 'monthly' —— 与服务端默认值一致，老调用方不传也不会改变行为。
+   */
+  billingCycle?: BillingCycle
   /** 展示用金额与周期文案 */
   amountLabel?: string
   periodLabel?: string
 }>()
 
-const emit = defineEmits<{ paid: [orderNo: string]; close: [] }>()
+const emit = defineEmits<{
+  paid: [orderNo: string]
+  close: []
+  /** 下单成功：把服务端原始 order 交给父组件（升级折抵 metadata.proration 由父组件展示） */
+  orderCreated: [order: any]
+}>()
 
 const { t } = useI18n()
+
+/**
+ * 下单失败的档位类错误（服务端 409 code）→ 本地文案。
+ * 桌面端 UI 已做「只升不降」，正常路径走不到这两个码；它们存在是给
+ * 多设备并发下单/缓存过期等竞态留一条诚实说明，而不是把英文原文糊给用户。
+ */
+const ORDER_ERROR_KEYS: Record<string, string> = {
+  ALREADY_SUBSCRIBED: 'pay_err_already_subscribed',
+  DOWNGRADE_NOT_ALLOWED: 'pay_err_downgrade_not_allowed',
+}
+function orderErrorMessage(res: { error?: string; data?: any }): string {
+  const code = String(res.data?.code || '')
+  const key = ORDER_ERROR_KEYS[code]
+  if (key) return t(key)
+  return res.error || t('pay_scan_failed')
+}
 
 const agreed = ref(false)
 const loading = ref(false)
@@ -75,12 +102,14 @@ async function createOrder() {
   expired.value = false
   try {
     const res = await createPaymentOrder(
-      props.subscriptionId ? { subscriptionId: props.subscriptionId } : { planId: props.planId },
+      props.subscriptionId
+        ? { subscriptionId: props.subscriptionId, billingCycle: props.billingCycle ?? 'monthly' }
+        : { planId: props.planId, billingCycle: props.billingCycle ?? 'monthly' },
       'alipay',
     )
 
     if (!res.ok) {
-      errorMsg.value = res.error || t('pay_scan_failed')
+      errorMsg.value = orderErrorMessage(res)
       return
     }
 
@@ -90,6 +119,8 @@ async function createOrder() {
       errorMsg.value = t('pay_scan_failed')
       return
     }
+    // 透传完整响应体：升级折抵 proration 在服务端响应的**顶层**（不在 order 里）
+    emit('orderCreated', res.data)
     cashierUrl.value = url
     orderNo.value = order.orderNo
     startPolling()

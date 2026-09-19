@@ -49,6 +49,8 @@ import SatisfactionSurvey from '@/components/SatisfactionSurvey.vue'
 import { perfFirstDataLoad } from '@/utils/perfMonitor'
 import { useFeatureFlags } from '@/composables/useFeatureFlags'
 import { useMenuAccess } from '@/composables/useMenuAccess'
+import { invalidatePlanLimits } from '@/composables/usePlanLimits'
+import { invalidateCurrentSubscription } from '@/composables/useSubscriptionAccess'
 // AN-02：客户端策略下发（启动拉取 + WS policies.updated + 同步间隔/历史上限钳制）
 import {
   refreshPolicies,
@@ -714,6 +716,9 @@ function showConfirm(msg: string, cb: () => void) {
 function handleLogout() {
   notif.reset()
   ann.reset()
+  // 订阅/套餐快照随登出清空：否则换号后首屏仍按上一个账号的档位渲染升级入口
+  invalidatePlanLimits()
+  invalidateCurrentSubscription()
   // 先摘掉 WS handler 再断开：否则重新登录后新旧 handler 叠加，一条推送触发多次刷新
   detachWsHandler()
   configStore.logout()
@@ -756,6 +761,7 @@ function confirmAction() {
         @toggle="sidebarOpen = !sidebarOpen"
         @navigate="switchSub"
         @open-ai="toggleAiPanel"
+        @open-modal="openModal"
         @logout="handleLogout"
       />
 

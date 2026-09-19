@@ -21,6 +21,7 @@ import { api } from '@/api/client'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
 import { getPlanLimits, getUpgradePlanBenefits } from './usePlanLimits'
+import { can } from './useMenuAccess'
 
 const QUOTA_CODES = [
   'FILE_SIZE_EXCEEDED',
@@ -144,6 +145,9 @@ async function buildUpgradeAction(
 ): Promise<{ label: string; onClick: (e: MouseEvent) => void } | null> {
   const target = upgradeTo ? String(upgradeTo).trim() : ''
   if (!target) return null
+  // 升级入口治理：enable_subscription 关闭时配额提示里也不给升级按钮（退化为「知道了」），
+  // 与侧栏/订阅页/设置子页同一判定，避免订阅被运营关掉后仍能跳进已隐藏的订阅页。
+  if (!can('nav.subscription')) return null
   const benefits = await getUpgradePlanBenefits(target).catch(() => null)
   const { t } = useI18n()
   const label = benefits

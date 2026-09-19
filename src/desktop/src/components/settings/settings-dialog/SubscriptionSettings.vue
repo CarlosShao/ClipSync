@@ -1,11 +1,25 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
+import { useConfigStore } from '@/stores/configStore'
 import { ChevronRight } from 'lucide-vue-next'
+import { formatExpiryDate, loadCurrentSubscription, resolveCurrentSubscription } from '@/composables/useSubscriptionAccess'
 
 const { t } = useI18n()
 const toast = useSonner()
+const configStore = useConfigStore()
 const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
+
+// 此前本行副标题写死「您当前使用的是免费版」——Pro/Enterprise 用户看到的也是这句假话。
+// 现与订阅页、侧栏同源（GET /api/subscriptions/current 快照，回落 auth/me 的 plan）。
+void loadCurrentSubscription()
+const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
+const currentHint = computed(() => {
+  const plan = t('role_' + (current.value.planName || 'Free').toLowerCase())
+  const expiry = formatExpiryDate(current.value.periodEnd)
+  return expiry ? t('sub_current_plan_h_with_expiry', { plan, date: expiry }) : t('sub_current_plan_h_no_expiry', { plan })
+})
 </script>
 
 <template>
@@ -14,7 +28,7 @@ const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
     <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'pricing')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_current_plan') }}</div>
-        <div class="sg-hint">{{ t('sg_current_plan_h_free') }}</div>
+        <div class="sg-hint">{{ currentHint }}</div>
       </div>
       <ChevronRight class="sg-arrow" />
     </div>

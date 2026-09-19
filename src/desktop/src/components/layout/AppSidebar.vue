@@ -14,11 +14,14 @@ import {
   Bell,
   ExternalLink,
   Megaphone,
+  ChevronRight,
+  Sparkles,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useNotifications } from '@/composables/useNotifications'
 import { useMenuAccess } from '@/composables/useMenuAccess'
+import { hasUpgradeHeadroom, tierRankByName } from '@/composables/useSubscriptionAccess'
 import { useUser } from '@/composables/useUser'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
@@ -57,11 +60,33 @@ const emit = defineEmits<{
   toggle: []
   navigate: [sub: string]
   'open-ai': []
+  'open-modal': [type: string]
   logout: []
 }>()
 
 const isCollapsed = computed(() => !props.sidebarOpen)
 const showUserMenu = ref(false)
+
+// ===== 升级入口治理（订阅 UI 重做 · 入口矩阵）=====
+// 统一走 can('nav.subscription')（enable_subscription 关闭时一并隐藏），并且：
+//   · Free          ：账号区醒目升级条 + 账号菜单「升级」
+//   · Pro           ：仅账号菜单「升级」（还能升 Enterprise），不给醒目条（避免催熟）
+//   · Enterprise    ：两处都不出现（已无更高档可买，只升不降规则下没有可点入口）
+//   · super_admin   ：两处都不出现 —— 套餐是商业身份、超管是系统身份（MA-06 同一
+//                    决策：徽标显示「超级管理员」而非「免费版」），催超管付款不合理。
+// 档位判定用 hasUpgradeHeadroom（按套餐名 rank，不额外请求 plans 目录）；
+// 服务端 403/409 仍是权威兜底。
+const showUpgradeEntry = computed(() => can('nav.subscription') && !isSuperAdmin.value)
+const showUpgradeMenuItem = computed(() => showUpgradeEntry.value && hasUpgradeHeadroom(props.userPlan))
+const showUpgradeChip = computed(
+  () => showUpgradeMenuItem.value && tierRankByName(props.userPlan) === tierRankByName('Free'),
+)
+
+function openUpgrade() {
+  if (!showUpgradeEntry.value) return
+  closeUserMenu()
+  emit('open-modal', 'pricing')
+}
 
 function toggleUserMenu() {
   showUserMenu.value = !showUserMenu.value
@@ -193,6 +218,18 @@ async function openAdminConsole() {
         <i class="pulse" aria-hidden="true" />
         <span>{{ t('nav_sync_pill', { n: onlineDeviceCount }) }}</span>
       </div>
+      <!-- 升级条：仅 Free 用户（Pro 只在账号菜单里留「升级」，Enterprise/超管都不显示） -->
+      <button
+        v-if="showUpgradeChip && !showUserMenu"
+        type="button"
+        class="upgrade-cta"
+        :title="t('sub_upgrade_plan')"
+        @click.stop="openUpgrade"
+      >
+        <Crown :size="13" :stroke-width="2" />
+        <span>{{ t('sub_upgrade_plan') }}</span>
+        <ChevronRight :size="12" class="upgrade-cta-arrow" />
+      </button>
       <!-- User chip — click toggles menu -->
       <div
         class="user-chip"
@@ -246,6 +283,11 @@ async function openAdminConsole() {
             <Crown :size="14" />
             <span>{{ t('nav_subscription') || '订阅' }}</span>
           </button>
+          <!-- 升级：Free/Pro 可见（Enterprise 已无更高档 → 整项不渲染），走同一能力判定 -->
+          <button v-if="showUpgradeMenuItem" class="user-menu-item user-menu-item--accent" @click="openUpgrade">
+            <Sparkles :size="14" />
+            <span>{{ t('upgrade') }}</span>
+          </button>
           <button
             class="user-menu-item"
             @click="
@@ -289,18 +331,29 @@ async function openAdminConsole() {
     </div>
 
     <!-- Footer avatar dot (collapsed only) -->
-    <div
-      v-show="isCollapsed"
-      class="sb-footer-dot"
-      :title="userName || 'User'"
-      style="cursor: pointer; border-radius: var(--radius-md); transition: background 0.12s"
-      role="button"
-      tabindex="0"
-      @click="emit('navigate', 'profile')"
-      @keydown.enter.prevent="emit('navigate', 'profile')"
-    >
-      <div class="user-avatar-ring user-avatar-ring--sm">
-        <div class="user-avatar-in user-avatar-in--sm">{{ userName ? userName.slice(0, 1) : 'C' }}</div>
+    <div v-show="isCollapsed" class="sb-collapsed-foot">
+      <!-- 折叠态升级入口：仅 Free 用户的图标按钮（与展开态同一判定） -->
+      <button
+        v-if="showUpgradeChip"
+        type="button"
+        class="sb-footer-dot sb-footer-dot--upgrade"
+        :title="t('sub_upgrade_plan')"
+        @click="openUpgrade"
+      >
+        <Crown :size="14" :stroke-width="2" />
+      </button>
+      <div
+        class="sb-footer-dot"
+        :title="userName || 'User'"
+        style="cursor: pointer; border-radius: var(--radius-md); transition: background 0.12s"
+        role="button"
+        tabindex="0"
+        @click="emit('navigate', 'profile')"
+        @keydown.enter.prevent="emit('navigate', 'profile')"
+      >
+        <div class="user-avatar-ring user-avatar-ring--sm">
+          <div class="user-avatar-in user-avatar-in--sm">{{ userName ? userName.slice(0, 1) : 'C' }}</div>
+        </div>
       </div>
     </div>
   </aside>
@@ -727,11 +780,66 @@ async function openAdminConsole() {
   color: var(--text-tertiary);
 }
 
+/* ---- 升级条（Free 用户账号区醒目入口）---- */
+.upgrade-cta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+.upgrade-cta:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
+}
+.upgrade-cta:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.upgrade-cta-arrow {
+  margin-left: auto;
+  opacity: 0.6;
+}
+.user-menu-item--accent {
+  color: var(--accent);
+}
+
 /* ---- Footer dot (collapsed) ---- */
+.sb-collapsed-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
 .sb-footer-dot {
   display: flex;
   justify-content: center;
   padding: 10px 0 8px;
-  margin-top: auto;
+}
+.sb-footer-dot--upgrade {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-light);
+  color: var(--accent);
+  cursor: pointer;
+}
+.sb-footer-dot--upgrade:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 </style>

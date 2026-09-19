@@ -1,67 +1,38 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+/**
+ * 设置 →「订阅与账单」→ 当前套餐子页。
+ * 卡片渲染与「只升不降」判定统一交给 PlanCards（与升级弹窗、订阅页同一套规则）。
+ * 价格此前在此处硬编码 ¥9.9/¥29，与管理台套餐表脱节被验收打回，现全部走
+ * GET /api/subscriptions/plans；档位判定依赖 GET /api/subscriptions/current。
+ */
+import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useSonner } from '@/composables/useSonner'
-import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
+import { useConfigStore } from '@/stores/configStore'
+import { useMenuAccess } from '@/composables/useMenuAccess'
+import PlanCards from '@/components/pricing/PlanCards.vue'
+import {
+  formatExpiryDate,
+  hasUpgradeHeadroom,
+  resolveCurrentSubscription,
+} from '@/composables/useSubscriptionAccess'
+import type { PricingPlan } from '@/composables/usePlanLimits'
+import type { BillingCycle } from '@/composables/useSubscriptionAccess'
 
-const { t } = useI18n()
-const toast = useSonner()
 const emit = defineEmits<{ back: []; 'open-modal': [type: string] }>()
 
-// ===== 真实套餐价格（管理台 subscription_plans 实时数据）=====
-// 此前此处硬编码 ¥9.9/¥29，与管理台改价脱节（用户验收实测打回），
-// 统一改走 GET /api/subscriptions/plans；加载失败显示「—」而非虚构价格。
-const plans = ref<PricingPlan[]>([])
-const loaded = ref(false)
+const { t } = useI18n()
+const configStore = useConfigStore()
+const { can } = useMenuAccess()
 
-const FEATURE_KEYS: Record<string, string[]> = {
-  free: ['feat_3dev', 'feat_100hist', 'feat_community'],
-  pro: ['feat_unlimited_dev', 'feat_unlimited_hist', 'feat_priority'],
-  enterprise: ['feat_team', 'feat_api', 'feat_priority'],
-}
+const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
+/** 当前档位展示名（role_pro / role_free … 与左下角账号区同一批键） */
+const currentPlanLabel = computed(() => t('role_' + (current.value.planName || 'Free').toLowerCase()))
+const expiryText = computed(() => formatExpiryDate(current.value.periodEnd))
+/** Enterprise 已无升级空间：只显当前档，不给购买入口 */
+const upgradable = computed(() => can('nav.subscription') && hasUpgradeHeadroom(current.value.planName))
 
-const PLAN_NAME_KEYS: Record<string, string> = {
-  free: 'price_free',
-  pro: 'price_pro',
-  enterprise: 'price_enterprise',
-}
-
-const orderedPlans = ref<{ key: string; plan: PricingPlan | null }[]>([])
-
-function buildOrdered() {
-  const byKey = new Map(plans.value.map((p) => [p.name.toLowerCase(), p]))
-  orderedPlans.value = ['free', 'pro', 'enterprise'].map((key) => ({
-    key,
-    plan: byKey.get(key) ?? null,
-  }))
-}
-
-onMounted(async () => {
-  plans.value = await getPricingPlans()
-  loaded.value = true
-  buildOrdered()
-})
-
-function planName(key: string): string {
-  return t(PLAN_NAME_KEYS[key] ?? key)
-}
-
-function planPrice(plan: PricingPlan | null): string {
-  return plan ? `¥${plan.priceMonthly}` : '—'
-}
-
-// ===== Plan selection =====
-function selectPlan(plan: PricingPlan | null) {
-  if (!plan) {
-    toast.show(t('ft_building'), 'info')
-    return
-  }
-  if (plan.name.toLowerCase() === 'free' || plan.priceMonthly === 0) {
-    toast.show(t('already_free'), 'info')
-    return
-  }
-  // 打开真实的「套餐→支付→扫码」弹窗流（PricingPaymentModals），
-  // 此前这里是「功能建设中」占位——支付流早已在弹窗里接通，只是没接过来。
+function onSelect(_plan: PricingPlan, _cycle: BillingCycle) {
+  // 打开真实的「套餐→支付→扫码」弹窗流（PricingPaymentModals）
   emit('open-modal', 'pricing')
 }
 </script>
@@ -69,28 +40,14 @@ function selectPlan(plan: PricingPlan | null) {
 <template>
   <div>
     <h3 class="sp-title">{{ t('modal_pricing') }}</h3>
-    <p class="sp-desc">{{ t('sg_current_plan_h_free') }}</p>
+    <p class="sp-desc">
+      {{ t('sub_current_plan_is', { plan: currentPlanLabel }) }}
+      <template v-if="expiryText"> · {{ t('sub_expiry_date', { date: expiryText }) }}</template>
+    </p>
 
-    <div class="pricing-grid">
-      <div
-        v-for="entry in orderedPlans"
-        :key="entry.key"
-        class="price-card"
-        :class="{ popular: entry.key === 'pro' }"
-        @click="selectPlan(entry.plan)"
-      >
-        <div v-if="entry.key === 'pro'" class="pc-tag">{{ t('price_popular') }}</div>
-        <div class="pc-name">{{ planName(entry.key) }}</div>
-        <div class="pc-price">
-          {{ planPrice(entry.plan) }}<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">
-          <template v-for="feat in FEATURE_KEYS[entry.key]" :key="feat">
-            &#10003; {{ t(feat) }}<br />
-          </template>
-        </div>
-      </div>
-    </div>
+    <!-- enable_subscription 关闭：套餐卡与升级入口整体不渲染（服务端 403 仍是权威兜底） -->
+    <PlanCards v-if="upgradable" @select="onSelect" />
+    <p v-else class="sp-desc sp-desc--muted">{{ t('plan_no_upgrade_headroom') }}</p>
   </div>
 </template>
 
@@ -105,57 +62,8 @@ function selectPlan(plan: PricingPlan | null) {
   color: var(--text-secondary);
   margin-bottom: 16px;
 }
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-.price-card {
-  padding: 20px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  position: relative;
-  transition: border-color 0.15s;
-}
-.price-card:hover {
-  border-color: var(--accent);
-}
-.price-card.popular {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
-.pc-tag {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-inverse);
-  background: var(--accent);
-  padding: 2px 10px;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-.pc-name {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.pc-price {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-.pc-period {
-  font-size: 12px;
-  font-weight: 400;
+.sp-desc--muted {
   color: var(--text-tertiary);
-}
-.pc-feats {
   font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.8;
 }
 </style>

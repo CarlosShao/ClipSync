@@ -1,60 +1,61 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useSonner } from '@/composables/useSonner'
 import ModalDialog from '@/components/ui/ModalDialog.vue'
 import Button from '@/components/ui/button/Button.vue'
 import AlipayScanPay from '@/components/payment/AlipayScanPay.vue'
+import PlanCards from '@/components/pricing/PlanCards.vue'
 import { Landmark, CircleCheck, Clock } from 'lucide-vue-next'
-import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
+import type { PricingPlan } from '@/composables/usePlanLimits'
+import { invalidatePlanLimits } from '@/composables/usePlanLimits'
 import { fetchOrderStatus } from '@/api/payment'
 import { api } from '@/api/client'
+import { useConfigStore } from '@/stores/configStore'
+import { useMenuAccess } from '@/composables/useMenuAccess'
+import {
+  cycleLabelKey,
+  invalidateCurrentSubscription,
+  type BillingCycle,
+} from '@/composables/useSubscriptionAccess'
 import './modal-shared.css'
 
 defineProps<{ showModalType: string }>()
 const emit = defineEmits<{ close: []; 'switch-modal': [type: string] }>()
 
 const { t } = useI18n()
-const toast = useSonner()
+const configStore = useConfigStore()
+// 弹窗流自身也过能力判定：入口（侧栏/设置/订阅页）已用 can('nav.subscription')，
+// 这里再兜一层 —— enable_subscription 运行中被关掉时，已挂载的弹窗不再给出购买卡。
+const { can } = useMenuAccess()
 
-// ===== 真实套餐价格（与管理台 subscription_plans 对齐，此前硬编码 ¥9.9/¥29 已移除）=====
-const plans = ref<PricingPlan[]>([])
-const FEATURE_KEYS: Record<string, string[]> = {
-  free: ['feat_3dev', 'feat_100hist', 'feat_community'],
-  pro: ['feat_unlimited_dev', 'feat_unlimited_hist', 'feat_priority'],
-  enterprise: ['feat_team', 'feat_api', 'feat_priority'],
-}
-const PLAN_NAME_KEYS: Record<string, string> = {
-  free: 'price_free',
-  pro: 'price_pro',
-  enterprise: 'price_enterprise',
-}
-const orderedPlans = ref<{ key: string; plan: PricingPlan | null }[]>([])
-
-onMounted(async () => {
-  plans.value = await getPricingPlans()
-  const byKey = new Map(plans.value.map((p) => [p.name.toLowerCase(), p]))
-  orderedPlans.value = ['free', 'pro', 'enterprise'].map((key) => ({
-    key,
-    plan: byKey.get(key) ?? null,
-  }))
-})
-
-function planName(key: string): string {
-  return t(PLAN_NAME_KEYS[key] ?? key)
-}
-function planPrice(plan: PricingPlan | null): string {
-  return plan ? `¥${plan.priceMonthly}` : '—'
-}
+// ===== 套餐目录/档位判定已收敛到 PlanCards（与设置子页、订阅页同一套只升不降规则）=====
 
 // Plan selection state (for pricing → payment flow)
-const selectedPlan = ref<{ id: string; name: string; price: number } | null>(null)
+interface SelectedPlan {
+  id: string
+  name: string
+  price: number
+  cycle: BillingCycle
+}
+const selectedPlan = ref<SelectedPlan | null>(null)
+/**
+ * 升级折抵（服务端 POST /api/payments/create-order 响应 order.metadata.proration）。
+ * 同事并行实现中：没拿到就是 null —— 结果页相应行不渲染，绝不伪造折抵金额。
+ */
+interface Proration {
+  originalPrice: number
+  creditAmount: number
+  finalAmount: number
+}
+const proration = ref<Proration | null>(null)
 interface PayDetail {
   orderNo: string
   amount?: string
   plan?: string
   paidAt?: string
   expiresAt?: string
+  originalAmount?: string
+  creditAmount?: string
 }
 const paymentResult = ref<{
   kind: 'success' | 'fail' | 'pending'
@@ -62,16 +63,26 @@ const paymentResult = ref<{
   detail?: PayDetail
 } | null>(null)
 
+const selectedPeriodLabel = computed(() =>
+  selectedPlan.value ? t(cycleLabelKey(selectedPlan.value.cycle)) : '',
+)
+
 function formatDateTime(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+function money(v: number): string {
+  return `¥${Number(v).toFixed(2)}`
+}
+
 function payDetailRows(d: PayDetail): { k: string; v: string }[] {
   const rows = [
     { k: t('pay_result_order_no'), v: d.orderNo },
     { k: t('pay_result_plan'), v: d.plan || '' },
+    { k: t('pay_result_original_amount'), v: d.originalAmount || '' },
+    { k: t('pay_result_credit_amount'), v: d.creditAmount || '' },
     { k: t('pay_result_amount'), v: d.amount || '' },
     { k: t('pay_result_paid_at'), v: d.paidAt || '' },
     { k: t('pay_result_expires_at'), v: d.expiresAt || '' },
@@ -80,17 +91,34 @@ function payDetailRows(d: PayDetail): { k: string; v: string }[] {
 }
 
 // ===== Plan Selection → Payment Flow =====
-function selectPlan(plan: PricingPlan | null) {
-  if (!plan) {
-    toast.show(t('ft_building'), 'info')
-    return
+/** PlanCards 只在「升级/订阅」可点时才抛 select：档位判定（当前档置灰、低档已包含）在卡片里已做完 */
+function onPlanSelect(plan: PricingPlan, cycle: BillingCycle) {
+  const price = cycle === 'yearly' ? (plan.priceYearly > 0 ? plan.priceYearly : plan.priceMonthly) : plan.priceMonthly
+  selectedPlan.value = {
+    id: plan.id,
+    name: plan.displayName || plan.name,
+    price,
+    cycle,
   }
-  if (plan.name.toLowerCase() === 'free' || plan.priceMonthly === 0) {
-    toast.show(t('already_free'), 'info')
-    return
-  }
-  selectedPlan.value = { id: plan.id, name: plan.displayName || plan.name, price: plan.priceMonthly }
+  proration.value = null
   emit('switch-modal', 'payment')
+}
+
+/** 下单成功：create-order 响应顶层 proration 为升级折抵明细（兼容 metadata.proration 旧形） */
+function onOrderCreated(data: any) {
+  const p = data?.proration ?? data?.order?.metadata?.proration
+  if (!p || typeof p !== 'object') {
+    proration.value = null
+    return
+  }
+  const originalPrice = Number(p.originalPrice)
+  const creditAmount = Number(p.creditAmount)
+  const finalAmount = Number(p.finalAmount)
+  if (![originalPrice, creditAmount, finalAmount].every((n) => Number.isFinite(n))) {
+    proration.value = null
+    return
+  }
+  proration.value = { originalPrice, creditAmount, finalAmount }
 }
 
 // 选择支付方式 —— 2026-09-16 接入真实支付宝扫码支付。
@@ -122,15 +150,30 @@ async function onPaid(orderNo: string) {
   } catch {
     /* 详情拉取失败不阻塞成功提示，仅少几行信息 */
   }
+  // 折抵明细来自下单响应（订单状态接口不回传 metadata）
+  if (proration.value) {
+    detail.originalAmount = money(proration.value.originalPrice)
+    detail.creditAmount = `- ${money(proration.value.creditAmount)}`
+    if (!detail.amount) detail.amount = money(proration.value.finalAmount)
+  }
   try {
     // 有效期必须读服务端订阅真实到期（续费是叠加延长，不能用支付时间+1月硬算）
     const subRes = await api<any>('GET', '/api/subscriptions/current')
-    const end = subRes.ok ? subRes.data?.subscription?.current_period_end : null
-    if (end) detail.expiresAt = formatDateTime(end)
+    const sub = subRes.ok ? subRes.data?.subscription : null
+    const end = sub?.current_period_end ?? sub?.currentPeriodEnd ?? null
+    if (end) detail.expiresAt = formatDateTime(String(end))
   } catch {
     /* 同上 */
   }
   if (selectedPlan.value) detail.plan = selectedPlan.value.name
+  // 订阅已变更：作废三处缓存（限额/features、订阅快照、auth/me 的 plan 冗余字段），
+  // 否则侧栏档位与「当前套餐」卡片会在 TTL 内继续显示旧套餐。
+  invalidatePlanLimits()
+  invalidateCurrentSubscription()
+  void configStore.fetchUserProfile()
+  // 弹窗背后的订阅页/侧栏仍挂着：广播一次（与 clipsync:avatar-changed 同一总线模式），
+  // 否则刚付款的档位要到下次进入页面才刷新。
+  window.dispatchEvent(new CustomEvent('clipsync:subscription-changed'))
   paymentResult.value = { kind: 'success', message: t('pay_paid_ok'), detail }
   emit('switch-modal', 'payment-result')
 }
@@ -138,27 +181,10 @@ async function onPaid(orderNo: string) {
 
 <template>
   <!-- Pricing -->
-  <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="560px" @close="emit('close')">
-    <div class="pricing-grid">
-      <div
-        v-for="entry in orderedPlans"
-        :key="entry.key"
-        class="price-card"
-        :class="{ popular: entry.key === 'pro' }"
-        @click="selectPlan(entry.plan)"
-      >
-        <div v-if="entry.key === 'pro'" class="pc-tag">{{ t('price_popular') }}</div>
-        <div class="pc-name">{{ planName(entry.key) }}</div>
-        <div class="pc-price">
-          {{ planPrice(entry.plan) }}<span class="pc-period">{{ t('price_per_mo') }}</span>
-        </div>
-        <div class="pc-feats">
-          <template v-for="feat in FEATURE_KEYS[entry.key]" :key="feat">
-            ✓ {{ t(feat) }}<br />
-          </template>
-        </div>
-      </div>
-    </div>
+  <ModalDialog :open="showModalType === 'pricing'" :title="t('modal_pricing')" max-width="620px" @close="emit('close')">
+    <!-- enable_subscription 关闭：不给购买入口，也不报错——按「功能建设中」如实占位 -->
+    <PlanCards v-if="can('nav.subscription')" @select="onPlanSelect" />
+    <div v-else class="modal-state">{{ t('ft_building') }}</div>
   </ModalDialog>
 
   <!-- Payment Method -->
@@ -167,8 +193,9 @@ async function onPaid(orderNo: string) {
     <div v-if="selectedPlan" class="pay-summary">
       <div class="pay-summary-name">{{ selectedPlan.name }}</div>
       <div class="pay-summary-price">
-        ¥{{ selectedPlan.price }}<span class="pay-summary-period">{{ t('price_per_mo') }}</span>
+        ¥{{ selectedPlan.price }}<span class="pay-summary-period">{{ selectedPeriodLabel }}</span>
       </div>
+      <div class="pay-summary-cycle">{{ t('cycle_once_note') }}</div>
     </div>
     <div class="pay-methods">
       <Button
@@ -191,8 +218,10 @@ async function onPaid(orderNo: string) {
     <AlipayScanPay
       v-if="selectedPlan"
       :plan-id="selectedPlan.id"
+      :billing-cycle="selectedPlan.cycle"
       :amount-label="`¥${selectedPlan.price}`"
-      :period-label="t('price_per_mo')"
+      :period-label="selectedPeriodLabel"
+      @order-created="onOrderCreated"
       @paid="onPaid"
       @close="emit('close')"
     />
@@ -230,11 +259,6 @@ async function onPaid(orderNo: string) {
 </template>
 
 <style scoped>
-.pricing-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
 .payment-option {
   display: flex;
   align-items: center;
@@ -266,52 +290,7 @@ async function onPaid(orderNo: string) {
   color: #1677ff;
 }
 /* stylelint-enable color-no-hex */
-.price-card {
-  padding: 20px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  position: relative;
-}
-.price-card:hover {
-  border-color: var(--accent);
-}
-.price-card.popular {
-  border-color: var(--accent);
-  background: var(--accent-light);
-}
-.pc-tag {
-  position: absolute;
-  top: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-inverse);
-  background: var(--accent);
-  padding: 2px 10px;
-  border-radius: 8px;
-}
-.pc-name {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-.pc-price {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 12px;
-}
-.pc-period {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-}
-.pc-feats {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.8;
-}
+/* 套餐卡样式（.price-card/.pc-*）已随卡片一起迁到 components/pricing/PlanCards.vue */
 
 .pay-summary {
   margin-bottom: 16px;
@@ -333,6 +312,12 @@ async function onPaid(orderNo: string) {
 .pay-summary-period {
   font-size: 13px;
   font-weight: 400;
+  color: var(--text-tertiary);
+}
+/* 一次性购买说明：防止「月付/年付」被读成自动续费（本产品无自动扣款） */
+.pay-summary-cycle {
+  margin-top: 6px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 .pay-methods {

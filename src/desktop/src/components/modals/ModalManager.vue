@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { watch, reactive, ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
 import { useNotifications } from '@/composables/useNotifications'
 import { CircleCheck, QrCode } from 'lucide-vue-next'
@@ -40,7 +39,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const toast = useSonner()
 const { allThemes, setStyle, currentStyle } = useTheme()
 const { savePreference, loadPreferencesInto, PREF_TYPE_BY_KEY } = useNotifications()
 
@@ -195,21 +193,12 @@ watch(
     @switch-modal="(type) => emit('switch-modal', type)"
   />
 
-  <!-- Cancel Subscription -->
-  <ModalDialog
-    :open="showModalType === 'cancel-subscription'"
-    :title="t('sub_cancel')"
-    max-width="420px"
-    @close="emit('close-modal')"
-  >
-    <div class="modal-center-pad20">
-      <p class="cancel-text">{{ t('sub_cancel_h') }}</p>
-      <!-- 取消订阅尚未接入后端：统一占位文案"功能建设中"（此前误用"注册流程即将推出"） -->
-      <Button variant="destructive" class="w-full" @click="toast.show(t('ft_building'), 'info')">{{
-        t('sub_cancel')
-      }}</Button>
-    </div>
-  </ModalDialog>
+  <!--
+    cancel-subscription 弹窗已移除（订阅 UI 重做）：本产品**没有自动续费**（个体户资质
+    开不了支付宝商家扣款），"取消订阅"没有可取消的对象；原弹窗只有一个点了只弹
+    「功能建设中」的 destructive 按钮，属误导性 UI。订阅页改为展示到期时间，
+    见 components/settings/SubscriptionView.vue。
+  -->
 
   <!-- Billing / Invoices -->
   <BillingModal :show-modal-type="showModalType" @close="emit('close-modal')" />
@@ -398,13 +387,6 @@ watch(
   font-size: 11px;
   color: var(--text-tertiary);
   margin-top: 2px;
-}
-
-/* Cancel subscription */
-.cancel-text {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 20px;
 }
 
 /* Updates */
