@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Camera, Pencil, Lock } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
 import { useUser } from '@/composables/useUser'
+import { useMenuAccess } from '@/composables/useMenuAccess'
 import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
 import { api } from '@/api/client'
@@ -12,11 +13,17 @@ import Avatar from '@/components/ui/avatar/Avatar.vue'
 import AvatarImageComp from '@/components/ui/avatar/AvatarImage.vue'
 import AvatarFallbackComp from '@/components/ui/avatar/AvatarFallback.vue'
 import Label from '@/components/ui/label/Label.vue'
+import PlanManagementCard from './PlanManagementCard.vue'
+
+const emit = defineEmits<{ 'open-modal': [type: string] }>()
 
 const { t, tf } = useI18n()
 const configStore = useConfigStore()
 const toast = useSonner()
 const { isSuperAdmin } = useUser()
+const { can } = useMenuAccess()
+// 套餐管理卡：flag 关闭或超管（无商业身份语义）整卡不渲染
+const showPlanCard = computed(() => can('nav.subscription') && !isSuperAdmin.value)
 
 // === Display Name (nickname) ===
 const editingName = ref(false)
@@ -215,6 +222,9 @@ async function handleAvatarUpload(e: Event) {
         </div>
       </div>
     </div>
+
+    <!-- 套餐管理（升级/申请退款）：订阅页砍掉后，个人资料页是套餐管理唯一场所 -->
+    <PlanManagementCard v-if="showPlanCard" @open-modal="(type) => emit('open-modal', type)" />
 
     <!-- Password change hint -->
     <div class="profile-hint">

@@ -72,7 +72,7 @@ interface PlanSnapshot extends PlanLimits {
 }
 
 async function fetchPlanLimits(): Promise<PlanSnapshot> {
-  // 与 SubscriptionView 相同的调用方式：GET /api/subscriptions/current（Bearer 由 api() 注入）
+  // 与套餐管理卡相同的调用方式：GET /api/subscriptions/current（Bearer 由 api() 注入）
   const res = await api('GET', '/api/subscriptions/current')
   if (!res.ok || !res.data) {
     throw new Error(`[usePlanLimits] HTTP ${res.status}: ${res.error || 'no data'}`)

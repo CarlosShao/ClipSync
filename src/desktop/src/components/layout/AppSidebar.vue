@@ -15,7 +15,6 @@ import {
   ExternalLink,
   Megaphone,
   ChevronRight,
-  Sparkles,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -270,22 +269,10 @@ async function openAdminConsole() {
             <User :size="14" />
             <span>{{ t('nav_profile') || '个人资料' }}</span>
           </button>
-          <button
-            v-if="can('nav.subscription')"
-            class="user-menu-item"
-            @click="
-              () => {
-                emit('navigate', 'subscription')
-                closeUserMenu()
-              }
-            "
-          >
-            <Crown :size="14" />
-            <span>{{ t('nav_subscription') || '订阅' }}</span>
-          </button>
-          <!-- 升级：Free/Pro 可见（Enterprise 已无更高档 → 整项不渲染），走同一能力判定 -->
+          <!-- 升级：Free/Pro 可见（Enterprise 已无更高档 → 整项不渲染），走同一能力判定。
+               图标用 Crown：Sparkles 与顶栏 AI 按钮同形，用户裁定不得重复（2026-09-19）。 -->
           <button v-if="showUpgradeMenuItem" class="user-menu-item user-menu-item--accent" @click="openUpgrade">
-            <Sparkles :size="14" />
+            <Crown :size="14" />
             <span>{{ t('upgrade') }}</span>
           </button>
           <button

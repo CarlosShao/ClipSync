@@ -38,7 +38,6 @@ const AiChatPanel = defineAsyncComponent(() => import('@/components/ai/AiChatPan
 const AiSummaryFloat = defineAsyncComponent(() => import('@/components/AiSummaryFloat.vue'))
 const ProfileView = defineAsyncComponent(() => import('@/components/settings/ProfileView.vue'))
 const DevicesView = defineAsyncComponent(() => import('@/components/settings/DevicesView.vue'))
-const SubscriptionView = defineAsyncComponent(() => import('@/components/settings/SubscriptionView.vue'))
 const NotificationsView = defineAsyncComponent(() => import('@/components/settings/NotificationsView.vue'))
 // ModalManager 携带全套重型库（pdfjs/xlsx/mammoth/highlight.js/jszip/qrcode/jsqr/marked），
 // 改为异步 + v-if 门控，仅在真正需要时才加载进内存，避免启动即常驻数十 MB
@@ -816,14 +815,11 @@ function confirmAction() {
       />
       <TemplatesView v-else-if="currentSub === 'templates'" :ai-enabled="aiEnabled" />
       <SettingsView v-else-if="currentSub === 'settings'" :ai-enabled="aiEnabled" @open-modal="openModal" />
-      <ProfileView v-else-if="currentSub === 'profile'" />
+      <ProfileView v-else-if="currentSub === 'profile'" @open-modal="openModal" />
       <DevicesView v-else-if="currentSub === 'devices'" :ai-enabled="aiEnabled" @open-modal="openModal" />
       <NotificationsView v-else-if="currentSub === 'notifications'" />
-      <!-- enable_subscription 关闭：订阅页不渲染（侧栏入口已隐藏，直接改 URL 也不可达） -->
-      <SubscriptionView
-        v-else-if="currentSub === 'subscription' && can('nav.subscription')"
-        @open-modal="openModal"
-      />
+      <!-- 订阅页面已砍（2026-09-19 用户裁定）：与「选择套餐」弹窗重复；
+           套餐管理（升级/退款）收进个人资料页，升级入口保留在头像菜单与账号区 -->
       </main>
 
       <!-- AI 面板：老版行为——右侧常驻侧栏（流内子项），打开时挤压内容区而非覆盖；

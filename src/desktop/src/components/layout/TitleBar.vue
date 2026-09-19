@@ -75,7 +75,6 @@ const CRUMB_KEYS: Record<string, string> = {
   devices: 'nav_devices',
   profile: 'nav_profile',
   notifications: 'nav_notifications',
-  subscription: 'nav_subscription',
 }
 const crumbLabel = computed(() => {
   const key = props.currentSub ? CRUMB_KEYS[props.currentSub] : ''

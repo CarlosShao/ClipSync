@@ -1,49 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useSonner } from '@/composables/useSonner'
-import { useConfigStore } from '@/stores/configStore'
 import { ChevronRight } from 'lucide-vue-next'
-import { formatExpiryDate, loadCurrentSubscription, resolveCurrentSubscription } from '@/composables/useSubscriptionAccess'
 
-const { t } = useI18n()
-const toast = useSonner()
-const configStore = useConfigStore()
+const { t, tf } = useI18n()
 const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
 
-// 此前本行副标题写死「您当前使用的是免费版」——Pro/Enterprise 用户看到的也是这句假话。
-// 现与订阅页、侧栏同源（GET /api/subscriptions/current 快照，回落 auth/me 的 plan）。
-void loadCurrentSubscription()
-const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
-const currentHint = computed(() => {
-  const plan = t('role_' + (current.value.planName || 'Free').toLowerCase())
-  const expiry = formatExpiryDate(current.value.periodEnd)
-  return expiry ? t('sub_current_plan_h_with_expiry', { plan, date: expiry }) : t('sub_current_plan_h_no_expiry', { plan })
-})
+// 2026-09-19 裁定：套餐管理（升级/取消订阅/申请退款）只在「个人资料」页，
+// 设置里不再放套餐与升级入口；发票下载功能砍掉（账单历史已列付款记录）。
+// 因此本分组只剩一条账单历史入口，分组标题也从「订阅与账单」收窄为「账单」。
+// 文案用新 key sg_bill_only：旧 key sg_sub_bill 词典值仍是「订阅与账单」。
 </script>
 
 <template>
   <div class="settings-group">
-    <div class="sg-header">{{ t('sg_sub_bill') }}</div>
-    <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'pricing')">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('sg_current_plan') }}</div>
-        <div class="sg-hint">{{ currentHint }}</div>
-      </div>
-      <ChevronRight class="sg-arrow" />
-    </div>
+    <div class="sg-header">{{ tf('sg_bill_only', '账单') }}</div>
     <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'billing')">
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_billing') }}</div>
         <div class="sg-hint">{{ t('sg_billing_h') }}</div>
-      </div>
-      <ChevronRight class="sg-arrow" />
-    </div>
-    <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
-    <div class="sg-row sg-row--clickable" @click="toast.show(t('ft_building'), 'info')">
-      <div class="sg-label">
-        <div class="sg-name">{{ t('sg_invoices') }}</div>
-        <div class="sg-hint">{{ t('sg_invoices_h') }}</div>
       </div>
       <ChevronRight class="sg-arrow" />
     </div>

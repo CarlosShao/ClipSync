@@ -304,7 +304,6 @@ const VIEW_CONTEXT_KEYS: Record<string, string> = {
   devices: 'ai_ctx_view_devices',
   profile: 'ai_ctx_view_profile',
   notifications: 'ai_ctx_view_notifications',
-  subscription: 'ai_ctx_view_subscription',
 }
 const viewContextText = computed(() => {
   const v = props.view

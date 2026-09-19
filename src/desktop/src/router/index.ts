@@ -15,7 +15,6 @@ export const APP_SUB_PAGES = [
   'settings',
   'profile',
   'notifications',
-  'subscription',
 ] as const
 
 export type AppSubPage = (typeof APP_SUB_PAGES)[number]

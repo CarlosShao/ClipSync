@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import { useSonner } from '@/composables/useSonner'
 import { api } from '@/api/client'
-import Button from '@/components/ui/button/Button.vue'
-import { FileText, Download } from 'lucide-vue-next'
+import { FileText } from 'lucide-vue-next'
 
 const { t } = useI18n()
-const toast = useSonner()
 const emit = defineEmits<{ back: [] }>()
 
 // ===== State =====
@@ -61,6 +58,8 @@ onMounted(() => {
     </div>
 
     <!-- Invoice list -->
+    <!-- 行右侧的「下载发票」按钮已砍（2026-09-19 裁定）：后端未接入，点击只弹「功能建设中」，
+         属假按钮；账单列表本身（单号 / 日期 / 金额）保留。 -->
     <div v-else class="invoice-list">
       <div v-for="inv in invoices" :key="inv.id" class="invoice-item">
         <div class="invoice-info">
@@ -69,13 +68,7 @@ onMounted(() => {
             {{ inv.createdAt ? new Date(inv.createdAt).toLocaleDateString() : '' }}
           </div>
         </div>
-        <div class="invoice-right">
-          <span class="invoice-amount">&yen;{{ inv.amount ?? 0 }}</span>
-          <!-- 发票下载尚未接入：统一占位文案"功能建设中"（此前误用反馈服务文案） -->
-          <Button variant="ghost" size="sm" @click="toast.show(t('ft_building'), 'info')">
-            <Download :size="14" />
-          </Button>
-        </div>
+        <span class="invoice-amount">&yen;{{ inv.amount ?? 0 }}</span>
       </div>
     </div>
   </div>
@@ -144,11 +137,6 @@ onMounted(() => {
 .invoice-date {
   font-size: 11px;
   color: var(--text-tertiary);
-}
-.invoice-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .invoice-amount {
   font-size: 14px;

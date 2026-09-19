@@ -196,8 +196,8 @@ watch(
   <!--
     cancel-subscription 弹窗已移除（订阅 UI 重做）：本产品**没有自动续费**（个体户资质
     开不了支付宝商家扣款），"取消订阅"没有可取消的对象；原弹窗只有一个点了只弹
-    「功能建设中」的 destructive 按钮，属误导性 UI。订阅页改为展示到期时间，
-    见 components/settings/SubscriptionView.vue。
+    「功能建设中」的 destructive 按钮，属误导性 UI。套餐管理（升级/退款）在个人资料页，
+    见 components/settings/ProfileView.vue。
   -->
 
   <!-- Billing / Invoices -->

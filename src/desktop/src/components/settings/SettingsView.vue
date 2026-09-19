@@ -2,7 +2,21 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useMenuAccess } from '@/composables/useMenuAccess'
-import { ArrowLeft, Settings2, Palette, Keyboard, Variable, Sparkles, Workflow, CreditCard, Database, ShieldCheck, Info } from 'lucide-vue-next'
+import {
+  ArrowLeft,
+  Settings2,
+  Palette,
+  Keyboard,
+  Variable,
+  Sparkles,
+  Workflow,
+  CreditCard,
+  Database,
+  ShieldCheck,
+  Info,
+  Search,
+  X,
+} from 'lucide-vue-next'
 import GeneralSettings from './settings-dialog/GeneralSettings.vue'
 import { useConfigStore } from '@/stores/configStore'
 import AppearanceSettings from './settings-dialog/AppearanceSettings.vue'
@@ -21,17 +35,19 @@ import SessionsSubPage from './settings-dialog/sub-pages/SessionsSubPage.vue'
 import NotificationsSubPage from './settings-dialog/sub-pages/NotificationsSubPage.vue'
 import ExportSubPage from './settings-dialog/sub-pages/ExportSubPage.vue'
 import FeedbackSubPage from './settings-dialog/sub-pages/FeedbackSubPage.vue'
-import PricingSubPage from './settings-dialog/sub-pages/PricingSubPage.vue'
 import BillingSubPage from './settings-dialog/sub-pages/BillingSubPage.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
+import { useSettingsSearch } from './useSettingsSearch'
 
 const { t, tf, currentLang } = useI18n()
 const { can } = useMenuAccess()
 const configStore = useConfigStore()
 
 const props = defineProps<{ aiEnabled?: boolean }>()
-const emit = defineEmits<{ 'open-modal': [type: string] }>()
+// 事件声明保留：HomeView 仍在本组件上绑定 @open-modal。设置内原先只有 PricingSubPage 会触发它，
+// 2026-09-19 裁定后套餐/升级入口已全部收进「个人资料」页，这里不再有实际触发点（删声明要同步改 HomeView）。
+defineEmits<{ 'open-modal': [type: string] }>()
 
 // A5「审查设置」内联结果卡：设置快照交给 AI 逐项给风险与建议（结构化 JSON，可跳转分节），不跳侧栏
 const reviewAi = useInlineAi()
@@ -142,6 +158,9 @@ const SECTION_ICONS: Record<string, unknown> = {
   about: Info,
 }
 const sections = computed<Section[]>(() => {
+  // 「订阅」分组已收敛为纯账单入口（2026-09-19 裁定：套餐管理只在个人资料页）。
+  // 文案走 tf 的新 key：sg_sub_bill / set_d_sub 在词典里仍是「订阅与账单」「当前套餐…」，
+  // 直接复用会把砍掉的入口名又显示回来（locales 本次不在改动范围内）。
   const all: Section[] = [
     { key: 'general', icon: Settings2, label: t('sg_gen'), desc: tf('set_d_general', '启动、语言与服务器连接') },
     { key: 'appearance', icon: Palette, label: t('sg_appear'), desc: tf('set_d_appearance', '主题、字号与界面风格') },
@@ -149,7 +168,13 @@ const sections = computed<Section[]>(() => {
     { key: 'vars', icon: Variable, label: t('sg_tpl_vars', '模板变量'), desc: tf('set_d_vars', '模板变量的默认值管理') },
     { key: 'ai', icon: Sparkles, label: t('sg_ai'), desc: tf('set_d_ai', 'AI 模型与提供商配置'), gated: true },
     { key: 'workflow', icon: Workflow, label: t('sg_workflow', '自动化'), desc: tf('set_d_workflow', '剪贴自动化规则') },
-    { key: 'subscription', icon: CreditCard, label: t('sg_sub_bill'), desc: tf('set_d_sub', '当前套餐、用量与账单'), gated: true },
+    {
+      key: 'subscription',
+      icon: CreditCard,
+      label: tf('sg_bill_only', '账单'),
+      desc: tf('sg_bill_only_d', '查看付款记录与账单历史'),
+      gated: true,
+    },
     { key: 'data', icon: Database, label: t('sg_data'), desc: tf('set_d_data', '导出、导入与清理') },
     { key: 'privacy', icon: ShieldCheck, label: t('sg_privacy'), desc: tf('set_d_privacy', '密码、会话与通知偏好') },
     { key: 'about', icon: Info, label: t('sg_about'), desc: tf('set_d_about', '版本与许可') },
@@ -166,7 +191,6 @@ const subPageRegistry: Record<string, string> = {
   notifications: 'sg_notifp',
   export: 'sg_export',
   feedback: 'fb_title',
-  pricing: 'sg_current_plan',
   billing: 'sg_billing',
 }
 const subPageLabel = computed(() => {
@@ -179,6 +203,8 @@ const returnSection = ref('general')
 function openSubPage(page: string) {
   returnSection.value = activeSection.value
   activeSubPage.value = page
+  // 主列表会被整块卸载，搜索结果里的 DOM 引用随之失效——顺手清掉
+  clearSearch()
 }
 function goBack() {
   activeSubPage.value = ''
@@ -204,6 +230,27 @@ function scrollToSection(key: string) {
   activeSection.value = key
   rootRef.value?.querySelector('#sec-' + key)?.scrollIntoView({ block: 'start' })
 }
+
+// 顶部全文搜索：直接扫 .set-content 里已渲染的设置行（详见 useSettingsSearch）
+const contentRef = ref<HTMLElement | null>(null)
+const searchWrapRef = ref<HTMLElement | null>(null)
+const {
+  query: searchQuery,
+  open: searchOpen,
+  hits: searchHits,
+  active: searchActive,
+  reveal: revealHit,
+  acceptFirst: acceptSearch,
+  moveActive: moveSearchActive,
+  openPanel: openSearchPanel,
+  setActive: setSearchActive,
+  clearSearch,
+} = useSettingsSearch({
+  root: contentRef,
+  scroller: rootRef,
+  wrap: searchWrapRef,
+  scrollToSection,
+})
 
 // 原型逻辑：区块顶边越过滚动区上部 35% 分界线即成为当前项；滚到底时强制末项
 function updateActiveSection() {
@@ -244,6 +291,63 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
           </div>
         </div>
         <div class="page-acts">
+          <!-- 顶部全文搜索：扫已渲染的设置行，回车/点击结果 = 滚到所属分组 + 高亮该行 -->
+          <div v-if="!activeSubPage" ref="searchWrapRef" class="set-search">
+            <Search class="set-search-ico" :size="14" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="set-search-input"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-controls="set-search-panel"
+              :aria-expanded="searchOpen && searchQuery.trim() ? 'true' : 'false'"
+              :placeholder="tf('set_search_ph', '搜索设置项')"
+              :aria-label="tf('set_search_ph', '搜索设置项')"
+              autocomplete="off"
+              spellcheck="false"
+              @focus="openSearchPanel"
+              @keydown.down.prevent="moveSearchActive(1)"
+              @keydown.up.prevent="moveSearchActive(-1)"
+              @keydown.enter.prevent="acceptSearch"
+              @keydown.esc.prevent="clearSearch"
+            />
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="set-search-clear"
+              :aria-label="tf('set_search_clear', '清空搜索')"
+              :title="tf('set_search_clear', '清空搜索')"
+              @click="clearSearch"
+            >
+              <X :size="12" />
+            </button>
+            <ul
+              v-show="searchOpen && !!searchQuery.trim()"
+              id="set-search-panel"
+              class="set-search-panel"
+              role="listbox"
+              :aria-label="tf('set_search_ph', '搜索设置项')"
+            >
+              <li v-if="!searchHits.length" class="set-search-empty">{{ tf('set_search_empty', '无匹配设置') }}</li>
+              <li
+                v-for="(h, i) in searchHits"
+                :key="h.sectionKey + '|' + h.label + '|' + i"
+                class="set-search-item"
+                :class="{ 'is-active': i === searchActive }"
+                role="option"
+                :aria-selected="i === searchActive"
+                @mouseenter="setSearchActive(i)"
+                @click="revealHit(h)"
+              >
+                <span class="ssi-main">
+                  <span class="ssi-label">{{ h.label }}</span>
+                  <span v-if="h.hint" class="ssi-hint">{{ h.hint }}</span>
+                </span>
+                <span class="ssi-section">{{ h.sectionLabel }}</span>
+              </li>
+            </ul>
+          </div>
           <button
             v-if="!activeSubPage && props.aiEnabled"
             type="button"
@@ -301,7 +405,6 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
         <NotificationsSubPage v-else-if="activeSubPage === 'notifications'" @back="goBack" />
         <ExportSubPage v-else-if="activeSubPage === 'export'" @back="goBack" />
         <FeedbackSubPage v-else-if="activeSubPage === 'feedback'" @back="goBack" />
-        <PricingSubPage v-else-if="activeSubPage === 'pricing'" @back="goBack" @open-modal="(type) => emit('open-modal', type)" />
         <BillingSubPage v-else-if="activeSubPage === 'billing'" @back="goBack" />
       </template>
 
@@ -318,7 +421,7 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
           </a>
         </nav>
 
-        <div class="set-content">
+        <div ref="contentRef" class="set-content">
           <section v-for="s in sections" :key="s.key" class="set-group" :id="'sec-' + s.key">
             <h3 class="gt">{{ s.label }}</h3>
             <p class="gd">{{ s.desc }}</p>
@@ -409,6 +512,143 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
 }
 .set-content {
   min-width: 0;
+}
+/* ---- 顶部全文搜索 ---- */
+/* 输入框与 .pl-btn 同一套语言：细边框 + 小圆角 + 聚焦走 accent */
+.set-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 220px;
+  height: 30px;
+  padding: 0 6px 0 9px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  color: var(--text-tertiary);
+  transition:
+    border-color var(--ease-d, 160ms) var(--ease),
+    box-shadow var(--ease-d, 160ms) var(--ease);
+}
+.set-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+.set-search-ico {
+  flex: none;
+}
+.set-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.set-search-input::placeholder {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.set-search-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.set-search-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.set-search-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: min(420px, 80vw);
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-dropdown);
+}
+.set-search-empty {
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.set-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.set-search-item.is-active {
+  background: var(--accent-light);
+}
+.ssi-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ssi-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ssi-hint {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ssi-section {
+  flex: none;
+  max-width: 40%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 搜索结果命中行的临时高亮：节点由子组件渲染，需要 :deep() 穿透 */
+.set-content :deep(.set-search-hit) {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  background: var(--accent-light);
+}
+.set-content :deep(h3.gt.set-search-hit) {
+  outline-offset: 0;
 }
 /* 迁入的 dialog 分组组件自带 sg-* 行样式；在页面里收紧外框，交给 set-group 头部表达层级 */
 .set-content :deep(.settings-group) {
