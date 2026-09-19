@@ -8,6 +8,7 @@ import AlipayScanPay from '@/components/payment/AlipayScanPay.vue'
 import { Landmark, CircleCheck, Clock } from 'lucide-vue-next'
 import { getPricingPlans, type PricingPlan } from '@/composables/usePlanLimits'
 import { fetchOrderStatus } from '@/api/payment'
+import { api } from '@/api/client'
 import './modal-shared.css'
 
 defineProps<{ showModalType: string }>()
@@ -108,7 +109,7 @@ function selectPaymentMethod(_method: string) {
   emit('switch-modal', 'pay-scan')
 }
 
-/** 扫码支付成功：拉一次订单终态，结果页展示订单号/金额/套餐/有效期 */
+/** 扫码支付成功：拉订单终态 + 真实订阅到期时间，结果页展示明细 */
 async function onPaid(orderNo: string) {
   const detail: PayDetail = { orderNo }
   try {
@@ -117,15 +118,17 @@ async function onPaid(orderNo: string) {
     if (o) {
       detail.amount = `¥${Number(o.amount).toFixed(2)}`
       detail.paidAt = o.paidAt ? formatDateTime(o.paidAt) : ''
-      // 服务端履约按支付时间 +1 计费周期设 current_period_end，前端同口径展示
-      if (o.paidAt) {
-        const exp = new Date(o.paidAt)
-        exp.setMonth(exp.getMonth() + 1)
-        detail.expiresAt = formatDateTime(exp.toISOString())
-      }
     }
   } catch {
     /* 详情拉取失败不阻塞成功提示，仅少几行信息 */
+  }
+  try {
+    // 有效期必须读服务端订阅真实到期（续费是叠加延长，不能用支付时间+1月硬算）
+    const subRes = await api<any>('GET', '/api/subscriptions/current')
+    const end = subRes.ok ? subRes.data?.subscription?.current_period_end : null
+    if (end) detail.expiresAt = formatDateTime(end)
+  } catch {
+    /* 同上 */
   }
   if (selectedPlan.value) detail.plan = selectedPlan.value.name
   paymentResult.value = { kind: 'success', message: t('pay_paid_ok'), detail }
@@ -343,6 +346,9 @@ async function onPaid(orderNo: string) {
   padding: 16px 0;
 }
 .pay-result-icon {
+  /* lucide svg 是块级元素，text-align 对它无效，必须 flex 居中 */
+  display: flex;
+  justify-content: center;
   margin-bottom: 16px;
 }
 .pay-result-icon.success {

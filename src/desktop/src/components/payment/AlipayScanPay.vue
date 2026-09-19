@@ -188,14 +188,22 @@ const showMask = computed(() => !agreed.value || loading.value || !!errorMsg.val
         <!--
           支付宝收银台：qr_pay_mode=4 时该页面直接渲染可定义宽度的二维码。
           sandbox 允许脚本与同源表单提交（收银台自身需要）；不放 allow-popups 之外的权限。
+
+          居中方案（2026-09-19 两轮实测得出）：支付宝前置页的二维码**贴页面
+          左上角渲染**（.qrcode-mini-content.fn-left 左浮动），且页面内容略大于
+          二维码本体。iframe 直接收窄到二维码尺寸会撑出滚动条；放大 iframe 再
+          flex 居中则二维码偏左。故用固定 240×240 iframe（内容完整不滚动）+
+          204×204 overflow-hidden 裁剪窗框住左上角二维码，由外层 flex 居中裁剪窗。
         -->
-        <iframe
-          :src="cashierUrl"
-          class="qr-frame"
-          :title="t('pay_qr_alt')"
-          sandbox="allow-scripts allow-forms allow-same-origin"
-          referrerpolicy="no-referrer"
-        />
+        <div class="qr-clip">
+          <iframe
+            :src="cashierUrl"
+            class="qr-frame"
+            :title="t('pay_qr_alt')"
+            sandbox="allow-scripts allow-forms allow-same-origin"
+            referrerpolicy="no-referrer"
+          />
+        </div>
         <p class="qr-waiting">{{ t('pay_waiting') }}</p>
       </template>
     </div>
@@ -264,12 +272,20 @@ const showMask = computed(() => !agreed.value || loading.value || !!errorMsg.val
   background: var(--bg-surface);
 }
 
-/* 支付宝收银台二维码尺寸：qrcode_width=200，iframe 留出内边距。
-   margin-top：支付宝前置页的二维码贴页面顶部渲染（实测），留白补上视觉居中 */
+/* 裁剪窗：框住支付宝前置页左上角的 200px 二维码（qrcode_width=200，
+   实测贴左上角渲染），204 留 4px 白边防切到码点。margin-top 补视觉居中。 */
+.qr-clip {
+  width: 204px;
+  height: 204px;
+  margin-top: 18px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
 .qr-frame {
   width: 240px;
   height: 240px;
-  margin-top: 20px;
+  display: block;
   border: 0;
   background: #fff;
 }
