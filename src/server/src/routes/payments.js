@@ -13,7 +13,7 @@ import {
   REFUNDABLE_ORDERS_LIMIT,
   SELF_REFUND_GATE_CODES,
   evaluateSelfRefund,
-  findLatestPaidOrderId,
+  findSelfRefundAnchorOrderId,
   listRefundCandidateOrders,
 } from '../services/refundPolicy.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
@@ -526,9 +526,10 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
  *      ① **订单属主本人**可自助退款 —— 客户端个人资料页「申请退款」入口，但要过
  *         三道风控闸（判定实现见 services/refundPolicy.js，与 GET /refundable-orders
  *         同源，绝不两处各写一份）：
- *           · 必须是该用户**最近一笔已支付订单** → 否则 409 NOT_LATEST_PAID_ORDER
- *             （退旧单会把 users 状态打回 free，而权益实际由新单支撑，属主自助不允许
- *              这种错乱；管理台仍可强退）；
+ *           · 必须是「**当前生效订阅的最近一笔已支付订单**」→ 否则 409
+ *             NOT_CURRENT_SUB_ORDER。锚点钉在 active 且未到期的订阅上：退掉即
+ *             订阅 canceled、锚点消失——历史订单**永不顺移可退**（旧口径
+ *             「用户最近一笔 paid」被实测打回：可以一笔笔顺着把历史全退干净）；
  *           · paid_at 距今 ≤ SELF_REFUND_WINDOW_DAYS(7) 天 → 否则 409 REFUND_WINDOW_EXPIRED；
  *           · status / 渠道（非 alipay）不在此重复报错，一律交 refundPaidOrder 裁决。
  *      ② **非属主** → 仍需 users.is_admin（管理员退款**不受**上面两道闸限制）。
@@ -591,8 +592,8 @@ router.post('/refund', authenticateToken, async (req, res) => {
 
     // 属主自助分支的风控闸（管理员分支直接跳过，仍可强退任意单）
     if (isOwner) {
-      const latestPaidOrderId = await findLatestPaidOrderId(operatorId);
-      const verdict = evaluateSelfRefund({ order, latestPaidOrderId, now: new Date() });
+      const anchorOrderId = await findSelfRefundAnchorOrderId(operatorId);
+      const verdict = evaluateSelfRefund({ order, anchorOrderId, now: new Date() });
       // 只拦「自助专属」的两道闸；status/渠道由 refundPaidOrder 统一报错，不双重报错
       if (!verdict.refundable && SELF_REFUND_GATE_CODES.includes(verdict.reasonCode)) {
         logger.warn('[payments] self-service refund denied', {
@@ -659,9 +660,9 @@ router.get('/refundable-orders', authenticateToken, async (req, res) => {
       return subscriptionDisabled(res);
     }
 
-    const [orders, latestPaidOrderId] = await Promise.all([
+    const [orders, anchorOrderId] = await Promise.all([
       listRefundCandidateOrders(userId, REFUNDABLE_ORDERS_LIMIT),
-      findLatestPaidOrderId(userId),
+      findSelfRefundAnchorOrderId(userId),
     ]);
 
     const now = new Date();
@@ -671,7 +672,7 @@ router.get('/refundable-orders', authenticateToken, async (req, res) => {
         const proration = order.metadata && typeof order.metadata === 'object' ? order.metadata.proration : null;
         const originalAmount = toFiniteAmount(proration?.originalPrice, amount);
         const creditAmount = toFiniteAmount(proration?.creditAmount, 0);
-        const verdict = evaluateSelfRefund({ order, latestPaidOrderId, now });
+        const verdict = evaluateSelfRefund({ order, anchorOrderId, now });
         const paidAt = order.paid_at ? new Date(order.paid_at) : null;
 
         return {

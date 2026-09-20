@@ -40,8 +40,8 @@ function order(overrides = {}) {
   };
 }
 
-function verdict(overrides, latestPaidOrderId = ORDER_ID) {
-  return evaluateSelfRefund({ order: order(overrides), latestPaidOrderId, now: NOW });
+function verdict(overrides, anchorOrderId = ORDER_ID) {
+  return evaluateSelfRefund({ order: order(overrides), anchorOrderId, now: NOW });
 }
 
 describe('常量契约', () => {
@@ -51,9 +51,9 @@ describe('常量契约', () => {
     expect(REFUNDABLE_ORDERS_LIMIT).toBe(10);
   });
 
-  it('实际拦截的两道闸只有 NOT_LATEST_PAID_ORDER / REFUND_WINDOW_EXPIRED（status/渠道交回 refundPaidOrder）', () => {
+  it('实际拦截的两道闸只有 NOT_CURRENT_SUB_ORDER / REFUND_WINDOW_EXPIRED（status/渠道交回 refundPaidOrder）', () => {
     expect([...SELF_REFUND_GATE_CODES].sort()).toEqual([
-      'NOT_LATEST_PAID_ORDER',
+      'NOT_CURRENT_SUB_ORDER',
       'REFUND_WINDOW_EXPIRED',
     ]);
   });
@@ -62,14 +62,14 @@ describe('常量契约', () => {
     expect(REFUND_REASON_CODES).toMatchObject({
       ALREADY_REFUNDED: 'ALREADY_REFUNDED',
       REFUND_WINDOW_EXPIRED: 'REFUND_WINDOW_EXPIRED',
-      NOT_LATEST_PAID_ORDER: 'NOT_LATEST_PAID_ORDER',
+      NOT_CURRENT_SUB_ORDER: 'NOT_CURRENT_SUB_ORDER',
       CHANNEL_UNSUPPORTED: 'CHANNEL_UNSUPPORTED',
     });
   });
 });
 
 describe('evaluateSelfRefund · 可退判定', () => {
-  it('paid + alipay + 最近一笔 + 窗口内 → refundable', () => {
+  it('paid + alipay + 锚定单（当前生效订阅的最近一笔已付）+ 窗口内 → refundable', () => {
     expect(verdict({})).toMatchObject({ refundable: true, reasonCode: null });
   });
 
@@ -100,24 +100,25 @@ describe('evaluateSelfRefund · 可退判定', () => {
     expect(verdict({ paid_at: null }).extra.paidAt).toBeNull();
   });
 
-  it('不是最近一笔已支付订单 → NOT_LATEST_PAID_ORDER；查不到最近一笔时也拒（无依据即不退）', () => {
+  it('不是锚定单（当前生效订阅的最近一笔已付）→ NOT_CURRENT_SUB_ORDER；无锚点（anchor 为空）时一律拒', () => {
     const other = verdict({}, '22222222-2222-2222-2222-222222222222');
-    expect(other.reasonCode).toBe('NOT_LATEST_PAID_ORDER');
-    expect(other.extra.latestPaidOrderId).toBe('22222222-2222-2222-2222-222222222222');
+    expect(other.reasonCode).toBe('NOT_CURRENT_SUB_ORDER');
+    expect(other.extra.anchorOrderId).toBe('22222222-2222-2222-2222-222222222222');
 
-    // 查不到「最近一笔已支付订单」（null/空）→ 没有依据，一律不退
-    for (const latest of [null, undefined, '']) {
-      const v = evaluateSelfRefund({ order: order({}), latestPaidOrderId: latest, now: NOW });
+    // 无 active 订阅 / 该订阅无已付订单（anchor=null）→ 没有任何可退依据，一律不退。
+    // 这正是防「依次顺移退款」的落点：退掉锚定单后 anchor 消失，旧单永不轮上。
+    for (const anchor of [null, undefined, '']) {
+      const v = evaluateSelfRefund({ order: order({}), anchorOrderId: anchor, now: NOW });
       expect(v.refundable).toBe(false);
-      expect(v.reasonCode).toBe('NOT_LATEST_PAID_ORDER');
+      expect(v.reasonCode).toBe('NOT_CURRENT_SUB_ORDER');
     }
   });
 
-  it('id 与 latestPaidOrderId 类型不一致（UUID 字符串 vs 其它对象）也能正确比对：按字符串比', () => {
+  it('id 与 anchorOrderId 类型不一致（UUID 字符串 vs 其它对象）也能正确比对：按字符串比', () => {
     expect(
       evaluateSelfRefund({
         order: order({ id: ORDER_ID }),
-        latestPaidOrderId: String(ORDER_ID),
+        anchorOrderId: String(ORDER_ID),
         now: NOW,
       }).refundable
     ).toBe(true);
@@ -132,13 +133,13 @@ describe('evaluateSelfRefund · 可退判定', () => {
     }
   });
 
-  it('非支付宝渠道 → CHANNEL_UNSUPPORTED（优先级高于"最近一笔/窗口"，先说清这单根本退不了）', () => {
+  it('非支付宝渠道 → CHANNEL_UNSUPPORTED（优先级高于"锚定单/窗口"，先说清这单根本退不了）', () => {
     for (const method of ['mock', 'stripe', 'wechat', null, '']) {
       const v = verdict({
         payment_channel: method,
         payment_method: method,
         paid_at: new Date(NOW.getTime() - 99 * DAY),
-        // 同时不满足"最近一笔"，仍应先报渠道
+        // 同时不满足"锚定单"，仍应先报渠道
       }, 'other-id');
       expect(v.reasonCode).toBe('CHANNEL_UNSUPPORTED');
       expect(v.extra.channel).toBe(String(method || '').toLowerCase() || 'unknown');

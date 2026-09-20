@@ -16,7 +16,8 @@ import { SELF_REFUND_WINDOW_DAYS } from '../src/services/refundPolicy.js';
  *   2. 退款成功 → 订单 refunded + refunded_at、订阅 canceled + canceled_at、
  *      users 冗余订阅状态回 free（退款即收回权益）；
  *   3. 权限（产品决策 2026-09-19 变更）：**订单属主本人可自助退款**，但要过风控闸
- *      （只退「最近一笔已支付订单」+ paid_at 7 天窗口内）；非属主仍需 is_admin，
+ *      （只退「当前生效订阅的最近一笔已付订单」+ paid_at 7 天窗口内——锚点随订阅
+ *       canceled 消失，历史订单永不顺移可退）；非属主仍需 is_admin，
  *      管理员不受这两道闸限制；
  *   4. 防探测：既非属主又非管理员的调用方，拿到的响应与「订单不存在」**完全同壳**，
  *      绝不承认该订单存在；
@@ -278,7 +279,7 @@ describe('权限与参数守卫', () => {
 });
 
 describe('属主自助退款风控闸（管理员分支不受这两道闸限制）', () => {
-  it('不是最近一笔已支付订单 → 409 NOT_LATEST_PAID_ORDER，不碰渠道、两单都不动', async () => {
+  it('不是锚定单（当前生效订阅的最近一笔已付）→ 409 NOT_CURRENT_SUB_ORDER，不碰渠道、两单都不动', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const old = await seedOrder({ paidAt: new Date(Date.now() - 2 * DAY_MS) });
     await seedOrder({ paidAt: new Date() });
@@ -287,10 +288,36 @@ describe('属主自助退款风控闸（管理员分支不受这两道闸限制�
     const res = await request(app).post('/api/payments/refund').send({ orderNo: old.orderNo });
 
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_LATEST_PAID_ORDER');
+    expect(res.body.code).toBe('NOT_CURRENT_SUB_ORDER');
     expect(res.body.error).toBeTruthy();
     expect(fn).not.toHaveBeenCalled();
     expect((await readOrder(old.orderId)).status).toBe('paid');
+  });
+
+  it('防顺移：退掉锚定单后，同一订阅更早的已付单**不会**变成可退（锚点随订阅 canceled 消失）', async () => {
+    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
+    // 同一订阅挂两笔已付单：earlier 是历史续费，anchor 是最近一笔
+    const anchor = await seedOrder({ paidAt: new Date() });
+    const earlier = await seedOrder({ withSubscription: false, paidAt: new Date(Date.now() - 2 * DAY_MS) });
+    await pool.query('UPDATE payment_orders SET subscription_id = $1 WHERE id = $2', [
+      anchor.subscriptionId,
+      earlier.orderId,
+    ]);
+    stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
+
+    // 第一笔：锚定单，可退 → 订阅随之 canceled
+    const ok = await request(app).post('/api/payments/refund').send({ orderNo: anchor.orderNo });
+    expect(ok.status).toBe(200);
+    expect((await readSubscription(anchor.subscriptionId)).status).toBe('canceled');
+
+    // 第二笔：同一订阅的更早续费单——旧口径在这里会顺移放行（依次退干净），
+    // 新口径锚点已随订阅 canceled 消失 → 必须 409，且绝不碰渠道
+    const fn2 = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
+    const second = await request(app).post('/api/payments/refund').send({ orderNo: earlier.orderNo });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe('NOT_CURRENT_SUB_ORDER');
+    expect(fn2).not.toHaveBeenCalled();
+    expect((await readOrder(earlier.orderId)).status).toBe('paid');
   });
 
   it('paid_at 超出 7 天窗口 → 409 REFUND_WINDOW_EXPIRED，extra 带 paidAt', async () => {
@@ -495,7 +522,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     expect(view(res.body.orders)).toEqual([
       [newest.orderNo, 'paid', true, null],
       [stripe.orderNo, 'paid', false, 'CHANNEL_UNSUPPORTED'],
-      [older.orderNo, 'paid', false, 'NOT_LATEST_PAID_ORDER'],
+      [older.orderNo, 'paid', false, 'NOT_CURRENT_SUB_ORDER'],
       [refunded.orderNo, 'refunded', false, 'ALREADY_REFUNDED'],
     ]);
     expect(res.body.orders.map((o) => o.orderNo)).not.toContain(foreign.orderNo);
@@ -554,11 +581,13 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
 
   it('只回溯最近 10 条（按 paid_at 倒序）', async () => {
     for (let i = 0; i < 12; i += 1) {
-      await seedOrder({ paidAt: new Date(Date.now() - i * DAY_MS), withSubscription: false });
+      // 最新一笔挂 active 订阅（锚定单）→ 可退；其余无订阅，新口径下一律不可退
+      await seedOrder({ paidAt: new Date(Date.now() - i * DAY_MS), withSubscription: i === 0 });
     }
     const res = await request(app).get('/api/payments/refundable-orders');
     expect(res.body.orders).toHaveLength(10);
     expect(res.body.orders[0].refundable).toBe(true);
+    expect(res.body.orders.slice(1).every((o) => !o.refundable && o.reasonCode === 'NOT_CURRENT_SUB_ORDER')).toBe(true);
     expect(res.body.orders.every((o) => o.status === 'paid')).toBe(true);
   });
 

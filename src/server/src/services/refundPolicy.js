@@ -3,7 +3,7 @@
 //
 // 背景（产品决策 2026-09-19 变更）：客户端个人资料页开放「申请退款」入口 ⇒
 // 订单**属主本人**可以不打客服直接退款。资金动作仍是 services/refund.js 的
-// refundPaidOrder（真打款、fund_status='Y' 才落库、退款即收回权益），本文件只回答
+// refundPaidOrder（真打款、渠道确认才落库、退款即收回权益），本文件只回答
 // 一个问题：「这一单，现在允许由属主自助退吗？不允许的话理由是什么？」
 //
 // 为什么单独抽一个模块，而不是把判定写在路由里：
@@ -12,22 +12,26 @@
 //     ② GET  /api/payments/refundable-orders —— 给客户端弹窗预先标注 refundable/reasonCode。
 //   一旦两处各写一份，最典型的漂移就是「列表说可退、点了却 409」或反过来
 //   「列表说不可退、接口其实退得掉」（后者是可被用户拿来做薅羊毛试探的口子）。
-//   判定是纯函数（evaluateSelfRefund），只有「最近一笔已支付订单」要查库
-//   （findLatestPaidOrderId），因此边界可以用单测钉死。
+//   判定是纯函数（evaluateSelfRefund），只有「锚定单」要查库
+//   （findSelfRefundAnchorOrderId），因此边界可以用单测钉死。
 //
 // 判定顺序（自上而下，第一个不满足的就是返回的理由）：
 //   1. status：refunded → ALREADY_REFUNDED；非 paid → ORDER_NOT_REFUNDABLE
 //      （与 refundPaidOrder 同码，不新造第二套语义）；
 //   2. channel：非 alipay → CHANNEL_UNSUPPORTED（mock/stripe 历史单只能线下退，
 //      与「付进来的路径」不对称的在线退款绝不给自助通道）；
-//   3. 最近一笔 paid 订单：不是本单 → NOT_LATEST_PAID_ORDER。
-//      这条是**自助专属**限制（管理台仍可强退）：退掉旧单会把 users 的冗余订阅状态
-//      打回 free，而用户实际权益由**新单**支撑 —— 自助通道不允许造成这种错乱；
+//   3. **锚定单**：不是「当前生效订阅的最近一笔已支付订单」→ NOT_CURRENT_SUB_ORDER。
+//      ⚠️ 这条 2026-09-19 被用户实测打回过一次：旧口径「用户最近一笔 paid 订单」
+//      在退掉锚定单后会**顺移**到上一笔 —— 等于把历史订单依次退干净（用了三个月
+//      的钱全退回来，白嫖整个周期）。新口径把锚定单钉死在「当前 active 且未到期」
+//      的订阅上：退款成功 → 该订阅 canceled → 锚点消失 → 其余任何已付/已退订单
+//      永不顺移可退。无 active 订阅（到期回落/已退过）时 anchor 为 null，全拒。
+//      这是**自助专属**限制（管理台仍可强退）；
 //   4. 支付时间窗口：paid_at 距今 > SELF_REFUND_WINDOW_DAYS → REFUND_WINDOW_EXPIRED。
 //      paid_at 缺失/非法按「超窗」处理（fail closed，宁可拒绝）。
 //
 // 与 refundPaidOrder 的分工（**绝不双重报错**）：
-//   本文件只产出两个「属主自助专属闸」的错误码 NOT_LATEST_PAID_ORDER /
+//   本文件只产出两个「属主自助专属闸」的错误码 NOT_CURRENT_SUB_ORDER /
 //   REFUND_WINDOW_EXPIRED（见 SELF_REFUND_GATE_CODES）。status/channel 一律交回
 //   refundPaidOrder 报错 —— 它是资金动作前的最后一道统一校验，也是错误码的权威来源。
 // =============================================
@@ -55,7 +59,7 @@ export const SELF_REFUND_ORDER_COLUMNS = `id, order_no, user_id, status, payment
 export const REFUND_REASON_CODES = Object.freeze({
   ALREADY_REFUNDED: 'ALREADY_REFUNDED',
   REFUND_WINDOW_EXPIRED: 'REFUND_WINDOW_EXPIRED',
-  NOT_LATEST_PAID_ORDER: 'NOT_LATEST_PAID_ORDER',
+  NOT_CURRENT_SUB_ORDER: 'NOT_CURRENT_SUB_ORDER',
   CHANNEL_UNSUPPORTED: 'CHANNEL_UNSUPPORTED',
   // 防御性取值：理论上列表只会取 paid/refunded，其它状态沿用 refundPaidOrder 的错误码
   ORDER_NOT_REFUNDABLE: 'ORDER_NOT_REFUNDABLE',
@@ -69,7 +73,7 @@ export const REFUND_REASON_CODES = Object.freeze({
  * 错误码一致，客户端不会收到两套）。
  */
 export const SELF_REFUND_GATE_CODES = Object.freeze([
-  REFUND_REASON_CODES.NOT_LATEST_PAID_ORDER,
+  REFUND_REASON_CODES.NOT_CURRENT_SUB_ORDER,
   REFUND_REASON_CODES.REFUND_WINDOW_EXPIRED,
 ]);
 
@@ -90,12 +94,12 @@ function deny(reasonCode, message, extra = {}) {
  * @param {object} p
  * @param {object} p.order 含 status/payment_channel/payment_method/paid_at/id 的订单行
  *        （列口径见 SELF_REFUND_ORDER_COLUMNS）
- * @param {string|null} p.latestPaidOrderId 该用户「最近一笔已支付订单」id
- *        （findLatestPaidOrderId 的结果；null 表示查不到）
+ * @param {string|null} p.anchorOrderId 「当前生效订阅的最近一笔已支付订单」id
+ *        （findSelfRefundAnchorOrderId 的结果；null = 无可退锚点，一律拒）
  * @param {Date} [p.now] 判定基准时间（单测注入，生产用当前时间）
  * @returns {{refundable: boolean, reasonCode: string|null, message: string, extra: object}}
  */
-export function evaluateSelfRefund({ order, latestPaidOrderId, now = new Date() } = {}) {
+export function evaluateSelfRefund({ order, anchorOrderId, now = new Date() } = {}) {
   if (!order) {
     return deny(REFUND_REASON_CODES.ORDER_NOT_FOUND, 'Order not found');
   }
@@ -119,12 +123,13 @@ export function evaluateSelfRefund({ order, latestPaidOrderId, now = new Date() 
     );
   }
 
-  // 只允许退「当前生效的那一笔」：退旧单会误收回由新单支撑的权益
-  if (!latestPaidOrderId || String(latestPaidOrderId) !== String(order.id)) {
+  // 只允许退「当前生效订阅的最近一笔已支付订单」：
+  // 锚点之外的单（历史订阅的单 / 同订阅更早的续费单 / 已退过之后顺移来的旧单）一律拒。
+  if (!anchorOrderId || String(anchorOrderId) !== String(order.id)) {
     return deny(
-      REFUND_REASON_CODES.NOT_LATEST_PAID_ORDER,
-      'Only the most recent paid order can be refunded by yourself, please contact support for other orders',
-      { latestPaidOrderId: latestPaidOrderId ?? null }
+      REFUND_REASON_CODES.NOT_CURRENT_SUB_ORDER,
+      'Only the latest paid order of your current active subscription can be refunded by yourself; contact support for other orders',
+      { anchorOrderId: anchorOrderId ?? null }
     );
   }
 
@@ -144,22 +149,27 @@ export function evaluateSelfRefund({ order, latestPaidOrderId, now = new Date() 
 }
 
 /**
- * 该用户「最近一笔已支付订单」的 id（无已支付订单则 null）。
+ * 「锚定单」：当前生效订阅（active 且未到期）的最近一笔已支付订单 id。
+ * 无 active 订阅 / 该订阅没有任何已支付订单 → null（自助退款全部拒绝）。
  *
- * 口径与 evaluateSelfRefund 的第三条闸一一对应：status='paid' 按 paid_at 倒序取第一条。
- * NULLS LAST 是必需的 —— 历史脏数据里存在 paid 但 paid_at 为空的单，Postgres 默认
- * DESC 会把 NULL 排在最前，那样一条无时间的旧单会永久挡在真正最近的那笔前面。
+ * 防顺移的关键就在「active 且未到期」这个前置：退款成功后服务层会把订阅
+ * canceled —— 锚点随即消失，同一用户的其余历史订单**不会**因为退掉一笔而
+ * 依次变成可退（旧口径「用户最近一笔 paid 订单」正是栽在这里，见文件头注释）。
  *
  * @param {string} userId
  * @returns {Promise<string|null>}
  */
-export async function findLatestPaidOrderId(userId) {
+export async function findSelfRefundAnchorOrderId(userId) {
   if (!userId) return null;
   const { rows } = await pool.query(
-    `SELECT id
-       FROM payment_orders
-      WHERE user_id = $1 AND status = 'paid'
-      ORDER BY paid_at DESC NULLS LAST
+    `SELECT po.id
+       FROM payment_orders po
+       JOIN user_subscriptions us ON us.id = po.subscription_id
+      WHERE po.user_id = $1
+        AND po.status = 'paid'
+        AND us.status = 'active'
+        AND us.current_period_end > NOW()
+      ORDER BY us.current_period_end DESC, po.paid_at DESC NULLS LAST, po.created_at DESC
       LIMIT 1`,
     [userId]
   );
@@ -194,6 +204,6 @@ export default {
   REFUND_REASON_CODES,
   SELF_REFUND_GATE_CODES,
   evaluateSelfRefund,
-  findLatestPaidOrderId,
+  findSelfRefundAnchorOrderId,
   listRefundCandidateOrders,
 };
