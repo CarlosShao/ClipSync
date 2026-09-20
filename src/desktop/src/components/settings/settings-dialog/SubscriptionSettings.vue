@@ -9,9 +9,9 @@ const { t, tf } = useI18n()
 const configStore = useConfigStore()
 const emit = defineEmits<{ 'open-sub-page': [page: string] }>()
 
-// 2026-09-19：分组恢复为三行（当前套餐 / 账单历史 / 发票下载）。
-// 「发票下载」不再是假按钮 —— 后端 GET /api/invoices/:id/download 已能真出 PDF，
-// 与账单历史同页（BillingSubPage 每行一个下载按钮），故两行都指向 billing。
+// 2026-09-19：分组两行（当前套餐 / 账单历史）。
+// 「发票下载」原是与「账单历史」同页的重复入口（BillingSubPage 每行一个下载按钮），
+// 用户实测裁定去掉，不再单列一行。
 void loadCurrentSubscription()
 const current = computed(() => resolveCurrentSubscription(configStore.user.plan))
 const currentHint = computed(() => {
@@ -37,13 +37,6 @@ const currentHint = computed(() => {
       <div class="sg-label">
         <div class="sg-name">{{ t('sg_billing', '账单历史') }}</div>
         <div class="sg-hint">{{ t('sg_billing_h', '查看付款记录') }}</div>
-      </div>
-      <ChevronRight class="sg-arrow" />
-    </div>
-    <div class="sg-row sg-row--clickable" @click="emit('open-sub-page', 'billing')">
-      <div class="sg-label">
-        <div class="sg-name">{{ tf('sg_invoices', '发票下载') }}</div>
-        <div class="sg-hint">{{ tf('sg_invoices_h', '查看并下载付款收据') }}</div>
       </div>
       <ChevronRight class="sg-arrow" />
     </div>

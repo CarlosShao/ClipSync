@@ -618,9 +618,9 @@
 .set-nav a {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
+  gap: 9px;
+  height: 38px;
+  padding: 0 14px;
   border-radius: var(--radius-sm);
   font-size: 12.5px;
   color: var(--text-secondary);

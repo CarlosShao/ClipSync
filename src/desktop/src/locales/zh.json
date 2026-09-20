@@ -732,6 +732,7 @@
   "refund_reason_ALREADY_REFUNDED": "已退款",
   "refund_reason_REFUND_WINDOW_EXPIRED": "已超过 {days} 天自助退款期限，请联系客服",
   "refund_reason_NOT_LATEST_PAID_ORDER": "不是最近一笔支付，如需退款请联系客服",
+  "refund_reason_NOT_CURRENT_SUB_ORDER": "只能退当前生效订阅的最近一笔支付，历史订单不支持自助退款，请联系客服",
   "refund_reason_CHANNEL_UNSUPPORTED": "该支付渠道不支持线上退款",
   "refund_reason_default": "暂不支持自助退款，请联系客服",
   "refund_err_channel": "支付渠道退款失败，钱未有任何变动，请稍后重试或联系客服",

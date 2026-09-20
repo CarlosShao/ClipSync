@@ -501,6 +501,7 @@
   "refund_reason_ALREADY_REFUNDED": "Already refunded",
   "refund_reason_REFUND_WINDOW_EXPIRED": "Past the {days}-day self-service refund window, contact support",
   "refund_reason_NOT_LATEST_PAID_ORDER": "Not the latest payment — contact support to refund",
+  "refund_reason_NOT_CURRENT_SUB_ORDER": "Only the latest payment of your active plan can be refunded; contact support for older orders",
   "refund_reason_CHANNEL_UNSUPPORTED": "This channel does not support online refunds",
   "refund_reason_default": "Self-service refund unavailable, contact support",
   "refund_err_channel": "Refund failed at the payment channel — nothing was moved. Please retry later or contact support.",

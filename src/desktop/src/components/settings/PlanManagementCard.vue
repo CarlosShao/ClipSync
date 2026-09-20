@@ -98,6 +98,10 @@ function backToList() {
  * 退款错误码 → 中文文案（服务端 messages.js/路由返回的是英文，中文环境直接
  * 展示等于没做国际化——2026-09-19 用户实测打回）。未知码回落服务端 message，
  * 绝不吞错误；code 走 api() 的 data 透传（client.ts 错误分支带 data=json）。
+ *
+ * 「非最近一笔」这一闸服务端已从 NOT_LATEST_PAID_ORDER 改名为 NOT_CURRENT_SUB_ORDER
+ * （语义收紧：只能退当前生效订阅的最近一笔已付订单，历史订单/已退过的单永不顺移可退）。
+ * 新旧两个码同文案、case 并列保留，避免服务端灰度期间前端露出裸英文码。
  */
 function refundErrorText(res: { error?: string; data?: any }): string {
   const code = res.data?.code
@@ -107,8 +111,9 @@ function refundErrorText(res: { error?: string; data?: any }): string {
       return t('refund_err_channel')
     case 'REFUND_WINDOW_EXPIRED':
       return t('refund_reason_REFUND_WINDOW_EXPIRED', { days: windowDays.value })
+    case 'NOT_CURRENT_SUB_ORDER':
     case 'NOT_LATEST_PAID_ORDER':
-      return t('refund_reason_NOT_LATEST_PAID_ORDER')
+      return t('refund_reason_NOT_CURRENT_SUB_ORDER')
     case 'ALREADY_REFUNDED':
       return t('refund_reason_ALREADY_REFUNDED')
     case 'CHANNEL_UNSUPPORTED':
@@ -169,8 +174,9 @@ function reasonText(code: string | null): string {
       return t('refund_reason_ALREADY_REFUNDED')
     case 'REFUND_WINDOW_EXPIRED':
       return t('refund_reason_REFUND_WINDOW_EXPIRED', { days: windowDays.value })
+    case 'NOT_CURRENT_SUB_ORDER':
     case 'NOT_LATEST_PAID_ORDER':
-      return t('refund_reason_NOT_LATEST_PAID_ORDER')
+      return t('refund_reason_NOT_CURRENT_SUB_ORDER')
     case 'CHANNEL_UNSUPPORTED':
       return t('refund_reason_CHANNEL_UNSUPPORTED')
     default:
@@ -205,7 +211,7 @@ function reasonText(code: string | null): string {
     <ModalDialog
       :open="refundOpen"
       :title="refundStep === 'list' ? t('refund_request_btn') : t('refund_confirm_title')"
-      max-width="640px"
+      max-width="780px"
       @close="refundOpen = false"
     >
       <template v-if="refundStep === 'list'">
