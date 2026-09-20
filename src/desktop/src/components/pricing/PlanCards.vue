@@ -173,15 +173,17 @@ function cardClass(row: Row) {
   width: 100%;
 }
 .pc-grid {
+  /* 弹窗放宽到 1000px 后，卡片若仍按 148px 起排会被拉成"横长竖短"的扁条；
+     最小宽与内距/字号同步放大一档，宽高比才跟得上。 */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
 }
 .pc-card {
   position: relative;
-  padding: 18px 16px;
+  padding: 26px 24px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--bg-surface);
   display: flex;
   flex-direction: column;
@@ -200,61 +202,63 @@ function cardClass(row: Row) {
 }
 .pc-tag {
   position: absolute;
-  top: -8px;
+  top: -9px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-inverse);
   background: var(--accent);
-  padding: 2px 10px;
-  border-radius: 8px;
+  padding: 3px 11px;
+  border-radius: 9px;
   white-space: nowrap;
 }
 .pc-name {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   color: var(--text-primary);
 }
 .pc-price {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 5px;
   font-family: var(--font-content);
-  font-size: 24px;
+  font-size: 34px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  margin-bottom: 12px;
+  margin-bottom: 18px;
 }
 .pc-period {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--text-tertiary);
 }
 .pc-save {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1;
-  padding: 3px 6px;
+  padding: 4px 8px;
   border-radius: 999px;
   color: var(--accent);
   background: var(--accent-light);
 }
 .pc-feats {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
-  line-height: 1.8;
-  margin-bottom: 14px;
+  line-height: 2.1;
+  margin-bottom: 22px;
   flex: 1;
 }
 .pc-cta {
   width: 100%;
+  height: 40px;
+  font-size: 13.5px;
 }
 .pc-proration {
-  margin: 12px 0 0;
-  font-size: 11.5px;
+  margin: 16px 0 0;
+  font-size: 12px;
   color: var(--text-tertiary);
 }
 </style>

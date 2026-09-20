@@ -674,7 +674,11 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
   padding: 4px 14px;
 }
 .set-content :deep(.settings-group > .sg-row) {
-  padding: 12px 0;
+  /* 卡片的 14px 内距 + 行的 12px 负外边距/正内边距互相抵消：文字仍与卡片标题对齐，
+     但 hover/选中底色向两侧各撑开 12px——否则底色和文字贴死（用户三轮打回的那条）。 */
+  margin: 0 -12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
   border-bottom: 1px solid var(--border-subtle);
 }
 .set-content :deep(.settings-group > .sg-row:last-child) {

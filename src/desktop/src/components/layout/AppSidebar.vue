@@ -14,7 +14,6 @@ import {
   Bell,
   ExternalLink,
   Megaphone,
-  ChevronRight,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -217,18 +216,9 @@ async function openAdminConsole() {
         <i class="pulse" aria-hidden="true" />
         <span>{{ t('nav_sync_pill', { n: onlineDeviceCount }) }}</span>
       </div>
-      <!-- 升级条：仅 Free 用户（Pro 只在账号菜单里留「升级」，Enterprise/超管都不显示） -->
-      <button
-        v-if="showUpgradeChip && !showUserMenu"
-        type="button"
-        class="upgrade-cta"
-        :title="t('sub_upgrade_plan')"
-        @click.stop="openUpgrade"
-      >
-        <Crown :size="13" :stroke-width="2" />
-        <span>{{ t('sub_upgrade_plan') }}</span>
-        <ChevronRight :size="12" class="upgrade-cta-arrow" />
-      </button>
+      <!-- 升级入口收进账号行的套餐标签旁（2026-09-20 用户裁定）：
+           原来那条通栏「升级套餐」大条太抢眼又和账号菜单里的「升级」重复，
+           只留一个不带动作箭头的小胶囊。Free 用户才显示（判定同 showUpgradeChip）。 -->
       <!-- User chip — click toggles menu -->
       <div
         class="user-chip"
@@ -249,9 +239,21 @@ async function openAdminConsole() {
         <div class="user-info">
           <div class="user-name">{{ userName || 'User' }}</div>
           <div v-if="userEmail" class="user-email">{{ userEmail }}</div>
-          <div class="user-role">{{
-            isSuperAdmin ? t('role_super_admin') : t('role_' + (userPlan || 'Free').toLowerCase())
-          }}</div>
+          <div class="user-plan">
+            <span class="user-role">{{
+              isSuperAdmin ? t('role_super_admin') : t('role_' + (userPlan || 'Free').toLowerCase())
+            }}</span>
+            <button
+              v-if="showUpgradeChip && !showUserMenu"
+              type="button"
+              class="upgrade-chip"
+              :title="t('sub_upgrade_plan')"
+              @click.stop="openUpgrade"
+            >
+              <Crown :size="11" :stroke-width="2" />
+              <span>{{ t('upgrade') }}</span>
+            </button>
+          </div>
         </div>
       </div>
       <!-- Popover menu (profile + subscription + notifications + admin + logout) -->
@@ -767,36 +769,39 @@ async function openAdminConsole() {
   color: var(--text-tertiary);
 }
 
-/* ---- 升级条（Free 用户账号区醒目入口）---- */
-.upgrade-cta {
+.user-plan {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  margin-bottom: 6px;
-  padding: 7px 10px;
+  min-width: 0;
+}
+
+/* ---- 升级小胶囊（贴在套餐标签右侧，不再是通栏大条）---- */
+.upgrade-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  padding: 1px 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: var(--accent-light);
   color: var(--accent);
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 600;
+  line-height: 1.5;
   cursor: pointer;
   transition:
     background 160ms var(--ease),
     border-color 160ms var(--ease);
 }
-.upgrade-cta:hover {
+.upgrade-chip:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border-color: var(--accent);
 }
-.upgrade-cta:focus-visible {
+.upgrade-chip:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
-}
-.upgrade-cta-arrow {
-  margin-left: auto;
-  opacity: 0.6;
 }
 .user-menu-item--accent {
   color: var(--accent);
