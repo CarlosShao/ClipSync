@@ -102,7 +102,7 @@
 | PD1 | **无自动续费**（个体户被支付宝商家扣款拒开，任务板 #17/#18） | 全链路不得出现「自动续费/连续包月」文案；`auto_renew` 只能是历史遗留位 | 桌面端 `useSubscriptionAccess.ts` 已立红线；`user_subscriptions.auto_renew` 默认 **true** 仍在库里 → 管理台会显示「自动续费：是」，属文案/数据误导（§4-A5） |
 | PD2 | **升级=折抵差价，只升不降** | 同套餐 409 `ALREADY_SUBSCRIBED`；低档 409 `DOWNGRADE_NOT_ALLOWED`；升档按残值折抵 | 服务端与桌面端均已接线（未验证）；服务端 `/subscribe` 侧仍无拦截（§4-A3） |
 | PD3 | **退款=真实打款 + 立即收回权益** | 先调渠道、`fund_status='Y'` 才改库；订阅立即 `canceled` | `/api/payments/refund` 已按此实现（未验证）；**管理台退款按钮走的是另一条不动钱的端点**（§4-A1） |
-| PD4 | **用户侧无退款入口**（只有客服通道） | 客户端不得挂退款按钮；端点自身要求管理员身份 | 桌面/移动端无入口；端点用 `users.is_admin` 判定，与 RBAC `roleLevel` 是两套口径（§4-A2） |
+| PD4 | ~~用户侧无退款入口~~ **2026-09-19 推翻**：个人资料页「申请退款」= 属主自助真实退款 | 自助三道闸（`services/refundPolicy.js` 唯一实现，与列表接口同源）：①必须是**当前生效订阅（active 且未到期）的最近一笔已支付订单**（锚点）②支付后 ≤7 天 ③渠道仅 alipay；否则 409 `NOT_CURRENT_SUB_ORDER`/`REFUND_WINDOW_EXPIRED` → 引导客服（管理台强退不受闸限制）。⚠️ 口径 2026-09-20 收紧过一次：旧口径①「用户最近一笔已付单」在退掉锚定单后会**顺移**到上一笔，等于把历史订单依次退干净（白嫖整个已用周期）；新口径把锚点绑在 active 订阅上——退款成功即订阅 `canceled` → 锚点消失 → 该用户余下单永不可自助退 | 客户端 PlanManagementCard 弹窗；`GET /api/payments/refundable-orders` 返回 refundable+reasonCode；生产实测（测试号 4 单）全部 `refundable=false` |
 | PD5 | 微信支付**不接入**（300 元/年认证费） | 不留回调、不留渠道 | 已删；但渠道归一化仍把未知渠道兜底成「微信支付」（§4-A4） |
 | PD6 | 支付宝主体=个体工商户，结算到经营者本人银行卡 | 不需要对公账户 | 见 `docs/product/payment-integration-guide.md` 2026-09-16 修正段 |
 
@@ -178,7 +178,7 @@
 |---|---|---|---|---|---|---|---|
 | E1 | pending 超 24 h 自动关单 | 建单未付 | 桌面端无感（早已过期） | 每小时扫描 → `cancelled` + `metadata.auto_closed='timeout_unpaid'` + 逐单审计 `payment_auto_close` | 无 | **已实现未验证** | `services/orderCloseSweep.js` |
 | E2 | **关单后钱才到账**（用户在渠道侧极晚完成支付） | 渠道关单时间 > 本站 24 h | 用户称「付了钱没会员」 | 履约判定 `order_cancelled` → ROLLBACK + error 日志 + 回 `failure`（支付宝重试 24 h 后放弃）；轮询侧已付款订单不再被兜底改状态（status 只处理 pending） | **钱在商户账户、订单 cancelled、权益未开** → 只能人工：退款或改库 | **缺陷（无自助恢复路径）** | `orderFulfillment.js:70-79`、`payments.js` status 分支 |
-| E3 | 管理员发起真实退款（成功） | 客服通道，订单 paid 且渠道 alipay | 用户侧无入口；管理台当前**不会**调它（见 E5） | ①`users.is_admin` 403 闸 → ②paid+渠道校验 → ③先调 `alipay.trade.refund`（全额，`out_request_no=订单号`）→ ④仅 `fund_status='Y'` 才在事务+行锁里：订单 `refunded`+`refunded_at`+`metadata.refund_amount`、订阅 `canceled`+`canceled_at`+`auto_renew=false`、`users.subscription_status='free'` → 审计 `payment_refund` | 全额退回买家 | **已实现未验证**（依赖迁移 072 先落生产，见 §4-A8） | `payments.js` /refund、`alipay.js refundTrade`、`072_refund_timestamp_columns.sql` |
+| E3 | 真实退款成功（属主自助或管理员） | 订单 paid 且渠道 alipay | ①权限/自助闸（PD4 三闸，管理员跳过）→ ②enable_subscription 闸 → ③`alipay.trade.refund`（全额，`out_request_no=订单号` 幂等）→ ④渠道确认（现行接口 **code=10000 即成功态**，响应无 fund_status 字段；幂等重放 fund_change='N' 不算失败——2026-09-19 生产实测钉死）→ 事务+行锁复核：订单 `refunded`+`refunded_at`、订阅 `canceled`+`canceled_at`、`users.subscription_status='free'` → 审计 `payment_refund` | 全额退回买家（原路） | **已实现，生产验证中**（首笔 ¥0.01 真实退款已到账，响应验签口径修复后对账） | `payments.js` /refund、`refundPolicy.js`、`alipay.js refundTrade` |
 | E4 | 真实退款渠道侧失败 | `code≠10000` / `fund_status='C'/'D'` / 验签失败 | — | 订单**保持 paid 不动**，502 `REFUND_CHANNEL_FAILED` / `REFUND_NOT_CONFIRMED` + `status='failure'` 审计 | 钱没退 | **已实现未验证** | 同上 |
 | E5 | 真实退款「钱退了但本地没落」 | 渠道成功后 DB 异常 | — | ROLLBACK + error 日志 `CRITICAL` + 500 `REFUND_LOCAL_UPDATE_FAILED`（带 `out_request_no` 供人工补账） | 钱已退、库未改 | **已实现未验证**（这是设计好的人工补账出口，但需真演练一次） | 同上 |
 | E6 | 重复发起退款 | 同单点两次 | — | 第二次 409 `ALREADY_REFUNDED`；并发时行锁复核 409 `REFUND_STATE_CONFLICT`；渠道侧 `out_request_no` 幂等兜底 | 不重复打款 | **已实现未验证** | 同上 |
@@ -197,7 +197,10 @@
 | F2 | `enable_subscription` 关闭·直接打 API 付款 | 老客户端/curl | 入口看不见但接口照样能用 | **create-order / refund / 履约全链路无任何 flag 判定**；只有 `subscriptionCheck`/`planFeature` 把权益按 Free 判定 | **钱照常收**、订阅照常开（只是按 Free 生效） | **缺陷** | `planFeature.js:78-80`、`subscriptionCheck.js:51-54`、`payments.js` 全文无 flag |
 | F3 | `enable_subscription` 关闭·移动端入口 | 同上 | 订阅入口隐藏（`flags: ['enable_subscription']`） | 同 F2 | 无 | **已实现未验证** | `feature_flags_provider.dart:70`、`settings_screen.dart:320` |
 | F4 | 开关关闭期间存量订阅 | 开关切回开启 | 权益恢复 | 开关只影响判定，不改库、不动订单 | 无 | **已实现未验证** | `planFeature.js:78` 注释 |
-| F5 | 非管理员调 `/api/payments/refund` | 普通登录用户 | 桌面端无按钮 | 403 `ADMIN_REQUIRED`（判 `users.is_admin`，**不是 RBAC roleLevel**） | 无 | **已实现未验证** | `payments.js` adminResult |
+| F5 | 非属主且非管理员调 `/api/payments/refund` | 普通登录用户退**别人**的单 | 桌面端只列自己的单，正常走不到 | 404 `ORDER_NOT_FOUND`（与「订单不存在」**完全同壳**，防订单存在性探测；`ADMIN_REQUIRED` 仅在调用方账号行不存在时出现） | 无 | **已实现未验证** | `payments.js` 属主/管理员分支 |
+| F5b | 属主自助退款被闸拒 | 用户点「申请退款」里非锚点的单 / 超窗的单 | 弹窗列表预标 reasonCode，点击前即知原因（判定与强制点同源，不会漂移） | 非锚定单 → 409 `NOT_CURRENT_SUB_ORDER`；支付超 7 天或 paid_at 缺失 → 409 `REFUND_WINDOW_EXPIRED`（fail-closed），均不碰渠道 | 无 | **已实现，单测+生产冒烟通过** | `refundPolicy.js`、`PlanManagementCard.vue` |
+| F5c | 可退订单清单 | `GET /api/payments/refundable-orders`（本人最近 10 条 paid/refunded） | 退款弹窗数据源；升级单摊开 原价/折抵/实付 | flag 关闭 503；不返回隐私字段；reasonCode 与 POST /refund 同源 | 无 | **已实现，生产冒烟通过** | `payments.js`、`refundPolicy.js` |
+| F5d | **顺移退历史单**（薅羊毛攻击） | 用户退掉锚定单后，再点列表里上一笔已付单 | 列表显示「不属于当前订阅，请联系客服」 | 锚定单退款成功 → 订阅 `canceled` → `findSelfRefundAnchorOrderId` 返回 null → 其余任何 paid 单一律 409 `NOT_CURRENT_SUB_ORDER`，零渠道调用 | 无（旧口径在此处可被连续退款，2026-09-20 已堵） | **已实现，回归用例 + 生产实测通过**（测试号 4 单全 `refundable=false`） | `refundPolicy.js:162-177`、`tests/payment-refund.test.js:297` |
 | F6 | 管理台角色无 `admin.orders.refund` | 内置 admin 角色 | 退款按钮 disabled + Tooltip「缺少权限」 | 后端 `requirePerm` 403 `code:4030` | 无 | **已实现未验证** | `orders/index.tsx:121-122`、`adminAuth.js:93-134` |
 | F7 | 管理台角色无 `admin.orders.reconcile` | 自定义角色 | 「对账报告」按钮**未按权限裁剪**，点了才报错 | 403 | 无 | **缺陷（小）** | `orders/index.tsx:270` 无 `hasPerm` |
 | F8 | 管理台「人工赠期」 | 超管在 `/subscriptions` 赠期 | 弹窗选 Pro/Enterprise + 1-12 月 + 原因 | 服务端要 **UUID**（`UUID_RE.test(planId)` + `WHERE id=$1`），前端发的是 `'pro'`/`'enterprise'` → **真实后端必 400** | 无 | **缺陷** | `admin/subscriptions.js:181,197-200` vs `GrantSubscriptionModal.tsx:27-60` |

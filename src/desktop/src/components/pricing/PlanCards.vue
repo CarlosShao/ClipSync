@@ -174,8 +174,8 @@ function cardClass(row: Row) {
 }
 .pc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
 }
 .pc-card {
   position: relative;
