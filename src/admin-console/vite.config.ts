@@ -7,7 +7,12 @@ import { defineConfig, loadEnv } from 'vite';
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // 联调时可经 .env.development.local 覆盖：VITE_PROXY_TARGET=http://localhost:3003
+  // 本地 dev 直连生产后端：
+  //   VITE_PROXY_TARGET=https://api.clipchain.top
+  //   VITE_PROXY_ORIGIN=https://admin.clipchain.top
   const env = loadEnv(mode, process.cwd(), '');
+  const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:3001';
+  const proxyOrigin = env.VITE_PROXY_ORIGIN || '';
   return {
     plugins: [react(), stripMswWorkerFromBuild()],
     resolve: {
@@ -23,8 +28,21 @@ export default defineConfig(({ mode }) => {
         // 后端 admin API（dev 环境默认 3001）；MSW 开启时请求不会到达 proxy
         '/api': {
           // ⚠️ 127.0.0.1 而非 localhost：wslrelay 抢占 [::1]:3001，localhost 会挂起
-          target: env.VITE_PROXY_TARGET || 'http://127.0.0.1:3001',
+          target: proxyTarget,
           changeOrigin: true,
+          // 上游按 Origin 白名单放行（生产 CORS_ORIGINS 里是前端域名，不含 api 自己）。
+          // 浏览器发出的 Origin 是 http://localhost:5273，直连生产会被判非法源 403 ——
+          // 登录接口不带 Bearer，走的正是这条检查。设了 VITE_PROXY_ORIGIN 就把转发的
+          // Origin 换成它（等价于「部署版管理台在调它」），这样本地 dev 能直连联调/生产
+          // 后端，而不必把 localhost 加进生产白名单。不设则完全不重写，本地后端照旧。
+          // 用 proxyReq 钩子而非 http-proxy 的 headers 选项：后者在 web 代理路径上不生效。
+          ...(proxyOrigin
+            ? {
+                configure(proxy) {
+                  proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', proxyOrigin));
+                },
+              }
+            : {}),
         },
       },
     },
