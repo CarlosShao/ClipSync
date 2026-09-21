@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useConfigStore } from '@/stores/configStore'
 import { useTheme, resolvedMode } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
@@ -107,9 +108,44 @@ function openAnnouncementsFromSidebar() {
   })
 }
 window.addEventListener('clipsync:open-announcements', openAnnouncementsFromSidebar)
+
+// ===== 订阅态收敛（窗口重新获得焦点时）=====
+// 档位可以在应用外侧被改动：管理台通过/驳回退款、客服赠送、到期降级。客户端原先只在
+// 启动/登录和「自己按下按钮」那一刻拉 auth/me，于是出现「个人资料卡片已还原 Pro、
+// 侧栏还在催升级」——两处读的是不同快照（卡片查 /subscriptions/current，侧栏读 auth/me）。
+// 焦点回来时统一作废重拉，侧栏/限额/卡片一起收敛到同一个真相。
+let planSyncedAt = 0
+async function syncPlanSnapshot() {
+  if (!configStore.isLoggedIn) return
+  const now = Date.now()
+  // 焦点事件很频繁（切窗口、弹窗），60s 内只收敛一次，别把它变成轮询
+  if (now - planSyncedAt < 60_000) return
+  planSyncedAt = now
+  invalidatePlanLimits()
+  invalidateCurrentSubscription()
+  await configStore.fetchUserProfile()
+  window.dispatchEvent(new CustomEvent('clipsync:subscription-changed'))
+}
+function onWindowFocus() {
+  void syncPlanSnapshot()
+}
+// 打包后 webview 的 DOM focus 不保证触发，优先用 Tauri 窗口事件；浏览器 dev 无 IPC 走 DOM。
+const tauriFocusUnlisten: Array<() => void> = []
+if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+  getCurrentWindow()
+    .onFocusChanged(({ payload: focused }) => {
+      if (focused) void syncPlanSnapshot()
+    })
+    .then((fn) => tauriFocusUnlisten.push(fn))
+    .catch((e) => console.warn('[HomeView] onFocusChanged 注册失败，退回 DOM focus：', e))
+}
+window.addEventListener('focus', onWindowFocus)
+
 onUnmounted(() => {
   window.removeEventListener('clipsync:avatar-changed', syncAvatarFromStorage)
   window.removeEventListener('clipsync:open-announcements', openAnnouncementsFromSidebar)
+  window.removeEventListener('focus', onWindowFocus)
+  tauriFocusUnlisten.splice(0).forEach((fn) => fn())
 })
 
 // Sync route param to currentSub (both initial load and runtime navigation)

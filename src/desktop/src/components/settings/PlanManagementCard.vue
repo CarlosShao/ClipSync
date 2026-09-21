@@ -48,6 +48,9 @@ function refreshSubscription() {
 onMounted(() => {
   void loadCurrentSubscription()
   void loadPendingNotice()
+  // 本卡片读 /subscriptions/current，侧栏与限额读 auth/me：只拉前者会让两处
+  // 同时显示不同档位（驳回还原后「卡片 Pro、侧栏还在催升级」就是这么来的）
+  void configStore.fetchUserProfile()
   window.addEventListener('clipsync:subscription-changed', refreshSubscription)
 })
 onUnmounted(() => window.removeEventListener('clipsync:subscription-changed', refreshSubscription))
