@@ -5,7 +5,11 @@ import pool from '../src/db/pool.js';
 import { getTestApp } from './test-helpers.js';
 import { invalidateFlagsCache } from '../src/utils/featureFlags.js';
 import { clearRefundSettingsCache } from '../src/services/refundPolicy.js';
-import { approveRefundRequest, rejectRefundRequest } from '../src/services/refundRequest.js';
+import {
+  approveRefundRequest,
+  rejectRefundRequest,
+  listRefundRequestsForAdmin,
+} from '../src/services/refundRequest.js';
 
 /**
  * 两段式退款（任务板 #40~#43）：申请不动钱、审核才动钱。
@@ -453,5 +457,41 @@ describe('驳回要还原权益', () => {
     );
     expect(rows[0].n).toBe(1);
     expect((await readUser()).current_subscription_id).toBe(String(fresh.subscriptionId));
+  });
+});
+
+describe('管理台审核列表查询', () => {
+  it('pending 列表带出用户/套餐/订单信息；通过后 reviewedByName 出现在 approved 列表', async () => {
+    const { orderNo } = await seedOrder();
+    stubGatewayResponse({ code: '10000', refund_fee: '9.90' });
+    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+
+    const pending = await listRefundRequestsForAdmin({ status: 'pending' });
+    expect(pending.total).toBe(1);
+    // 不断言 userName 的具体值：TEST_USER_ID 是多套测试共用的账号行（昵称会被别的
+    // 文件写成别的名字），这里只要求 JOIN 真的取到了列 —— 列名写错会直接 500/undefined
+    expect(pending.items[0]).toMatchObject({
+      orderNo,
+      status: 'pending',
+      amount: 9.9,
+      planName: 'Pro',
+      userId: TEST_USER_ID,
+    });
+    expect(typeof pending.items[0].userName).toBe('string');
+
+    await approveRefundRequest({ requestId: submitted.body.request.id, actorUserId: OTHER_USER_ID });
+
+    const approved = await listRefundRequestsForAdmin({ status: 'approved' });
+    expect(approved.items[0]).toMatchObject({
+      orderNo,
+      status: 'approved',
+      reviewedByName: '两段式退款他人用户',
+    });
+
+    // 'all' 不过滤 + 分页参数生效（全程只有这一条申请：pending 与 approved 是同一行的前后态）
+    const all = await listRefundRequestsForAdmin({ status: 'all', page: 1, pageSize: 1 });
+    expect(all.pageSize).toBe(1);
+    expect(all.total).toBe(1);
+    expect(all.items).toHaveLength(1);
   });
 });

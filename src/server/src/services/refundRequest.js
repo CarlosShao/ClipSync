@@ -314,10 +314,10 @@ export async function listRefundRequestsForAdmin({ status = 'pending', page = 1,
             rr.window_days_at_request, rr.user_reason, rr.requested_at, rr.reviewed_at,
             rr.reviewed_by, rr.review_note,
             rr.user_id,
-            u.name AS user_name, u.phone AS user_phone,
+            u.nickname AS user_name, u.phone AS user_phone,
             po.paid_at, po.plan_id,
             sp.name AS plan_name,
-            rv.name AS reviewed_by_name
+            rv.nickname AS reviewed_by_name
        FROM refund_requests rr
        LEFT JOIN users u ON u.id = rr.user_id
        LEFT JOIN payment_orders po ON po.id = rr.order_id
