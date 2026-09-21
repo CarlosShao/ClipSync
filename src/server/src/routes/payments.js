@@ -11,11 +11,17 @@ import {
   SELF_REFUND_WINDOW_DAYS,
   SELF_REFUND_ORDER_COLUMNS,
   REFUNDABLE_ORDERS_LIMIT,
-  SELF_REFUND_GATE_CODES,
+  REFUND_REASON_CODES,
   evaluateSelfRefund,
   findSelfRefundAnchorOrderId,
   listRefundCandidateOrders,
+  getRefundSettings,
 } from '../services/refundPolicy.js';
+import {
+  createSelfRefundRequest,
+  listMyRefundRequests,
+  findPendingRequestsByOrderIds,
+} from '../services/refundRequest.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // 注：渠道回调（webhook）相关的中间件与 handler 已迁至
 // routes/paymentWebhooks.js（那里不需要 authenticateToken/csrfProtection），
@@ -563,21 +569,23 @@ router.post('/refund', authenticateToken, async (req, res) => {
     if (!order) return notFound();
 
     const isOwner = String(order.user_id) === String(operatorId);
-    if (!isOwner) {
-      // 管理员校验（客服通道）：只有管理员能退别人的单
-      const adminResult = await pool.query('SELECT is_admin FROM users WHERE id = $1', [operatorId]);
-      if (adminResult.rows.length === 0) {
-        logger.warn('[payments] refund denied: operator account not found', {
-          operatorId,
-          orderKey: key,
-        });
-        return res.status(403).json({ error: 'Admin access required', code: 'ADMIN_REQUIRED' });
-      }
-      if (!adminResult.rows[0].is_admin) {
-        logger.warn('[payments] refund denied: neither owner nor admin', { operatorId, orderKey: key });
-        // 防探测：与「订单不存在」同壳，绝不泄露「该订单存在、只是不是你的」
-        return notFound();
-      }
+    // 操作者身份一次查清：非属主要管理员权限，属主分支也要知道 TA 是不是管理员
+    // （管理员本人退自己的单不该被审核门挡住 —— TA 在管理台本来就能强退任何订单，
+    //  在这里再拦一道只会把人绕进自己的后台）
+    const actorResult = await pool.query('SELECT is_admin FROM users WHERE id = $1', [operatorId]);
+    if (actorResult.rows.length === 0) {
+      logger.warn('[payments] refund denied: operator account not found', {
+        operatorId,
+        orderKey: key,
+      });
+      return res.status(403).json({ error: 'Admin access required', code: 'ADMIN_REQUIRED' });
+    }
+    const operatorIsAdmin = Boolean(actorResult.rows[0].is_admin);
+
+    if (!isOwner && !operatorIsAdmin) {
+      logger.warn('[payments] refund denied: neither owner nor admin', { operatorId, orderKey: key });
+      // 防探测：与「订单不存在」同壳，绝不泄露「该订单存在、只是不是你的」
+      return notFound();
     }
 
     // F2：开关关闭时不走退款（放在权限判定之后，避免向未授权调用方泄露功能状态）
@@ -590,20 +598,20 @@ router.post('/refund', authenticateToken, async (req, res) => {
       return subscriptionDisabled(res);
     }
 
-    // 属主自助分支的风控闸（管理员分支直接跳过，仍可强退任意单）
-    if (isOwner) {
-      const anchorOrderId = await findSelfRefundAnchorOrderId(operatorId);
-      const verdict = evaluateSelfRefund({ order, anchorOrderId, now: new Date() });
-      // 只拦「自助专属」的两道闸；status/渠道由 refundPaidOrder 统一报错，不双重报错
-      if (!verdict.refundable && SELF_REFUND_GATE_CODES.includes(verdict.reasonCode)) {
-        logger.warn('[payments] self-service refund denied', {
-          operatorId,
-          orderKey: key,
-          reasonCode: verdict.reasonCode,
-          ...verdict.extra,
-        });
-        return res.status(409).json({ error: verdict.message, code: verdict.reasonCode, ...verdict.extra });
-      }
+    // 属主分支**不再即时退款**（产品决策 2026-09-20）：支付宝的退款是同步且不可撤销
+    // 的，调用成功钱就出去了，事后没有「审核不通过」可言 —— 所以审核必须前置到调用
+    // 之前，属主一律改走 POST /refund-request（只落申请单 + 立即收回权益）。
+    // 管理员分支保持原样：客服线下场景仍可强退任意已付订单。
+    if (isOwner && !operatorIsAdmin) {
+      logger.info('[payments] self-service refund redirected to review flow', {
+        operatorId,
+        orderKey: key,
+      });
+      return res.status(409).json({
+        error: 'Refund requires manual review, please submit a refund request',
+        code: 'REFUND_REQUEST_REQUIRED',
+        orderNo: order.order_no,
+      });
     }
 
     const result = await refundPaidOrder({
@@ -660,10 +668,16 @@ router.get('/refundable-orders', authenticateToken, async (req, res) => {
       return subscriptionDisabled(res);
     }
 
-    const [orders, anchorOrderId] = await Promise.all([
+    const [orders, anchorOrderId, settings] = await Promise.all([
       listRefundCandidateOrders(userId, REFUNDABLE_ORDERS_LIMIT),
       findSelfRefundAnchorOrderId(userId),
+      getRefundSettings(),
     ]);
+    // 在途申请一次批量取（列表最多 10 条），避免逐条查库
+    const pending = await findPendingRequestsByOrderIds(
+      userId,
+      orders.map((o) => String(o.id))
+    );
 
     const now = new Date();
     res.json({
@@ -672,7 +686,11 @@ router.get('/refundable-orders', authenticateToken, async (req, res) => {
         const proration = order.metadata && typeof order.metadata === 'object' ? order.metadata.proration : null;
         const originalAmount = toFiniteAmount(proration?.originalPrice, amount);
         const creditAmount = toFiniteAmount(proration?.creditAmount, 0);
-        const verdict = evaluateSelfRefund({ order, anchorOrderId, now });
+        const pendingRequest = pending.get(String(order.id)) || null;
+        // 有在途申请时不再走可退判定：那一条已经在审核队列里，重复申请没有意义
+        const verdict = pendingRequest
+          ? { refundable: false, reasonCode: REFUND_REASON_CODES.REFUND_REQUEST_PENDING }
+          : evaluateSelfRefund({ order, anchorOrderId, windowDays: settings.windowDays, now });
         const paidAt = order.paid_at ? new Date(order.paid_at) : null;
 
         return {
@@ -686,13 +704,95 @@ router.get('/refundable-orders', authenticateToken, async (req, res) => {
           status: order.status,
           refundable: verdict.refundable,
           reasonCode: verdict.reasonCode,
+          refundRequest: pendingRequest
+            ? {
+                id: String(pendingRequest.id),
+                status: pendingRequest.status,
+                requestedAt: pendingRequest.requested_at
+                  ? new Date(pendingRequest.requested_at).toISOString()
+                  : null,
+              }
+            : null,
         };
       }),
-      windowDays: SELF_REFUND_WINDOW_DAYS,
+      // 时限与审核工作日都由后台配置驱动，客户端不得再写死数字
+      windowDays: settings.windowDays,
+      reviewBusinessDays: settings.reviewBusinessDays,
     });
   } catch (err) {
     logger.error('Get refundable orders error:', err);
     res.status(500).json({ error: 'Failed to list refundable orders' });
+  }
+});
+
+/**
+ * POST /api/payments/refund-request —— 提交退款申请（两段式退款的第一段）
+ *
+ * 与旧的 POST /refund 的本质区别：**这里完全不碰支付宝**。落一条 pending 申请单，
+ * 并立即收回该订阅的权益（订阅 canceled、users 按剩余生效订阅重算），
+ * 真打款发生在管理员审核通过那一刻（routes/admin/refundReviews.js）。
+ *
+ * 风控闸与列表同源（services/refundPolicy.js#evaluateSelfRefund）：
+ * 必须是「当前生效订阅的最近一笔已付单」+ 在后台可配的时限内 + 支付宝渠道。
+ * 申请阶段不发生资金动作，所以**任何**不可退理由都在这里直接 409。
+ *
+ * 错误壳沿用 /refund 的 { error, code, ...extra }。
+ */
+router.post('/refund-request', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { orderId, orderNo, reason } = req.body || {};
+    const key = String(orderId || orderNo || '').trim();
+
+    if (!key) {
+      return res.status(400).json({ error: 'Missing orderId or orderNo parameter' });
+    }
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      logger.warn('[payments] refund-request blocked: enable_subscription disabled', { userId });
+      return subscriptionDisabled(res);
+    }
+
+    const result = await createSelfRefundRequest({
+      userId,
+      orderKey: key,
+      reason,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
+
+    logger.info('[payments] refund request submitted', {
+      userId,
+      requestId: result.request.id,
+      orderNo: result.request.orderNo,
+    });
+    return res.status(201).json({
+      message: 'Refund request submitted for review',
+      request: result.request,
+      entitlement: result.entitlement,
+      reviewBusinessDays: result.reviewBusinessDays,
+    });
+  } catch (err) {
+    if (err instanceof RefundError) {
+      return res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
+    }
+    logger.error('Refund request error:', err);
+    res.status(500).json({ error: 'Failed to submit refund request' });
+  }
+});
+
+/**
+ * GET /api/payments/refund-requests/mine —— 我的退款申请（最近 5 条）
+ *
+ * 个人资料页要在不开弹窗的情况下也能显示「退款审核中」，所以单独给一条轻量列表。
+ * 只查自己的（user_id 条件），无越权面。
+ */
+router.get('/refund-requests/mine', authenticateToken, async (req, res) => {
+  try {
+    const requests = await listMyRefundRequests(req.user.userId, 5);
+    res.json({ requests });
+  } catch (err) {
+    logger.error('Get refund requests error:', err);
+    res.status(500).json({ error: 'Failed to list refund requests' });
   }
 });
 

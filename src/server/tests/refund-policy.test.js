@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   SELF_REFUND_WINDOW_DAYS,
   SELF_REFUND_CHANNEL,
-  SELF_REFUND_GATE_CODES,
   REFUNDABLE_ORDERS_LIMIT,
   REFUND_REASON_CODES,
   normalizeOrderChannel,
@@ -51,11 +50,36 @@ describe('常量契约', () => {
     expect(REFUNDABLE_ORDERS_LIMIT).toBe(10);
   });
 
-  it('实际拦截的两道闸只有 NOT_CURRENT_SUB_ORDER / REFUND_WINDOW_EXPIRED（status/渠道交回 refundPaidOrder）', () => {
-    expect([...SELF_REFUND_GATE_CODES].sort()).toEqual([
-      'NOT_CURRENT_SUB_ORDER',
-      'REFUND_WINDOW_EXPIRED',
-    ]);
+  it('windowDays 由调用方注入（时限已挪到后台可配）：3 天口径超窗、30 天口径放行', () => {
+    const paidAt = new Date(NOW.getTime() - 5 * DAY);
+    const strict = evaluateSelfRefund({
+      order: order({ paid_at: paidAt }),
+      anchorOrderId: ORDER_ID,
+      windowDays: 3,
+      now: NOW,
+    });
+    expect(strict.reasonCode).toBe('REFUND_WINDOW_EXPIRED');
+    expect(strict.extra.windowDays).toBe(3);
+
+    const loose = evaluateSelfRefund({
+      order: order({ paid_at: paidAt }),
+      anchorOrderId: ORDER_ID,
+      windowDays: 30,
+      now: NOW,
+    });
+    expect(loose.refundable).toBe(true);
+
+    // 脏配置一律回退默认值，不能让 0/负数/小数把闸门放开或全部锁死。
+    // 用 10 天前的单：回退到默认 7 天后必然超窗，才看得到 extra.windowDays 是几。
+    for (const bad of [0, -1, 1.5, 'x', null, undefined]) {
+      const v = evaluateSelfRefund({
+        order: order({ paid_at: new Date(NOW.getTime() - 10 * DAY) }),
+        anchorOrderId: ORDER_ID,
+        windowDays: bad,
+        now: NOW,
+      });
+      expect(v.extra.windowDays).toBe(SELF_REFUND_WINDOW_DAYS);
+    }
   });
 
   it('reasonCode 取值集合就是响应契约，客户端按此出文案', () => {

@@ -30,16 +30,28 @@
 //   4. 支付时间窗口：paid_at 距今 > SELF_REFUND_WINDOW_DAYS → REFUND_WINDOW_EXPIRED。
 //      paid_at 缺失/非法按「超窗」处理（fail closed，宁可拒绝）。
 //
-// 与 refundPaidOrder 的分工（**绝不双重报错**）：
-//   本文件只产出两个「属主自助专属闸」的错误码 NOT_CURRENT_SUB_ORDER /
-//   REFUND_WINDOW_EXPIRED（见 SELF_REFUND_GATE_CODES）。status/channel 一律交回
-//   refundPaidOrder 报错 —— 它是资金动作前的最后一道统一校验，也是错误码的权威来源。
+// 与 refundPaidOrder 的分工（2026-09-20 两段式退款后）：
+//   用户点「申请退款」时**不发生资金动作**（services/refundRequest.js 只落申请单 +
+//   收回权益），所以本文件产出的**任何** !refundable 码都由申请端点直接拒掉，
+//   不再存在「交回 refundPaidOrder 统一报错」那半边。refundPaidOrder 只在管理员
+//   审核通过时被调用，它自己的 status/channel 校验照旧保留 —— 那是资金动作前的
+//   最后一道复核，与这里的入口闸是双保险，不是重复实现。
 // =============================================
 
 import pool from '../db/pool.js';
+import { logger } from '../utils/logger.js';
 
-/** 自助退款窗口（天）：支付后 7 天内可由属主本人退款，超窗只能走客服/管理台 */
+/** 自助退款窗口（天）的**兜底默认值**：system_configs 读不到/非法时用它 */
 export const SELF_REFUND_WINDOW_DAYS = 7;
+
+/** 审核承诺工作日数默认值（只进客户端文案，不参与任何资金判定） */
+export const DEFAULT_REVIEW_BUSINESS_DAYS = 3;
+
+/** system_configs 里的两个可配置键（不登记进 admin/configs.js 的 CONFIG_CATALOG） */
+export const REFUND_CONFIG_KEYS = {
+  windowDays: 'refund_self_window_days',
+  reviewBusinessDays: 'refund_review_business_days',
+};
 
 /** 只有支付宝能原路在线退回，故只有它开放自助退款 */
 export const SELF_REFUND_CHANNEL = 'alipay';
@@ -61,23 +73,62 @@ export const REFUND_REASON_CODES = Object.freeze({
   REFUND_WINDOW_EXPIRED: 'REFUND_WINDOW_EXPIRED',
   NOT_CURRENT_SUB_ORDER: 'NOT_CURRENT_SUB_ORDER',
   CHANNEL_UNSUPPORTED: 'CHANNEL_UNSUPPORTED',
+  // 已有在途申请：列表与申请端点共用同一个码，客户端据此显示「退款审核中」
+  REFUND_REQUEST_PENDING: 'REFUND_REQUEST_PENDING',
   // 防御性取值：理论上列表只会取 paid/refunded，其它状态沿用 refundPaidOrder 的错误码
   ORDER_NOT_REFUNDABLE: 'ORDER_NOT_REFUNDABLE',
   ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
 });
 
-/**
- * 属主分支需要**实际拦截**的错误码。其余 reasonCode（ALREADY_REFUNDED /
- * CHANNEL_UNSUPPORTED / ORDER_NOT_REFUNDABLE …）不在这里拦：交给 refundPaidOrder
- * 在资金动作前统一报错，错误码与管理员通道保持同源（同一单同一状态，两侧看到的
- * 错误码一致，客户端不会收到两套）。
- */
-export const SELF_REFUND_GATE_CODES = Object.freeze([
-  REFUND_REASON_CODES.NOT_CURRENT_SUB_ORDER,
-  REFUND_REASON_CODES.REFUND_WINDOW_EXPIRED,
-]);
-
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SETTINGS_TTL_MS = 5000;
+
+let settingsCache = null;
+let settingsCachedAt = 0;
+
+function toPositiveInt(raw, fallback) {
+  const n = Number(typeof raw === 'string' ? raw.trim() : raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * 读退款相关配置（带 5s 进程内 TTL）。
+ *
+ * 为什么读库失败要回退默认值而不是抛错：这两个数只决定「放行还是拒绝」与文案，
+ * 默认值是**更保守**的那一侧（7 天窗口照样存在），配置表抖动不该让退款入口整片 500。
+ *
+ * @returns {Promise<{windowDays: number, reviewBusinessDays: number}>}
+ */
+export async function getRefundSettings() {
+  const now = Date.now();
+  if (settingsCache && now - settingsCachedAt < SETTINGS_TTL_MS) return settingsCache;
+
+  let rows = [];
+  try {
+    ({ rows } = await pool.query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key = ANY($1)',
+      [[REFUND_CONFIG_KEYS.windowDays, REFUND_CONFIG_KEYS.reviewBusinessDays]]
+    ));
+  } catch (err) {
+    logger.warn('[refundPolicy] read refund configs failed, using defaults', { error: err.message });
+  }
+  const byKey = new Map(rows.map((r) => [r.config_key, r.config_value]));
+  settingsCache = {
+    windowDays: toPositiveInt(byKey.get(REFUND_CONFIG_KEYS.windowDays), SELF_REFUND_WINDOW_DAYS),
+    reviewBusinessDays: toPositiveInt(
+      byKey.get(REFUND_CONFIG_KEYS.reviewBusinessDays),
+      DEFAULT_REVIEW_BUSINESS_DAYS
+    ),
+  };
+  settingsCachedAt = now;
+  return settingsCache;
+}
+
+/** 只给测试用：清掉 TTL 缓存，避免用例之间互相读到上一个配置值 */
+export function clearRefundSettingsCache() {
+  settingsCache = null;
+  settingsCachedAt = 0;
+}
 
 /** 渠道归一口径（与 refundPaidOrder 完全一致：payment_channel 优先，回退 payment_method） */
 export function normalizeOrderChannel(order) {
@@ -96,10 +147,12 @@ function deny(reasonCode, message, extra = {}) {
  *        （列口径见 SELF_REFUND_ORDER_COLUMNS）
  * @param {string|null} p.anchorOrderId 「当前生效订阅的最近一笔已支付订单」id
  *        （findSelfRefundAnchorOrderId 的结果；null = 无可退锚点，一律拒）
+ * @param {number} [p.windowDays] 时限（天）；省略时用 SELF_REFUND_WINDOW_DAYS 兜底值。
+ *        生产传 getRefundSettings() 的结果——时限已挪到后台可配置，判定函数本身不查库。
  * @param {Date} [p.now] 判定基准时间（单测注入，生产用当前时间）
  * @returns {{refundable: boolean, reasonCode: string|null, message: string, extra: object}}
  */
-export function evaluateSelfRefund({ order, anchorOrderId, now = new Date() } = {}) {
+export function evaluateSelfRefund({ order, anchorOrderId, windowDays, now = new Date() } = {}) {
   if (!order) {
     return deny(REFUND_REASON_CODES.ORDER_NOT_FOUND, 'Order not found');
   }
@@ -137,11 +190,12 @@ export function evaluateSelfRefund({ order, anchorOrderId, now = new Date() } = 
   const paidAtValid = Boolean(paidAt) && !Number.isNaN(paidAt.getTime());
   // paid_at 缺失/非法 → age=Infinity → 判超窗（fail closed，不放过任何一笔说不清时间的单）
   const ageMs = paidAtValid ? new Date(now).getTime() - paidAt.getTime() : Infinity;
-  if (ageMs > SELF_REFUND_WINDOW_DAYS * MS_PER_DAY) {
+  const days = toPositiveInt(windowDays, SELF_REFUND_WINDOW_DAYS);
+  if (ageMs > days * MS_PER_DAY) {
     return deny(
       REFUND_REASON_CODES.REFUND_WINDOW_EXPIRED,
-      `Self-service refund is only available within ${SELF_REFUND_WINDOW_DAYS} days after payment, please contact support`,
-      { paidAt: paidAtValid ? paidAt.toISOString() : null, windowDays: SELF_REFUND_WINDOW_DAYS }
+      `Self-service refund is only available within ${days} days after payment, please contact support`,
+      { paidAt: paidAtValid ? paidAt.toISOString() : null, windowDays: days }
     );
   }
 
@@ -199,10 +253,13 @@ export async function listRefundCandidateOrders(userId, limit = REFUNDABLE_ORDER
 
 export default {
   SELF_REFUND_WINDOW_DAYS,
+  DEFAULT_REVIEW_BUSINESS_DAYS,
+  REFUND_CONFIG_KEYS,
   SELF_REFUND_CHANNEL,
   REFUNDABLE_ORDERS_LIMIT,
   REFUND_REASON_CODES,
-  SELF_REFUND_GATE_CODES,
+  getRefundSettings,
+  clearRefundSettingsCache,
   evaluateSelfRefund,
   findSelfRefundAnchorOrderId,
   listRefundCandidateOrders,

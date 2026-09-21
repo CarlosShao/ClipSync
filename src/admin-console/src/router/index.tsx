@@ -10,6 +10,8 @@ const DashboardPage = lazy(() => import('@/pages/dashboard'));
 const UsersPage = lazy(() => import('@/pages/users'));
 const DevicesPage = lazy(() => import('@/pages/devices'));
 const OrdersPage = lazy(() => import('@/pages/orders'));
+// 两段式退款：用户在客户端申请后由管理员在此页通过（那一刻才真打款）或驳回
+const RefundReviewPage = lazy(() => import('@/pages/refund-review'));
 const SubscriptionsPage = lazy(() => import('@/pages/subscriptions'));
 const PlansPage = lazy(() => import('@/pages/plans'));
 // AN-04：版本发布管理页（admin.release.manage，065 迁移仅授 super_admin）
@@ -85,6 +87,15 @@ export function AppRoutes() {
           element={lazyNode(
             <RequireRole permission="admin.orders.view">
               <OrdersPage />
+            </RequireRole>,
+          )}
+        />
+        {/* 列表按 admin.orders.view 放行；通过/驳回在页内按 admin.orders.refund 裁剪 */}
+        <Route
+          path="/refund-review"
+          element={lazyNode(
+            <RequireRole permission="admin.orders.view">
+              <RefundReviewPage />
             </RequireRole>,
           )}
         />

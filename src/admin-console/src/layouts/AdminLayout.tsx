@@ -1,4 +1,5 @@
 import {
+  AuditOutlined,
   BellOutlined,
   CloudUploadOutlined,
   ControlOutlined,
@@ -47,7 +48,7 @@ interface NavItem {
  *
  * 排序依据（而非历史追加顺序）：
  *   1. 概览 —— 看板只此一项，置于最顶
- *   2. 业务 —— 日常运营高频：用户 / 设备 / 订单 / 订阅
+ *   2. 业务 —— 日常运营高频：用户 / 设备 / 订单 / 退款审核 / 订阅
  *   3. 配置 —— 低频、影响面大：套餐定价、客户端策略
  *   4. 系统 —— 管理自身：权限、会话、审计、发布、运维、AI、设置
  *      · 系统设置置于末位（管理台惯例：设置不放业务区）
@@ -81,6 +82,13 @@ const NAV_GROUPS: NavGroup[] = [
         key: '/orders',
         label: '订单与支付',
         icon: <ShoppingCartOutlined />,
+        perm: 'admin.orders.view',
+      },
+      // 两段式退款：申请在这里人工审核（通过才真打款），与订单页共用 orders.view
+      {
+        key: '/refund-review',
+        label: '退款审核',
+        icon: <AuditOutlined />,
         perm: 'admin.orders.view',
       },
       {

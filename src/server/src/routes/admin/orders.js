@@ -250,8 +250,11 @@ router.get('/:orderNo', requirePerm('admin.orders.view'), async (req, res) => {
  * 数字码沿用本文件既有口径：4000 参数错 / 40005 状态不可退 / 40404 不存在 /
  * 5000 服务端错，新增 40006（渠道不支持）/ 40901（已退过）/ 40902（并发态变）/
  * 5020 渠道退款失败 / 5030 渠道未配置。
+ *
+ * export 给 routes/admin/refundReviews.js 复用：审核通过走的是同一个 refundPaidOrder，
+ * 错误码与中文文案必须一处维护，否则同一个渠道错误在订单页和管理页会说两套话。
  */
-function refundErrorToAdmin(err) {
+export function refundErrorToAdmin(err) {
   const map = {
     MISSING_ORDER_KEY: [4000, '订单号不能为空'],
     ORDER_NOT_FOUND: [40404, '订单不存在'],

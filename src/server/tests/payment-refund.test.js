@@ -215,18 +215,18 @@ describe('权限与参数守卫', () => {
     expect((await readOrder(orderId)).status).toBe('paid');
   });
 
-  it('属主本人（非管理员）自助退款 → 200，产品决策 2026-09-19 变更', async () => {
+  it('属主（非管理员）调 /refund → 409 REFUND_REQUEST_REQUIRED：即时退通道已关，渠道零调用', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const { orderId, orderNo } = await seedOrder();
-    stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
+    const fn = stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
 
     const res = await request(app).post('/api/payments/refund').send({ orderNo });
 
-    expect(res.status).toBe(200);
-    expect(res.body.order).toMatchObject({ orderNo, status: 'refunded' });
-    // 不传 reason 时自助分支兜底「用户自助退款」（管理台分支仍是「管理员退款」）
-    expect((await readOrder(orderId)).metadata.refund_reason).toBe('用户自助退款');
-    expect((await readOrder(orderId)).metadata.refund_by).toBe(TEST_USER_ID);
+    // 2026-09-20 两段式：属主只能申请（POST /refund-request），审核通过才动钱
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('REFUND_REQUEST_REQUIRED');
+    expect(fn).not.toHaveBeenCalled();
+    expect((await readOrder(orderId)).status).toBe('paid');
   });
 
   it('缺 orderId/orderNo → 400', async () => {
@@ -278,99 +278,19 @@ describe('权限与参数守卫', () => {
   });
 });
 
-describe('属主自助退款风控闸（管理员分支不受这两道闸限制）', () => {
-  it('不是锚定单（当前生效订阅的最近一笔已付）→ 409 NOT_CURRENT_SUB_ORDER，不碰渠道、两单都不动', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
-    const old = await seedOrder({ paidAt: new Date(Date.now() - 2 * DAY_MS) });
-    await seedOrder({ paidAt: new Date() });
-    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-
-    const res = await request(app).post('/api/payments/refund').send({ orderNo: old.orderNo });
-
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('NOT_CURRENT_SUB_ORDER');
-    expect(res.body.error).toBeTruthy();
-    expect(fn).not.toHaveBeenCalled();
-    expect((await readOrder(old.orderId)).status).toBe('paid');
-  });
-
-  it('防顺移：退掉锚定单后，同一订阅更早的已付单**不会**变成可退（锚点随订阅 canceled 消失）', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
-    // 同一订阅挂两笔已付单：earlier 是历史续费，anchor 是最近一笔
-    const anchor = await seedOrder({ paidAt: new Date() });
-    const earlier = await seedOrder({ withSubscription: false, paidAt: new Date(Date.now() - 2 * DAY_MS) });
-    await pool.query('UPDATE payment_orders SET subscription_id = $1 WHERE id = $2', [
-      anchor.subscriptionId,
-      earlier.orderId,
-    ]);
-    stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-
-    // 第一笔：锚定单，可退 → 订阅随之 canceled
-    const ok = await request(app).post('/api/payments/refund').send({ orderNo: anchor.orderNo });
-    expect(ok.status).toBe(200);
-    expect((await readSubscription(anchor.subscriptionId)).status).toBe('canceled');
-
-    // 第二笔：同一订阅的更早续费单——旧口径在这里会顺移放行（依次退干净），
-    // 新口径锚点已随订阅 canceled 消失 → 必须 409，且绝不碰渠道
-    const fn2 = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-    const second = await request(app).post('/api/payments/refund').send({ orderNo: earlier.orderNo });
-    expect(second.status).toBe(409);
-    expect(second.body.code).toBe('NOT_CURRENT_SUB_ORDER');
-    expect(fn2).not.toHaveBeenCalled();
-    expect((await readOrder(earlier.orderId)).status).toBe('paid');
-  });
-
-  it('paid_at 超出 7 天窗口 → 409 REFUND_WINDOW_EXPIRED，extra 带 paidAt', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
-    const paidAt = new Date(Date.now() - (SELF_REFUND_WINDOW_DAYS + 3) * DAY_MS);
-    const { orderId, orderNo } = await seedOrder({ paidAt });
-    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
-
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('REFUND_WINDOW_EXPIRED');
-    expect(new Date(res.body.paidAt).getTime()).toBe(paidAt.getTime());
-    expect(res.body.windowDays).toBe(SELF_REFUND_WINDOW_DAYS);
-    expect(fn).not.toHaveBeenCalled();
-    expect((await readOrder(orderId)).status).toBe('paid');
-  });
-
-  it('窗口内（6 天前付款）且是最近一笔 → 200，边界不卡死正常自助退款', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
-    const { orderNo } = await seedOrder({ paidAt: new Date(Date.now() - 6 * DAY_MS) });
-    stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
-
-    expect(res.status).toBe(200);
-    expect(res.body.order.status).toBe('refunded');
-  });
-
-  it('paid 但 paid_at 为空（脏数据）→ 409 REFUND_WINDOW_EXPIRED（时间说不清就不退，fail closed）', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
-    const { orderNo } = await seedOrder({ paidAt: null });
-    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
-
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('REFUND_WINDOW_EXPIRED');
-    expect(res.body.paidAt).toBeNull();
-    expect(fn).not.toHaveBeenCalled();
-  });
-
-  it('管理员退「非最近 + 超窗」的他人订单 → 200（两道自助闸只约束属主）', async () => {
+describe('管理员强退通道（自助闸只约束属主，不约束管理员）', () => {
+  it('管理员退「非最近 + 超窗」的他人订单 → 200', async () => {
     const victim = await seedOrder({
       userId: OTHER_USER_ID,
       withSubscription: false,
       paidAt: new Date(Date.now() - 30 * DAY_MS),
     });
-    // 属主自己后来又付了一笔更新的单：自助分支下 victim 的旧单是退不掉的
     const newer = await seedOrder({ userId: OTHER_USER_ID, withSubscription: false, paidAt: new Date() });
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo: victim.orderNo, reason: '客服处理' });
+    const res = await request(app)
+      .post('/api/payments/refund')
+      .send({ orderNo: victim.orderNo, reason: '客服处理' });
 
     expect(res.status).toBe(200);
     expect(fn).toHaveBeenCalledTimes(1);
@@ -379,7 +299,6 @@ describe('属主自助退款风控闸（管理员分支不受这两道闸限制�
   });
 
   it('同一笔退款请求走 orderId（UUID 主键）定位，与 orderNo 等价', async () => {
-    await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const { orderId, orderNo } = await seedOrder();
     stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
 
@@ -546,21 +465,23 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     });
     expect(new Date(res.body.orders[0].paidAt).getTime()).toBe(paidAt.getTime());
 
-    // 同源证明：清单说不可退的那一单，接口也确实退不掉（同一个理由码）
-    const denied = await request(app).post('/api/payments/refund').send({ orderNo });
+    // 同源证明：清单说不可退的那一单，提交申请也确实被同一个理由拒掉
+    const denied = await request(app).post('/api/payments/refund-request').send({ orderNo });
     expect(denied.status).toBe(409);
     expect(denied.body.code).toBe('REFUND_WINDOW_EXPIRED');
   });
 
-  it('清单说可退的那一单，接口真的退得动（列表与强制点不能漂移）', async () => {
+  it('清单说可退的那一单，接口真的提得交申请（列表与强制点不能漂移）', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const { orderNo } = await seedOrder();
     const listed = await request(app).get('/api/payments/refundable-orders');
     expect(listed.body.orders[0]).toMatchObject({ orderNo, refundable: true, reasonCode: null });
 
-    stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
-    expect(res.status).toBe(200);
+    const fn = stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
+    const res = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    expect(res.status).toBe(201);
+    // 申请阶段不动钱：渠道一次都没被调
+    expect(fn).not.toHaveBeenCalled();
   });
 
   it('升级折抵单：originalAmount/creditAmount 取 metadata.proration，普通单回退实付/0', async () => {

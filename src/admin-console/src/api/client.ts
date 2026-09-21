@@ -153,6 +153,14 @@ export async function apiPost<T>(
   return (await client.post(url, body, config)) as T;
 }
 
+export async function apiPut<T>(
+  url: string,
+  body?: unknown,
+  config?: AxiosRequestConfig
+): Promise<T> {
+  return (await client.put(url, body, config)) as T;
+}
+
 export async function apiPatch<T>(
   url: string,
   body?: unknown,

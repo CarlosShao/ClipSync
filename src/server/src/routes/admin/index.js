@@ -28,6 +28,8 @@ import usersAdminRoutes from './users.js';
 import devicesAdminRoutes from './devices.js';
 // T-A3：订单/退款/对账 + 订阅赠期 + 套餐管理
 import ordersAdminRoutes, { reconciliationRouter } from './orders.js';
+import refundReviewsAdminRoutes from './refundReviews.js';
+import refundSettingsAdminRoutes from './refundSettings.js';
 import subscriptionsAdminRoutes from './subscriptions.js';
 import plansAdminRoutes from './plans.js';
 // T-A5：审计日志 + 角色权限 + 系统配置/功能开关 + 公告下发
@@ -58,6 +60,8 @@ adminRouter.use(authenticateToken, requireRole(50), superAdminAudit);
 // req.path 为相对 /api/admin 的子路径；未命中模式直接放行，不影响普通管理操作。
 const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/orders\/[^/]+\/refund$/,      // 退款
+  /^\/refund-reviews\/[^/]+\/approve$/, // 审核通过 = 真打款，与上面同危
+  /^\/refund-reviews\/[^/]+\/reject$/,  // 驳回会改用户权益，同样按高危限流
   /^\/users\/[^/]+\/force-logout$/, // 强制下线用户
   /^\/users\/[^/]+$/,               // 删除账号（DELETE）
   /^\/devices\/[^/]+\/offline$/,    // 设备远程下线
@@ -120,6 +124,9 @@ adminRouter.use('/devices', devicesAdminRoutes);
 //       订单/订阅/套餐读端点挂对应 view 键（RB-06：admin.orders.view / subscriptions.view / plans.view）。
 adminRouter.use('/orders', ordersAdminRoutes);
 adminRouter.use('/reconciliation', reconciliationRouter);
+// 两段式退款：审核列表/通过/驳回 + 退款时限配置（详见 routes/admin/refundReviews.js）
+adminRouter.use('/refund-reviews', refundReviewsAdminRoutes);
+adminRouter.use('/refund-settings', refundSettingsAdminRoutes);
 adminRouter.use('/subscriptions', subscriptionsAdminRoutes);
 adminRouter.use('/plans', plansAdminRoutes);
 

@@ -36,6 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: '/users', label: '用户管理', perm: 'admin.users.view' },
       { key: '/devices', label: '设备管理', perm: 'admin.devices.view' },
       { key: '/orders', label: '订单与支付', perm: 'admin.orders.view' },
+      { key: '/refund-review', label: '退款审核', perm: 'admin.orders.view' },
       { key: '/subscriptions', label: '订阅管理', perm: 'admin.subscriptions.view' },
     ],
   },
@@ -91,10 +92,10 @@ const ALL_PERMS = [
 ];
 
 describe('侧边栏菜单：分组与排序', () => {
-  it('超管可见全部 14 项，分成 4 组', () => {
+  it('超管可见全部 15 项，分成 4 组', () => {
     const g = visibleGroups(ALL_PERMS, true);
     expect(g.map((x) => x.key)).toEqual(['g-overview', 'g-business', 'g-config', 'g-system']);
-    expect(g.flatMap((x) => x.children)).toHaveLength(14);
+    expect(g.flatMap((x) => x.children)).toHaveLength(15);
   });
 
   it('组顺序为 概览 → 业务运营 → 配置 → 系统', () => {
@@ -113,12 +114,13 @@ describe('侧边栏菜单：分组与排序', () => {
     expect(g[0]?.label).toBe('');
   });
 
-  it('业务运营组内顺序：用户 → 设备 → 订单 → 订阅', () => {
+  it('业务运营组内顺序：用户 → 设备 → 订单 → 退款审核 → 订阅', () => {
     const biz = visibleGroups(ALL_PERMS, true).find((x) => x.key === 'g-business');
     expect(biz?.children.map((c) => c.key)).toEqual([
       '/users',
       '/devices',
       '/orders',
+      '/refund-review',
       '/subscriptions',
     ]);
   });

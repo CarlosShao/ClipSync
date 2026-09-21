@@ -254,6 +254,10 @@ export const AUDIT_ACTIONS = {
   PAYMENT_COMPLETE: 'payment_complete',
   PAYMENT_FAILED: 'payment_failed',
   PAYMENT_REFUND: 'payment_refund',
+  // 两段式退款（2026-09-20）：申请不动钱，通过才动钱，驳回还原权益
+  REFUND_REQUEST: 'refund_request',
+  REFUND_APPROVE: 'refund_approve',
+  REFUND_REJECT: 'refund_reject',
   // AF-15：超时未支付订单自动关单（services/orderCloseSweep.js 定时任务逐单写入）
   PAYMENT_AUTO_CLOSE: 'payment_auto_close',
   SUBSCRIPTION_CREATE: 'subscription_create',
