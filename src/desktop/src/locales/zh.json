@@ -212,7 +212,7 @@
   "sg_startup": "开机自启动",
   "sg_startup_h": "登录时自动启动 ClipSync",
   "sg_server_url": "服务器地址",
-  "sg_server_url_h": "后端 API 地址，修改保存后需重新连接生效",
+  "sg_server_url_h": "后端 API 地址，全项目共用这一处（打开管理台会带上它）；修改保存后需重新连接生效",
   "sg_server_url_ph": "http://127.0.0.1:3001",
   "sg_server_url_notset": "未连接",
   "sg_server_url_ok": "已配置",

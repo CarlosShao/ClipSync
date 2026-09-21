@@ -4,6 +4,7 @@ import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import type { ApiErrorBody, ApiResp, LoginResp } from '@/api/types';
+import { upstreamHeaders } from '@/api/upstream';
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -54,6 +55,10 @@ client.interceptors.request.use((config) => {
   }
   // CSRF 占位：后端启用 CSRF 校验时由登录接口下发真实 token
   config.headers.set('X-CSRF-Token', 'placeholder');
+  // dev 联调：把运行时指定的后端地址交给 vite proxy（生产构建恒为空对象，不发这个头）
+  for (const [name, value] of Object.entries(upstreamHeaders())) {
+    config.headers.set(name, value);
+  }
   return config;
 });
 
@@ -66,7 +71,7 @@ async function refreshAccessToken(): Promise<string | null> {
     const resp = await axios.post<ApiResp<LoginResp>>(
       `${API_BASE}/auth/refresh`,
       { refreshToken },
-      { headers: { 'X-CSRF-Token': 'placeholder' } }
+      { headers: { 'X-CSRF-Token': 'placeholder', ...upstreamHeaders() } }
     );
     const body = resp.data;
     if (body.code !== 0) return null;

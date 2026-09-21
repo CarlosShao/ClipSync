@@ -1,13 +1,38 @@
 /// <reference types="vitest/config" />
 import { rmSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 
+/** 与 src/api/upstream.ts 的 UPSTREAM_HEADER 一致（配置文件不方便 import 应用源码，改一处要改两处） */
+const UPSTREAM_HEADER = 'x-clipsync-upstream';
+
+/** 运行时地址只接受纯 origin：挡掉路径/查询/凭据，避免 dev server 被当通用跳板 */
+const ORIGIN_ONLY = /^https?:\/\/[^\s/?#@]+$/i;
+
+/**
+ * 后端 CORS 白名单登记的是**前端**源，所以转发时的 Origin 必须是它认得的那一个。
+ * 新增联调环境就在下面补一行（生产 api 只认部署版管理台这个源）。
+ */
+const UPSTREAM_FRONTEND_ORIGIN: Record<string, string> = {
+  'https://api.clipchain.top': 'https://admin.clipchain.top',
+};
+
+/** http-proxy 会把 target 解析成对象，这里统一还原成 origin 字符串再查表 */
+function targetOrigin(target: unknown): string {
+  if (typeof target === 'string') return target;
+  if (!target || typeof target !== 'object') return '';
+  const t = target as { protocol?: string; host?: string; hostname?: string; port?: string };
+  const host = t.host || (t.hostname ? `${t.hostname}${t.port ? `:${t.port}` : ''}` : '');
+  if (!t.protocol || !host) return '';
+  return `${t.protocol.replace(/\/?$/, '//')}${host}`;
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // 联调时可经 .env.development.local 覆盖：VITE_PROXY_TARGET=http://localhost:3003
-  // 本地 dev 直连生产后端：
+  // 默认转发目标；联调时优先用页面上的「联调后端」面板（免改文件、免重启）。
+  // 这两个 env 仍保留，作为 CI/无面板场景的兜底：
   //   VITE_PROXY_TARGET=https://api.clipchain.top
   //   VITE_PROXY_ORIGIN=https://admin.clipchain.top
   const env = loadEnv(mode, process.cwd(), '');
@@ -30,19 +55,38 @@ export default defineConfig(({ mode }) => {
           // ⚠️ 127.0.0.1 而非 localhost：wslrelay 抢占 [::1]:3001，localhost 会挂起
           target: proxyTarget,
           changeOrigin: true,
-          // 上游按 Origin 白名单放行（生产 CORS_ORIGINS 里是前端域名，不含 api 自己）。
-          // 浏览器发出的 Origin 是 http://localhost:5273，直连生产会被判非法源 403 ——
-          // 登录接口不带 Bearer，走的正是这条检查。设了 VITE_PROXY_ORIGIN 就把转发的
-          // Origin 换成它（等价于「部署版管理台在调它」），这样本地 dev 能直连联调/生产
-          // 后端，而不必把 localhost 加进生产白名单。不设则完全不重写，本地后端照旧。
-          // 用 proxyReq 钩子而非 http-proxy 的 headers 选项：后者在 web 代理路径上不生效。
-          ...(proxyOrigin
-            ? {
-                configure(proxy) {
-                  proxy.on('proxyReq', (proxyReq) => proxyReq.setHeader('origin', proxyOrigin));
-                },
+          // 请求**必须**继续走同源 /api：浏览器的 Origin 头脚本改不了，直连生产必被 CORS 拒。
+          // 所以「换后端」只能在 dev server 上做——页面带 X-ClipSync-Upstream 头，这里按头
+          // 改转发目标，并在 proxyReq 上把 Origin 换成目标后端认得的前端源。
+          // 只有 dev server 有这段逻辑：线上是 nginx 反代，不存在改指向的入口。
+          // 残余风险：server.host=true 时同网段可向本 dev server 发这个头当跳板——
+          // 故地址形态先过 ORIGIN_ONLY，且每次改写都打日志。
+          configure(proxy) {
+            const send = proxy.web.bind(proxy);
+            const announced = new Set<string>();
+            proxy.web = (
+              req: IncomingMessage,
+              res: ServerResponse,
+              options?: Parameters<typeof send>[2]
+            ) => {
+              const raw = Array.isArray(req.headers[UPSTREAM_HEADER])
+                ? req.headers[UPSTREAM_HEADER]?.[0]
+                : req.headers[UPSTREAM_HEADER];
+              const upstream = raw && ORIGIN_ONLY.test(raw.trim()) ? raw.trim() : '';
+              if (!upstream) return send(req, res, options);
+              if (!announced.has(upstream)) {
+                announced.add(upstream);
+                console.warn(`[proxy] /api 转发目标改为运行时指定地址：${upstream}`);
               }
-            : {}),
+              return send(req, res, { ...options, target: upstream });
+            };
+            proxy.on('proxyReq', (proxyReq, _req, _res, options) => {
+              const origin =
+                UPSTREAM_FRONTEND_ORIGIN[targetOrigin(options?.target)] ?? (proxyOrigin || '');
+              // 查不到映射的（本地后端等）不重写：它们本来就接受任意源
+              if (origin) proxyReq.setHeader('origin', origin);
+            });
+          },
         },
       },
     },

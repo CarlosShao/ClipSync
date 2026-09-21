@@ -128,8 +128,9 @@ watch(maxHistoryCeiling, (ceiling) => {
         @update:model-value="(v: boolean) => configStore.toggleAutostart(v)"
       />
     </div>
-    <!-- 服务器地址（A1）：唯一配置入口，空 = 未连接 -->
-    <div class="sg-row sg-row--stack">
+    <!-- 服务器地址（A1）：唯一配置入口，空 = 未连接。
+         isDev 闸：正式构建不提供改后端地址的入口（生产不可能让用户改指向）。 -->
+    <div v-if="isDev" class="sg-row sg-row--stack">
       <div class="sg-label">
         <div class="sg-name">
           {{ t('sg_server_url') }}

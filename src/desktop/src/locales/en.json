@@ -129,7 +129,7 @@
   "sg_startup": "Launch at startup",
   "sg_startup_h": "Start ClipSync automatically when you log in",
   "sg_server_url": "Server address",
-  "sg_server_url_h": "Backend API address; reconnect after saving a change",
+  "sg_server_url_h": "Backend API address, shared by every client (the admin console inherits it); reconnect after saving a change",
   "sg_server_url_ph": "http://127.0.0.1:3001",
   "sg_server_url_notset": "Not connected",
   "sg_server_url_ok": "Configured",

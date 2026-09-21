@@ -6,9 +6,13 @@ import 'dayjs/locale/zh-cn';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '@/App';
+import { adoptUpstreamFromQuery, mockInterceptsApi } from '@/api/upstream';
 import { antdTheme } from '@/theme/antd';
 import '@/styles/tokens.css';
 import '@/styles/global.css';
+
+// 先接管桌面端带进来的 ?api=，再决定要不要起 MSW（顺序有依赖：指定了真实后端就不该有假数据）
+adoptUpstreamFromQuery();
 
 dayjs.locale('zh-cn');
 
@@ -24,7 +28,9 @@ const queryClient = new QueryClient({
 
 /** VITE_ENABLE_MSW 开关：dev 默认开启，生产（.env.production 显式 false）强制关闭 */
 async function enableMocking(): Promise<void> {
-  if (!import.meta.env.DEV || import.meta.env.VITE_ENABLE_MSW === 'false') return;
+  // mockInterceptsApi 是唯一判定：生产构建恒 false；一旦指定了真实后端地址也让路，
+  // 否则 MSW 会在 proxy 之前把 /api 吃掉——地址填了却仍在看假数据。
+  if (!mockInterceptsApi()) return;
   const { worker } = await import('@/mocks/browser');
   await worker.start({ onUnhandledRequest: 'bypass' });
   // AF-54：MSW 模式可见化——防止假数据被误当真实后端

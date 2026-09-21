@@ -139,6 +139,20 @@ function resolveAdminConsoleUrl(): string {
   return 'http://localhost:5273'
 }
 
+/**
+ * 管理台链接：在已解析地址上补 `?api=`，把桌面端「设置 → 服务器地址」交出去。
+ * 这是「几个项目共用一个入口」的落地方式——管理台 dev 构建会接管该地址直连同一后端
+ * （生产构建按 import.meta.env.DEV 忽略它，线上页面不存在改指向的入口），
+ * 不必再在管理台单独维护一份 .env 里的代理目标。
+ */
+function adminConsoleUrl(path: string): string {
+  const url = new URL(resolveAdminConsoleUrl())
+  url.pathname = path
+  const server = configStore.serverUrl.trim()
+  if (server) url.searchParams.set('api', server)
+  return url.toString()
+}
+
 // RB-SSO：单点登录打开管理台。
 // 流程：POST /api/admin/sso/token（仅超管，后端 requireRole(100)）签发一次性 code（60s，Redis GETDEL 防重放）
 // → 拼管理台 /sso?code=xxx → 管理台兑换页换正式会话，免密直达 dashboard。
@@ -152,14 +166,13 @@ async function openAdminConsole() {
     // api() 不解响应壳：resp.data 为响应体 { code, data }，真实凭据在 resp.data.data.code
     const ssoCode = resp.ok ? resp.data?.data?.code : undefined
     if (!ssoCode) throw new Error(resp.error || 'SSO 凭据签发失败')
-    const adminUrl = new URL(resolveAdminConsoleUrl())
-    adminUrl.pathname = '/sso'
-    adminUrl.searchParams.set('code', ssoCode)
-    openUrl(adminUrl.toString()).catch(() => {})
+    const url = new URL(adminConsoleUrl('/sso'))
+    url.searchParams.set('code', ssoCode)
+    openUrl(url.toString()).catch(() => {})
   } catch (err) {
     console.error('[SSO] failed to get code:', err)
     // 降级为纯外链（登录页兜底）
-    openUrl(resolveAdminConsoleUrl()).catch(() => {})
+    openUrl(adminConsoleUrl('/')).catch(() => {})
   }
 }
 </script>
