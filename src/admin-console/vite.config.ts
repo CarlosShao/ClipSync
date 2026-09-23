@@ -79,16 +79,39 @@ export default defineConfig(({ mode }) => {
   const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:3001';
   const proxyOrigin = env.VITE_PROXY_ORIGIN || '';
 
-  // 明确拒绝生产域名作为 env 目标：dev 页面绝不允许静默指向生产后端下发真实指令。
-  // 当前工作树若把 VITE_PROXY_TARGET 设成了生产，这里会直接让 `npm run dev` 失败并给出改法。
-  if (isProductionOrigin(proxyTarget)) {
+  // env 默认目标可以是生产——但它只可能来自操作者自己写的、未入库的 .env.*.local，
+  // 那是本人意图，不是攻击面（仓库/镜像/compose 里没有任何一处设置它）。被拦的是
+  // 「别人发一条链接或塞一个请求头就能把这台机器指到生产」，那三条通道（?api=、
+  // X-ClipSync-Upstream、localStorage）在上面和 upstream.ts 里仍然硬拒生产，与本开关无关。
+  // 之所以仍要一个显式开关：这条 env 一旦成立，本机 dev server 就成了「带生产可信
+  // Origin 的转发器」，同网段任何人都能借道——所以批准的同时把监听收成仅环回。
+  const allowProdTarget = env.VITE_ALLOW_PROD_TARGET_IN_DEV === 'true';
+  const prodTarget = isProductionOrigin(proxyTarget);
+
+  if (prodTarget && !allowProdTarget) {
     throw new Error(
-      `[vite] VITE_PROXY_TARGET 指向生产域名（${proxyTarget}）已被拒绝：本地 dev 管理台不允许对生产后端下发真实指令。\n` +
-        `请改用本地/联调地址（如 http://127.0.0.1:3001），或直接用部署版管理台操作生产。`
+      `[vite] VITE_PROXY_TARGET 指向生产域名（${proxyTarget}），需本人显式确认后才允许启动。\n` +
+        `  · 确实要拿本地管理台连生产联调：在同目录 .env.development.local 追加一行\n` +
+        `      VITE_ALLOW_PROD_TARGET_IN_DEV=true\n` +
+        `    （追加后本 dev server 只监听 127.0.0.1，且运行时改地址的通道仍不含生产）\n` +
+        `  · 只是要一个联调后端：改成 http://127.0.0.1:3001 之类的地址\n` +
+        `  · 要长期操作生产：用部署版管理台，别用本地 dev`
     );
   }
-  // proxyOrigin 也不得是生产源（否则等于给转发请求盖上生产 CORS 放行身份）
-  const safeProxyOrigin = isProductionOrigin(proxyOrigin) ? '' : proxyOrigin;
+  // 指向生产时 Origin 必须保留：它是生产侧 CSRF/Origin 校验认得的那个源，抹掉就打不开。
+  // 目标不是生产时，仍不得给转发请求盖上生产 CORS 放行身份。
+  const safeProxyOrigin = prodTarget
+    ? proxyOrigin
+    : isProductionOrigin(proxyOrigin)
+      ? ''
+      : proxyOrigin;
+
+  if (prodTarget) {
+    console.warn(
+      `[vite] ⚠ 本地 dev 管理台正在直连**生产**后端（${proxyTarget}）：页面上的每一次退款/改配置/发通知都是真实操作。\n` +
+        `[vite] ⚠ 已自动把监听收紧为 127.0.0.1（不再对同网段开放）；?api= 与「联调后端」面板仍不接受生产地址。`
+    );
+  }
 
   // 运行时 header 通道白名单（默认环回 + env 追加）；生产域名即使被追加也剔除
   const runtimeAllowlist = new Set(
@@ -112,8 +135,9 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5273,
-      // 双栈监听：vite 默认只绑 ::1，桌面端 SSO 外链拼的是 127.0.0.1:5273（IPv4）会连接拒绝
-      host: true,
+      // 双栈监听：vite 默认只绑 ::1，桌面端 SSO 外链拼的是 127.0.0.1:5273（IPv4）会连接拒绝。
+      // 但 env 目标一旦是生产，这台 dev server 就成了带生产可信 Origin 的转发器，必须只留环回。
+      host: prodTarget ? '127.0.0.1' : true,
       proxy: {
         // 后端 admin API（dev 环境默认 3001）；MSW 开启时请求不会到达 proxy
         '/api': {
@@ -169,9 +193,16 @@ export default defineConfig(({ mode }) => {
             };
             proxy.on('proxyReq', (proxyReq, _req, _res, options) => {
               const target = targetOrigin(options?.target);
-              // 绝不为生产目标重写 Origin（本地页面不得获得生产 CORS 放行身份）
-              if (!target || isProductionOrigin(target)) return;
-              const origin = UPSTREAM_FRONTEND_ORIGIN[normalizeOrigin(target)] || safeProxyOrigin || '';
+              if (!target) return;
+              // 走到这里的生产目标只可能来自本人 env 里显式批准的默认地址——运行时 header 通道
+              // 已在上面把生产 403 掉。此时 Origin 必须换成生产侧 Origin/CSRF 校验认得的那个源，
+              // 否则本地管理台连生产时所有写操作都打不通（这条路径第三方走不到）。
+              if (isProductionOrigin(target)) {
+                if (prodTarget && proxyOrigin) proxyReq.setHeader('origin', proxyOrigin);
+                return;
+              }
+              const origin =
+                UPSTREAM_FRONTEND_ORIGIN[normalizeOrigin(target)] || safeProxyOrigin || '';
               // 查不到映射的（本地后端等）不重写：它们本来就接受任意源
               if (origin && !isProductionOrigin(origin)) proxyReq.setHeader('origin', origin);
             });

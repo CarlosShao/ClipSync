@@ -191,13 +191,15 @@ AI 会话：会话/消息状态是组件实例级（非模块单例），内容�
 ### 5.2 已实施的防护（三层）
 
 **第 1 层 `vite.config.ts`（服务端强制，核心）：**
-1. **env 目标拒绝生产**：`VITE_PROXY_TARGET` 解析为 `clipchain.top` 或其任何子域 → 配置加载即 throw，`npm run dev` 拒绝启动，错误信息给出改法。
+1. **env 目标指向生产需本人显式批准**：`VITE_PROXY_TARGET` 解析为 `clipchain.top` 或其任何子域且未设 `VITE_ALLOW_PROD_TARGET_IN_DEV=true` → 配置加载即 throw，错误信息给出三种改法（批准 / 换联调地址 / 用部署版管理台）。
+   - **批准后的附带收紧（本行是 2026-09-23 按 owner 反馈改的，原文是"一律 throw"）**：dev server 监听自动从 `host: true` 收成 `127.0.0.1`，并打印两行醒目告警横幅。理由：这条 env 只可能来自操作者自己写的、**未入库**的 `.env.*.local`（全仓 grep 确认：仓库/镜像/compose/CI 无任何一处设置 `VITE_PROXY_TARGET`），属本人意图而非攻击面；但它一旦成立，本机 dev server 就成了"带生产可信 Origin 的转发器"，同网段谁能连上谁就能借道——所以批准与收紧绑定，不给"批准但继续对 LAN 开放"的组合。
+   - 攻击面仍在另外三条**运行时可驱动**的通道上，它们与本开关无关、**不受批准影响**：`?api=` 链接、`X-ClipSync-Upstream` 头、localStorage 落盘值——依旧硬拒生产。
 2. **运行时 header 通道白名单**：`X-ClipSync-Upstream` 仅在同时满足以下条件时生效，否则 **403 JSON + console 告警（绝不静默回退默认 target**，防止"页面以为在操作 A 实际打到 B"）：
    - 客户端是本机（`req.socket.remoteAddress` ∈ 127.*/::1/::ffff:127.0.0.1）——同网段主机彻底失去 header 跳板；
    - 目标在白名单内：默认仅 `http://127.0.0.1:3001`、`http://localhost:3001`；可用 `VITE_PROXY_UPSTREAM_ALLOWLIST`（逗号分隔）追加联调环境；
    - 生产域名黑名单优先于白名单：即使被写进 allowlist 也剔除、也 403。内网(10./192.168./172.16-31.)、链路本地(169.254. 云元数据)、任意公网主机因不在白名单被同一机制拒绝（比"按 IP 段拉黑"更严）。
-3. **Origin 重写限定白名单目标**：删除 `UPSTREAM_FRONTEND_ORIGIN` 里的生产映射（api.clipchain.top→admin.clipchain.top）；`proxyReq` 钩子对生产目标直接 return（绝不重写）；`VITE_PROXY_ORIGIN` 若是生产源同样忽略。→ 本地页面**再也拿不到生产 CORS 放行身份**。
-4. `host: true` 保留（桌面端 SSO 外链需要 IPv4 环回可达，改绑定有断链风险）；其 LAN 暴露的残余风险已由第 2 条的"本机客户端限定"封堵 header 通道，剩余面只是"访问 dev UI 本身"，无 token 无法操作任何后端。
+3. **Origin 重写限定目标**：删除 `UPSTREAM_FRONTEND_ORIGIN` 里的**静态生产映射**（api.clipchain.top→admin.clipchain.top），因此**运行时 header 通道指向生产时永远拿不到生产 CORS/Origin 放行身份**；`VITE_PROXY_ORIGIN` 在目标非生产时若是生产源同样忽略。唯一仍会写生产 Origin 的情形是第 1 条那条**已显式批准、且只听环回**的 env 默认目标——此时不写就连不上（生产侧 Origin/CSRF 校验不认本地页面），且该路径第三方走不到。
+4. `host: true` 在目标非生产时保留（桌面端 SSO 外链需要 IPv4 环回可达，改绑定有断链风险）；目标为生产时自动降为 `127.0.0.1`。LAN 暴露的残余风险主要由第 2 条的"本机客户端限定 + 白名单"封堵 header 通道，剩余面只是"访问 dev UI 本身"，无 token 无法操作任何后端。
 
 **第 2 层 `src/api/upstream.ts`（前端入口）：**
 - `normalizeUpstream()` 拒绝生产域名（含子域，黑名单与 vite.config.ts 同源同注释）→ dev panel 手输/预设生产地址直接报错。
@@ -213,13 +215,13 @@ AI 会话：会话/消息状态是组件实例级（非模块单例），内容�
 
 ### 5.4 未做的部分与诚实边界
 
-- **红色生产横幅 + 高危操作输入确认文本：未做。** 不是被禁改文件卡住（AdminLayout.tsx/App.tsx/ConfirmReasonModal 等均可改），而是**触发条件已被消灭**：`?api=` 链接、面板手输、遗留 localStorage、env 配置、LAN header 五条通往生产的路径全部硬拒绝后，"dev 页面检测到目标是生产后端"恒为假——横幅和确认文本成为永不可达的死代码，做了恰好违反"不要为了让防护看起来做了而写实际拦不住的检查"。硬拒绝是比"横幅+确认"更强的防护（报告建议的是允许连生产但加护栏，本批任务书的指令是"明确拒绝生产域名"，按任务书执行）。
-  - **如果 owner 想保留"本地连生产排障"工作流**（备选方案 B，未实施）：在 `VITE_PROXY_ALLOW_UPSTREAMS` 显式列入生产 + `UpstreamDevPanel` 输入域名确认 + AdminLayout 挂不可关闭红色横幅 + `client.ts` 拦截器对生产 upstream 的非 GET 请求要求确认文本/默认只读。需要拍板后再做。
-- **对既有工作流的直接影响（需要用户动作）**：当前 `src/admin-console/.env.development.local`（gitignored，未触碰）把 `VITE_PROXY_TARGET`/`VITE_PROXY_ORIGIN` 指向生产。修复后 **`npm run dev` 会启动失败并打印明确改法**——这是"明确拒绝生产域名"的直接后果，属预期行为。需要操作生产时请改用部署版管理台；需要本地联调请把该 env 改回本地/联调地址。
+- **红色生产横幅 + 高危操作输入确认文本：仍未做（页面内）**。触发条件比初版窄：`?api=` 链接、面板手输、遗留 localStorage、LAN header 四条**运行时可被他人驱动**的通往生产的路径全部硬拒绝，恒为假；唯一活着的是 owner 显式批准的 env 默认目标。该情形的护栏换成了两条更靠得住的：**启动即打印两行不可关闭的终端告警** + **监听自动收成仅环回**。页面内横幅要做就得让前端知道 proxy 真实目标（需新增 dev-only 通道），对一个只在本地 dev 存在的界面属于为护栏而护栏，登记为 P3 可选。
+  - 初版这里写的是"owner 若想保留本地连生产排障则需拍板后再做（备选方案 B）"。**owner 已拍板**：本地管理台连生产是他当前的联调方式，不算 bug。已按轻量版落地（一个 env 开关 + 仅环回 + 终端告警），未做面板域名确认与请求级确认文本。
+- **对既有工作流的影响（2026-09-23 复核后修订）**：`src/admin-console/.env.development.local`（gitignored，全程未触碰）把 `VITE_PROXY_TARGET`/`VITE_PROXY_ORIGIN` 指向生产。初版实现使 `npm run dev` **直接启动失败**——这是把"owner 自己写本机文件"与"别人发条链接就能改指生产"混为一谈造成的回归，已由 owner 指出并修正。现行为：不加开关仍拒绝启动（防误配），加 `VITE_ALLOW_PROD_TARGET_IN_DEV=true` 即照常连生产，并自动只听 127.0.0.1。
 - **存量合法数据的回退路径**（收紧白名单后哪类既有流程今天会被拒）：
-  1. env 指向生产的 dev server → 启动即 throw，改法在错误信息里（改 env 为本地/联调地址）；
+  1. env 指向生产的 dev server → 未加开关时启动即 throw（改法在错误信息里），加 `VITE_ALLOW_PROD_TARGET_IN_DEV=true` 后照常工作，代价是只听 127.0.0.1；
   2. localStorage 里遗留的生产 upstream（修复前被 `?api=` 写入的）→ `getUpstream()` 自动作废并删除，页面回落 vite 默认 target，无需手工清理；
-  3. 桌面端 SSO 外链 `http://127.0.0.1:5273/sso?code=...&api=<生产>`（桌面 app 指向生产时点"打开管理台"）→ `?api=` 被拒（参数保留在地址栏 + console.warn），SSO 兑换会打到默认本地后端而失败。回退：开发者把桌面端服务器地址切到本地/联调再走 SSO，或直接用部署版管理台（admin 生产域）处理生产事务；
+  3. 桌面端 SSO 外链 `http://127.0.0.1:5273/sso?code=...&api=<生产>`（桌面 app 指向生产时点"打开管理台"）→ `?api=` 被拒（参数保留在地址栏 + console.warn），页面回落到 dev server 自己的默认 target。**owner 当前的联调配置下回落目标就是生产**，因此这条工作流仍通；未批准生产目标时回落到本地后端、SSO 兑换失败，改法见第 1 条；
   4. 桌面端升级后旧无命名空间的离线队列/明文缓存 → 启动即丢弃（无法归属用户；正常升级时用户在线、队列基本为空，实际损失≈0，见 §4.4）。
 - 边界说明：本防护只覆盖 dev proxy 这一层。生产部署版管理台（nginx 反代）本来就没有改指向入口（报告已核实 `import.meta.env.DEV` 门控 + bundle 摇树），不受影响。
 
