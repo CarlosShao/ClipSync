@@ -24,11 +24,42 @@ const memoryStores = {
   loginFailed: new Map(),
   upload: new Map(),
   strict: new Map(),
+  // 未认证的验证码消费端点专用桶（/reset-password、/set-password）
+  // 与 sendCode 隔离：发码额度不应被爆破尝试吃掉
+  authCode: new Map(),
   // AN-07：管理台专用桶——adminLimiter / adminStrictLimiter 与客户端 API 的 apiLimiter/strictLimiter
   // 完全隔离计数，避免管理台高频巡检与客户端流量互相挤兑（CO-51 同原则）
   admin: new Map(),
   adminStrict: new Map(),
 };
+
+/**
+ * 身份标识归一化（phone / email / account）：小写去空格 + 限长，避免键膨胀
+ */
+function normalizeIdentity(value) {
+  if (typeof value !== 'string') return '';
+  const v = value.trim().toLowerCase();
+  if (!v) return '';
+  return v.length > 128 ? v.slice(0, 128) : v;
+}
+
+/**
+ * 请求携带的身份标识：phone > email > account（登录接口用统一 account 字段）
+ * 取不到返回空串——调用方必须退回 IP 分桶，绝不能共用一个全局桶
+ */
+function requestIdentity(req) {
+  const body = req.body || {};
+  return normalizeIdentity(body.phone) || normalizeIdentity(body.email) || normalizeIdentity(body.account);
+}
+
+/**
+ * 客户端 IP：统一取 req.ip（配合 index.js 的 app.set('trust proxy', 1)），
+ * 不自行解析可被伪造的 X-Forwarded-For。req.ip 缺失时用一次性随机键，
+ * 保证任何情况下都不会退化成共享桶。
+ */
+function clientIp(req) {
+  return req.ip || req.connection?.remoteAddress || `unresolved:${Math.random().toString(36).slice(2, 10)}`;
+}
 
 /**
  * 清理过期记录（内存模式）
@@ -178,7 +209,7 @@ function createRateLimiter(options) {
     windowMs = 60 * 1000,
     max = 100,
     message = 'Too many requests, please try again later',
-    keyGenerator = (req) => req.ip || req.connection?.remoteAddress,
+    keyGenerator = (req) => clientIp(req),
     storeName = 'api',
     skipSuccessfulRequests = false,
     // CO-10：动态阈值键（system_configs）；未声明则用固定 max
@@ -245,9 +276,7 @@ export const apiLimiter = process.env.NODE_ENV === 'test'
       keyGenerator: (req) => {
         // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）
         if (req.userId) return `user:${req.userId}`;
-        return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-               req.ip ||
-               req.connection?.remoteAddress;
+        return clientIp(req);
       },
       storeName: 'api',
     });
@@ -262,8 +291,10 @@ export const sendCodeLimiter = createRateLimiter({
   limitKey: 'sendCodePerHour',
   message: 'Verification code rate limit exceeded, please try again in 1 hour',
   keyGenerator: (req) => {
-    const phone = req.body?.phone;
-    return phone ? `sendCode:${phone}` : 'sendCode:unknown';
+    // 取不到身份标识时按 IP 分桶，绝不落到共享的 unknown 桶
+    // （旧实现下 5 个匿名请求即可锁死全站邮箱发码/找回密码）
+    const identity = requestIdentity(req);
+    return identity ? `sendCode:${identity}` : `sendCode:ip:${clientIp(req)}`;
   },
   storeName: 'sendCode',
 });
@@ -278,29 +309,50 @@ export const loginFailedLimiter = createRateLimiter({
   limitKey: 'loginFailedPer15Min',
   message: 'Too many login attempts, please try again in 15 minutes',
   keyGenerator: (req) => {
-    const phone = req.body?.phone;
-    return phone ? `loginFailed:${phone}` : 'loginFailed:unknown';
+    const identity = requestIdentity(req);
+    return identity ? `loginFailed:${identity}` : `loginFailed:ip:${clientIp(req)}`;
   },
   storeName: 'loginFailed',
 });
 
 /**
+ * 未认证验证码消费端点的限流（/reset-password、/set-password）：
+ * IP 桶 + 目标账号桶双重限制，防验证码爆破。
+ * 固定阈值不走 runtimeLimits 动态键——避免管理台误配把爆破防线调没
+ * （rate_limit_disabled 总开关仍生效）。
+ */
+export const authCodeIpLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many attempts, please try again in 15 minutes',
+  keyGenerator: (req) => `authCode:ip:${clientIp(req)}`,
+  storeName: 'authCode',
+});
+
+export const authCodeAccountLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: 'Too many attempts for this account, please try again in 15 minutes',
+  keyGenerator: (req) => `authCode:id:${requestIdentity(req) || clientIp(req)}`,
+  storeName: 'authCode',
+});
+
+/**
  * 登录成功后清除失败记录
  */
-export function clearLoginFailed(phone) {
+export function clearLoginFailed(identifier) {
+  const bucketKey = `loginFailed:${normalizeIdentity(identifier)}`;
   getSharedRedisClient().then(client => {
     if (client) {
-      const redisKey = `ratelimit:loginFailed:${phone}`;
-      client.del(redisKey).catch(() => {});
+      // 与 checkRateLimitRedis 的 `ratelimit:${storeName}:${key}` 命名保持一致
+      client.del(`ratelimit:loginFailed:${bucketKey}`).catch(() => {});
     } else {
       // Redis 不可用，清除内存存储
-      const key = `loginFailed:${phone}`;
-      memoryStores.loginFailed.delete(key);
+      memoryStores.loginFailed.delete(bucketKey);
     }
   }).catch(() => {
     // Redis 不可用，清除内存存储
-    const key = `loginFailed:${phone}`;
-    memoryStores.loginFailed.delete(key);
+    memoryStores.loginFailed.delete(bucketKey);
   });
 }
 
@@ -372,10 +424,7 @@ export const adminLimiter = process.env.NODE_ENV === 'test'
       windowMs: 60 * 1000,
       max: 100,
       message: 'Admin API rate limit exceeded, please try again later',
-      keyGenerator: (req) =>
-        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-        req.ip ||
-        req.connection?.remoteAddress,
+      keyGenerator: (req) => clientIp(req),
       storeName: 'admin',
     });
 
@@ -391,9 +440,7 @@ export const adminStrictLimiter = process.env.NODE_ENV === 'test'
       max: 10,
       message: 'Sensitive admin operation rate limit exceeded, please try again later',
       keyGenerator: (req) => {
-        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-          req.ip ||
-          req.connection?.remoteAddress || 'unknown';
+        const ip = clientIp(req);
         // 按 URL 首段资源分桶：/orders/xxx/refund → 'orders'、/ops/actions → 'ops'
         const segment = req.path.split('/').filter(Boolean)[0] || 'root';
         return `${ip}:${segment}`;
@@ -486,6 +533,8 @@ export default {
   apiLimiter,
   sendCodeLimiter,
   loginFailedLimiter,
+  authCodeIpLimiter,
+  authCodeAccountLimiter,
   clearLoginFailed,
   checkWsConnectionLimit,
   removeWsConnection,

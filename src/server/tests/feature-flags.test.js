@@ -147,10 +147,8 @@ describe('功能开关服务端强制生效', () => {
     expect(first.body.pendingReview).toBe(true);
     expect(first.body.token).toBeUndefined();
 
-    // 再次登录被拦截
-    const second = await request(app)
-      .post('/api/auth/verify-code')
-      .send({ phone: WAITLIST_PHONE, code: '888888' });
+    // 再次登录被拦截（验证码一次性消费，每次登录前需重新发码）
+    const second = await codeLogin(WAITLIST_PHONE);
     expect(second.status).toBe(403);
     expect(second.body.pendingReview).toBe(true);
 
@@ -163,9 +161,7 @@ describe('功能开关服务端强制生效', () => {
     expect(approve.status).toBe(200);
 
     // 审批后可正常登录
-    const third = await request(app)
-      .post('/api/auth/verify-code')
-      .send({ phone: WAITLIST_PHONE, code: '888888' });
+    const third = await codeLogin(WAITLIST_PHONE);
     expect(third.status).toBe(200);
     expect(third.body.token).toBeTruthy();
 

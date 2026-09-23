@@ -12,8 +12,7 @@ build/
 .env
 .env.*
 !.env.example
-!.env.test
-!.env.development.example
+!.env.*.example
 
 # IDE
 .vscode/
@@ -40,6 +39,8 @@ src/desktop/src-tauri/Cargo.lock
 
 # Rust (clipboard-dump 工具)
 clipboard-dump/target/
+# 任意 Rust crate 的构建产物（catch-all，覆盖现有与未来子项目）
+target/
 
 # Flutter
 build/
@@ -133,6 +134,12 @@ uploads/
 
 # Test output & local reports
 test-output/
+test-results/
+playwright-report/
+tmp/
+# 审计/GUI 测试的一次性截图产物（注意：目录下已有被跟踪文件，忽略规则仅拦截新增文件）
+audit-out-day2/
+gui-test-screenshots/
 
 # 误入的散落文件
 bream

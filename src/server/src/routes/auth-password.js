@@ -2,10 +2,11 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import { randomInt } from 'node:crypto';
 import pool from '../db/pool.js';
 import config from '../config.js';
 import { sanitizeString } from '../validation/validator.js';
-import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middleware/rateLimiter.js';
+import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, authCodeIpLimiter, authCodeAccountLimiter } from '../middleware/rateLimiter.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { logger } from '../utils/logger.js';
@@ -62,10 +63,8 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
       return res.json({ message: 'If the email exists, a reset code has been sent' });
     }
 
-    // 生成重置码
-    const code = process.env.NODE_ENV === 'production'
-      ? Math.floor(100000 + Math.random() * 900000).toString()
-      : '888888'; // MVP: fixed code for development
+    // 生成重置码（crypto 安全随机；固定码 888888 已移除）
+    const code = String(randomInt(100000, 1000000));
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
@@ -75,9 +74,15 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
       [cleanEmail, code, expiresAt.toISOString()]
     );
 
-    // 发送重置码邮件
+    // 发送重置码邮件（未送达只告警；响应保持通用文案，不泄漏账号是否存在）
     if (process.env.NODE_ENV === 'production') {
-      await sendVerificationCodeEmail(cleanEmail, code, 'reset');
+      const emailResult = await sendVerificationCodeEmail(cleanEmail, code, 'reset');
+      if (!emailResult?.success || emailResult.fallback) {
+        logger.error('[Password Reset] SMTP 未配置或发送失败，重置邮件未送达——密码重置功能当前不可用', {
+          email: cleanEmail,
+          reason: emailResult?.error || 'smtp_not_configured',
+        });
+      }
     } else {
       logger.debug(`[MVP] Password reset code for ${cleanEmail}: ${code}`);
     }
@@ -90,7 +95,7 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
 });
 
 // 重置密码
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', authCodeIpLimiter, authCodeAccountLimiter, async (req, res) => {
   try {
     const { email, code, newPassword } = req.body;
 
@@ -104,20 +109,23 @@ router.post('/reset-password', async (req, res) => {
 
     const cleanEmail = sanitizeString(email.toLowerCase());
 
-    // 验证重置码
+    // 验证并原子消费重置码（used=FALSE + 未过期，条件 UPDATE 防并发重放）
     const codeResult = await pool.query(
-      `SELECT * FROM verification_codes
-       WHERE phone = $1 AND code = $2 AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
+      `UPDATE verification_codes SET used = TRUE
+       WHERE id = (
+         SELECT id FROM verification_codes
+         WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id`,
       [cleanEmail, code]
     );
 
     if (codeResult.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid or expired reset code' });
     }
-
-    // 删除已使用的验证码
-    await pool.query('DELETE FROM verification_codes WHERE phone = $1', [cleanEmail]);
 
     // 加密新密码
     const hashedPassword = await bcrypt.hash(newPassword, 12);

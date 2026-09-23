@@ -6,7 +6,7 @@ import pool from '../db/pool.js';
 import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
-import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter } from '../middleware/rateLimiter.js';
+import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, getRedisClient, createRateLimiter, authCodeIpLimiter, authCodeAccountLimiter } from '../middleware/rateLimiter.js';
 import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
@@ -16,6 +16,7 @@ import { sendVerificationCodeEmail } from '../utils/email.js';
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
 import { logger } from '../utils/logger.js';
 import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
+import { CHALLENGE_TOKEN_TYPE } from '../middleware/auth.js';
 
 /** AF-04：注册总开关关闭时的统一响应（enable_signup=false → 注册 403，登录不受影响） */
 const SIGNUP_DISABLED_MESSAGE = '注册已由管理员关闭，如有疑问请联系客服';
@@ -24,6 +25,70 @@ import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { shouldForceTwoFactorForAdmin, FORCE_2FA_MESSAGE } from '../utils/adminSecurity.js';
 import { sendNotification, detectAndNotifyNewLogin } from '../ws/server.js';
 import crypto from 'crypto';
+
+/** 2FA 挑战令牌有效期（登录二次验证窗口） */
+const CHALLENGE_TOKEN_TTL = '5m';
+
+/**
+ * 签发 2FA 挑战令牌：只证明「密码/验证码已过、动态码未过」。
+ * authenticateToken 拒绝带 tokenType=2fa_challenge 的令牌，
+ * 因此它不能当登录态用（改密码/改绑 2FA/读数据一律 401）。
+ */
+function issueTwoFactorChallengeToken(userId) {
+  return jwt.sign(
+    { userId, twoFactorChallenge: true, tokenType: CHALLENGE_TOKEN_TYPE },
+    config.jwt.secret,
+    { expiresIn: CHALLENGE_TOKEN_TTL }
+  );
+}
+
+/** 找回密码的统一响应：不泄漏邮箱是否注册 */
+const RESET_REQUEST_ACCEPTED_MESSAGE = 'If this account is registered, you will receive a reset code';
+
+/**
+ * 重置码是否允许回显（开发逃生口）：非生产 **且** 显式开启，缺一个都不回显。
+ * 双重条件防止生产误开逃生口。
+ */
+function canExposeResetCode() {
+  return process.env.NODE_ENV !== 'production' && process.env.AUTH_EXPOSE_RESET_CODE === 'true';
+}
+
+/** 6 位重置码（crypto 安全随机；码长受客户端 6 位输入校验约束，未提到 8 位） */
+function generateResetCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+/**
+ * 原子消费验证码：条件 UPDATE（code 匹配 + used=FALSE + 未过期，FOR UPDATE SKIP LOCKED）
+ * 命中 RETURNING 才算校验通过——并发重放同一码时只有一个请求能消费成功。
+ * @returns {Promise<{id: string}|null>}
+ */
+async function consumeVerificationCode(identifier, code) {
+  const result = await pool.query(
+    `UPDATE verification_codes SET used = TRUE
+     WHERE id = (
+       SELECT id FROM verification_codes
+       WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE SKIP LOCKED
+     )
+     RETURNING id`,
+    [identifier, code]
+  );
+  return result.rows[0] || null;
+}
+
+/** 按行 id 原子消费（旧数据 phone 列为密文、需先解密定位时使用） */
+async function consumeVerificationCodeById(id, code) {
+  const result = await pool.query(
+    `UPDATE verification_codes SET used = TRUE
+     WHERE id = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
+     RETURNING id`,
+    [id, code]
+  );
+  return result.rows[0] || null;
+}
 
 // 哈希盐（固定值，用于 phone_hash / email_hash 计算）
 // 修改此值后需重新计算所有用户的哈希值
@@ -73,14 +138,21 @@ export async function createSessionAndGenerateToken(user, req) {
  * 身份合并：登录成功后，检查是否存在同一人的重复账号（相同 email 或 nickname），
  * 将重复账号的剪贴板数据合并到当前 canonical 用户，并标记旧账号为已合并。
  *
- * 场景：用户先用手机号注册（user A），后又用邮箱注册（user B），
- * 导致同一个物理 person 拥有多个 users.id，剪贴板数据分散。
+ * ⚠️ 默认停用：匹配依据是用户可自由设置的 nickname 与**未验证**的 email，
+ * 攻击者把自己账号的昵称/邮箱改成受害者的，登录即可把受害者的 clipboard_items
+ * 整体搬进自己账号（跨用户数据窃取）。users 表没有 email_verified / 手机验证态，
+ * 因此不存在可安全成立的强标识；需要重新启用时必须先把匹配依据换成已验证凭证。
+ * 逃生口：IDENTITY_MERGE_ENABLED=true（仅用于迁移演练，勿在生产开启）。
  *
  * @param {string} canonicalUserId - 当前认证成功的用户 ID
  * @param {object} canonicalUser - 当前用户的完整行（含 phone/email/nickname）
  * @returns {{mergedCount: number, movedClips: number}} 合并统计
  */
 async function mergeDuplicateAccounts(canonicalUserId, canonicalUser) {
+  if (process.env.IDENTITY_MERGE_ENABLED !== 'true') {
+    return { mergedCount: 0, movedClips: 0, skipped: true };
+  }
+
   const duplicates = [];
   const canonicalEmail = (canonicalUser.email || '').toLowerCase().trim();
   const canonicalNickname = (canonicalUser.nickname || '').trim();
@@ -145,7 +217,25 @@ async function mergeDuplicateAccounts(canonicalUserId, canonicalUser) {
       [canonicalUserId, dup.id]
     );
 
-    logger.info(`[IdentityMerge] Merged duplicate user ${dup.id} → ${canonicalUserId} (${totalMovedClips} clips moved)`);
+    logger.warn('[IdentityMerge] account merged (IDENTITY_MERGE_ENABLED)', {
+      canonicalUserId,
+      mergedUserId: dup.id,
+      movedClips: totalMovedClips,
+    });
+
+    await logAuditEvent({
+      userId: canonicalUserId,
+      action: 'account_merge',
+      resourceType: 'user',
+      resourceId: dup.id,
+      status: 'success',
+      details: {
+        canonicalUserId,
+        mergedUserId: dup.id,
+        movedClips: totalMovedClips,
+        matchedBy: dup.email ? 'email' : 'nickname',
+      },
+    }).catch(() => {});
   }
 
   return { mergedCount: duplicates.length, movedClips: totalMovedClips };
@@ -277,14 +367,9 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
     const cleanPhone = sanitizeString(phone);
     const cleanCode = sanitizeString(code);
 
-    const result = await pool.query(
-      `SELECT id FROM verification_codes
-       WHERE phone = $1 AND code = $2 AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [cleanPhone, cleanCode]
-    );
+    const consumedCode = await consumeVerificationCode(cleanPhone, cleanCode);
 
-    if (result.rows.length === 0) {
+    if (!consumedCode) {
       // ========= P1-4: 审计日志（登录失败 - 手机验证码错误）=========
       await logAuditEvent({
         action: AUDIT_ACTIONS.LOGIN_FAILED,
@@ -297,12 +382,6 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
       
       return res.status(401).json({ error: 'Invalid or expired verification code' });
     }
-
-    // Mark code as used
-    await pool.query(
-      `UPDATE verification_codes SET used = TRUE WHERE id = $1`,
-      [result.rows[0].id]
-    );
 
     // 清除登录失败记录
     clearLoginFailed(cleanPhone);
@@ -435,12 +514,7 @@ router.post('/verify-code', loginFailedLimiter, async (req, res) => {
 
     // 两步验证：启用则下发挑战令牌，不签发正式会话
     if (user.two_factor_enabled) {
-      const challengeToken = jwt.sign(
-        { userId: user.id, twoFactorChallenge: true },
-        config.jwt.secret,
-        { expiresIn: '5m' }
-      );
-      return res.json({ twoFactorRequired: true, challengeToken });
+      return res.json({ twoFactorRequired: true, challengeToken: issueTwoFactorChallengeToken(user.id) });
     }
 
     // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录
@@ -519,17 +593,12 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 
     // 验证验证码（phone字段存储了邮箱）
     // 先尝试明文查询
-    let result = await pool.query(
-      `SELECT id FROM verification_codes
-       WHERE phone = $1 AND code = $2 AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [cleanEmail, cleanCode]
-    );
-    
-    // 如果明文查询失败，尝试解密查询
-    if (result.rows.length === 0) {
+    let consumedCode = await consumeVerificationCode(cleanEmail, cleanCode);
+
+    // 如果明文查询失败，尝试解密查询（旧数据 phone 列为密文）
+    if (!consumedCode) {
       const allCodes = await pool.query(
-        'SELECT id, phone FROM verification_codes WHERE expires_at > NOW()'
+        'SELECT id, phone FROM verification_codes WHERE expires_at > NOW() AND used = FALSE'
       );
       
       for (const row of allCodes.rows) {
@@ -537,8 +606,9 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
           try {
             const decryptedPhone = decryptField(row.phone);
             if (decryptedPhone === cleanEmail) {
-              result = { rows: [row] };
-              break;
+              // 定位到行后仍须校验 code + used，不能只凭邮箱匹配放行
+              consumedCode = await consumeVerificationCodeById(row.id, cleanCode);
+              if (consumedCode) break;
             }
           } catch (err) {
             // 解密失败，跳过
@@ -547,7 +617,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       }
     }
 
-    if (result.rows.length === 0) {
+    if (!consumedCode) {
       // ========= P1-4: 审计日志（登录失败 - 邮箱验证码错误）=========
       await logAuditEvent({
         action: AUDIT_ACTIONS.LOGIN_FAILED,
@@ -560,12 +630,6 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
       
       return res.status(401).json({ error: 'Invalid or expired verification code' });
     }
-
-    // Mark code as used
-    await pool.query(
-      `UPDATE verification_codes SET used = TRUE WHERE id = $1`,
-      [result.rows[0].id]
-    );
 
     // ===== 查找或创建用户（身份关联：先按 email/email_hash 查已有账号）=====
     let userResult = await pool.query(
@@ -769,11 +833,11 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
     // 即使用户不存在也返回成功（防止邮箱枚举攻击）
     if (userResult.rows.length === 0) {
       logger.debug(`[Password Reset] Email ${cleanEmail} not found, returning success to prevent enumeration`);
-      return res.json({ message: 'If this account is registered, you will receive a reset code' });
+      return res.json({ message: RESET_REQUEST_ACCEPTED_MESSAGE });
     }
 
-    // 生成随机6位验证码
-    const resetCode = String(Math.floor(100000 + Math.random() * 900000));
+    // 生成随机6位验证码（crypto 安全随机，非 Math.random）
+    const resetCode = generateResetCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // 存储验证码
@@ -783,26 +847,35 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
       [cleanEmail, resetCode, expiresAt.toISOString()]
     );
 
-    // 尝试发送邮件（如果SMTP已配置则真发，否则控制台输出）
+    // 尝试发送邮件（SMTP 已配置则真发；未配置/失败一律不回显重置码，只在服务端告警）
+    let delivered = false;
     try {
       const emailResult = await sendVerificationCodeEmail(cleanEmail, resetCode, 'reset');
-      if (emailResult.fallback) {
-        // SMTP未配置，开发模式：返回验证码给前端
-        logger.info(`[MVP] SMTP未配置，密码重置码: ${resetCode}`);
-        return res.json({
-          message: 'Reset code generated (SMTP not configured)',
-          code: resetCode,       // 仅在非生产环境返回
-          expiresIn: 600         // 10分钟有效期
+      delivered = Boolean(emailResult?.success) && !emailResult.fallback;
+      if (!delivered) {
+        logger.error('[Password Reset] SMTP 未配置或发送失败，重置邮件未送达——密码重置功能当前不可用，请配置 email_channels/smtp_*', {
+          email: cleanEmail,
+          fallback: Boolean(emailResult?.fallback),
+          reason: emailResult?.error || 'smtp_not_configured',
         });
       }
-      logger.info(`[Password Reset] Email sent to ${cleanEmail}`);
     } catch (emailErr) {
-      // 邮件发送失败但验证码已存储，允许用控制台看到的码重置
-      logger.error(`[Password Reset] Email send failed but code stored: ${emailErr.message}`);
-      logger.info(`[Fallback] Password reset code for ${cleanEmail}: ${resetCode}`);
+      logger.error('[Password Reset] 邮件发送异常，重置邮件未送达——密码重置功能当前不可用', {
+        email: cleanEmail,
+        error: emailErr.message,
+      });
     }
 
-    res.json({ message: 'If this account is registered, you will receive a reset code by email' });
+    if (delivered) {
+      logger.info(`[Password Reset] Email sent to ${cleanEmail}`);
+    } else if (canExposeResetCode()) {
+      // 双重条件（非生产 + AUTH_EXPOSE_RESET_CODE=true）才回显，防止生产误开逃生口
+      logger.warn(`[Password Reset] dev escape hatch enabled, reset code for ${cleanEmail}: ${resetCode}`);
+      return res.json({ message: RESET_REQUEST_ACCEPTED_MESSAGE, code: resetCode, expiresIn: 600 });
+    }
+
+    // 账号是否存在、邮件是否送达，响应完全一致（防枚举 + 不泄漏重置码）
+    res.json({ message: RESET_REQUEST_ACCEPTED_MESSAGE });
   } catch (err) {
     logger.error('Forgot password error:', { error: err.message });
     res.status(500).json({ error: 'Failed to process forgot password request' });
@@ -810,7 +883,7 @@ router.post('/forgot-password', sendCodeLimiter, async (req, res) => {
 });
 
 // 重置密码（支持邮箱和手机号）
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', authCodeIpLimiter, authCodeAccountLimiter, async (req, res) => {
   try {
     const { email, phone, code, newPassword } = req.body;
 
@@ -842,23 +915,12 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Email or phone number is required' });
     }
 
-    // 验证重置码
-    const result = await pool.query(
-      `SELECT id FROM verification_codes
-       WHERE phone = $1 AND code = $2 AND expires_at > NOW()
-       ORDER BY created_at DESC LIMIT 1`,
-      [identifier, cleanCode]
-    );
+    // 验证并原子消费重置码（used=FALSE + 未过期，条件 UPDATE 防并发重放）
+    const consumedCode = await consumeVerificationCode(identifier, cleanCode);
 
-    if (result.rows.length === 0) {
+    if (!consumedCode) {
       return res.status(401).json({ error: 'Invalid or expired reset code' });
     }
-
-    // 标记重置码为已使用
-    await pool.query(
-      `UPDATE verification_codes SET used = TRUE WHERE id = $1`,
-      [result.rows[0].id]
-    );
 
     // 哈希新密码
     const passwordHash = await bcrypt.hash(newPassword, 12);
@@ -1041,7 +1103,8 @@ router.post('/register', sendCodeLimiter, requireFlag('enable_signup', SIGNUP_DI
 });
 
 // ===== 设置密码（用于通过 verify-code 登录的新用户，需验证码证明所有权）=====
-router.post('/set-password', async (req, res) => {
+// 未认证即可改密码，与 /reset-password 同口径限流，防验证码爆破
+router.post('/set-password', authCodeIpLimiter, authCodeAccountLimiter, async (req, res) => {
   try {
     const { phone, code, password } = req.body;
 
@@ -1059,18 +1122,11 @@ router.post('/set-password', async (req, res) => {
     const cleanPhone = sanitizeString(phone);
     const cleanCode = sanitizeString(code);
 
-    // === 验证验证码（证明手机号所有权）===
-    const codeResult = await pool.query(
-      `SELECT id FROM verification_codes
-       WHERE phone = $1 AND code = $2 AND expires_at > NOW() AND used = FALSE
-       ORDER BY created_at DESC LIMIT 1`,
-      [cleanPhone, cleanCode]
-    );
-    if (codeResult.rows.length === 0) {
+    // === 验证验证码（证明手机号所有权）：原子消费，一次性使用 ===
+    const consumedCode = await consumeVerificationCode(cleanPhone, cleanCode);
+    if (!consumedCode) {
       return res.status(401).json({ error: 'Invalid or expired verification code. Please request a new one.' });
     }
-    // 标记验证码已用（一次性使用）
-    await pool.query('UPDATE verification_codes SET used = TRUE WHERE id = $1', [codeResult.rows[0].id]);
 
     // 查找用户
     let userResult = await pool.query(
@@ -1171,7 +1227,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       // 昵称登录：按 nickname → email → phone 依次查找
       // 密码登录流程：优先选择已设置密码的用户（同一昵称可能有多个用户）
       const nickResult = await pool.query(
-        `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE nickname ILIKE $1`,
+        `SELECT id, phone, email, nickname, avatar_url, password_hash, two_factor_enabled FROM users WHERE nickname ILIKE $1`,
         [cleanIdentifier]
       );
       if (nickResult.rows.length > 0) {
@@ -1181,7 +1237,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       if (!user) {
         // fallback: 尝试 email（用户可能把邮箱当昵称填了）
         const emailFallback = await pool.query(
-          `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE email = $1 OR email_hash = $2`,
+          `SELECT id, phone, email, nickname, avatar_url, password_hash, two_factor_enabled FROM users WHERE email = $1 OR email_hash = $2`,
           [cleanIdentifier, computeFieldHash(cleanIdentifier)]
         );
         if (emailFallback.rows.length > 0) {
@@ -1191,7 +1247,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
       if (!user) {
         // final fallback: 尝试 phone
         const phoneFallback = await pool.query(
-          `SELECT id, phone, email, nickname, avatar_url, password_hash FROM users WHERE phone = $1 OR phone_hash = $2`,
+          `SELECT id, phone, email, nickname, avatar_url, password_hash, two_factor_enabled FROM users WHERE phone = $1 OR phone_hash = $2`,
           [cleanIdentifier, computeFieldHash(cleanIdentifier)]
         );
         if (phoneFallback.rows.length > 0) {
@@ -1221,12 +1277,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
 
     // 两步验证：启用则下发挑战令牌，不签发正式会话
     if (user.two_factor_enabled) {
-      const challengeToken = jwt.sign(
-        { userId: user.id, twoFactorChallenge: true },
-        config.jwt.secret,
-        { expiresIn: '5m' }
-      );
-      return res.json({ twoFactorRequired: true, challengeToken });
+      return res.json({ twoFactorRequired: true, challengeToken: issueTwoFactorChallengeToken(user.id) });
     }
 
     // 身份合并：检查并合并同一人的重复账号（同一 email/nickname 的其他 user 行）
@@ -1246,12 +1297,7 @@ router.post('/login', loginFailedLimiter, async (req, res) => {
 
     // 两步验证：启用则下发挑战令牌，不签发正式会话
     if (user.two_factor_enabled) {
-      const challengeToken = jwt.sign(
-        { userId: user.id, twoFactorChallenge: true },
-        config.jwt.secret,
-        { expiresIn: '5m' }
-      );
-      return res.json({ twoFactorRequired: true, challengeToken });
+      return res.json({ twoFactorRequired: true, challengeToken: issueTwoFactorChallengeToken(user.id) });
     }
 
     // AN-12：强制管理员两步验证（force_2fa_for_admin）——管理角色未绑定 2FA 时拦截登录

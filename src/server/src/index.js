@@ -74,6 +74,10 @@ import { PERM_CATALOG } from './routes/admin/roles.js';
 const app = express();
 const server = createServer(app);
 
+// 生产为 nginx 单跳反代（X-Forwarded-For 由 nginx 追加）：只信任最近一跳，
+// 使 req.ip 为真实客户端 IP 且不可被伪造的 XFF 头部覆盖（限流按 IP 分桶依赖此设置）
+app.set('trust proxy', 1);
+
 // ============================================
 // Security Headers
 // ============================================

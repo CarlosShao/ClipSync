@@ -81,26 +81,78 @@ if (process.env.ENCRYPTION_ALGORITHM) {
 // Final config: envConfig (base) ← envOverrides (highest priority)
 const config = Object.keys(envOverrides).length > 0 ? deepMerge(envConfig, envOverrides) : envConfig;
 
-// Validate critical production settings
+// Known-insecure placeholder secrets that must never run in production. Covers the
+// dev/test config defaults AND the docker-compose dev defaults (`${JWT_SECRET:-...}`),
+// all of which are public in the repo. Values are compared, never logged.
+const INSECURE_JWT_SECRETS = [
+  'clipsync-dev-secret',                     // src/config/development.js
+  'clipsync-test-secret',                    // src/config/test.js
+  'dev_jwt_secret_change_me_in_production',  // docker-compose.dev.yml + .env.test
+];
+const INSECURE_ENCRYPTION_KEYS = [
+  'default_master_key_32b',                      // src/utils/encryption.js fallback
+  'dev_encryption_key_32chars_min!!',            // docker-compose.dev.yml
+  'dev_encryption_key_32_bytes_long_1234567890',  // .env.test
+];
+
+// Collect security-critical config problems. Messages name the variable and how to fix
+// it, but never include any secret value. Non-production only surfaces outright-missing
+// credentials (dev/test configs hardcode these, so it stays silent in practice).
+function collectConfigIssues(isProduction) {
+  const issues = [];
+
+  const jwtSecret = config.jwt && config.jwt.secret;
+  if (!jwtSecret) {
+    issues.push('JWT_SECRET is required — set a unique signing secret of at least 32 characters');
+  } else if (isProduction && INSECURE_JWT_SECRETS.includes(jwtSecret)) {
+    issues.push('JWT_SECRET is a known dev/default value — set a unique production secret (>=32 chars)');
+  }
+
+  if (!config.db || !config.db.password) {
+    issues.push('DB_PASSWORD is required — set the database password');
+  }
+
+  if (isProduction) {
+    if (!config.redis || !config.redis.password) {
+      issues.push('REDIS_PASSWORD is required — set the production Redis password');
+    }
+
+    const encryptionKey = process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_MASTER_KEY;
+    if (!encryptionKey) {
+      issues.push('ENCRYPTION_KEY is required — set a unique key of at least 32 characters');
+    } else if (INSECURE_ENCRYPTION_KEYS.includes(encryptionKey)) {
+      issues.push('ENCRYPTION_KEY is a known dev/default value — set a unique production key (>=32 chars)');
+    } else if (encryptionKey.length < 32) {
+      issues.push('ENCRYPTION_KEY must be at least 32 characters in production');
+    }
+
+    if (!config.cors || !config.cors.origins || config.cors.origins === '*') {
+      issues.push('CORS_ORIGINS must be an explicit comma-separated whitelist in production (not empty, not "*")');
+    }
+  }
+
+  return issues;
+}
+
+// Production fails fast on any security-critical gap; other environments only warn so
+// local development and the test suite are never blocked.
 if (nodeEnv === 'production') {
-  const warnings = [];
-  if (!config.jwt.secret || config.jwt.secret === 'clipsync-dev-secret') {
-    warnings.push('JWT_SECRET must be set in production (not using dev default)');
+  const issues = collectConfigIssues(true);
+  if (issues.length > 0) {
+    /* eslint-disable no-console */
+    console.error('❌ Production configuration validation failed — refusing to start:');
+    issues.forEach(i => console.error(`  - ${i}`));
+    console.error('Set the above via environment variables / .env.production, then restart the service.');
+    /* eslint-enable no-console */
+    throw new Error(`Production configuration invalid: ${issues.length} security-critical issue(s); refusing to start`);
   }
-  if (!config.db.password) {
-    warnings.push('DB_PASSWORD must be set in production');
-  }
-  if (!config.redis || !config.redis.password) {
-    warnings.push('REDIS_PASSWORD should be set in production');
-  }
-  if (!config.cors || !config.cors.origins || config.cors.origins === '*') {
-    warnings.push('CORS_ORIGINS must be explicitly whitelisted in production');
-  }
-  if (warnings.length > 0) {
-    // eslint-disable-next-line no-console
-    console.warn('⚠️  Production configuration warnings:');
-    // eslint-disable-next-line no-console
-    warnings.forEach(w => console.warn(`  - ${w}`));
+} else {
+  const issues = collectConfigIssues(false);
+  if (issues.length > 0) {
+    /* eslint-disable no-console */
+    console.warn(`⚠️  Configuration warnings (${nodeEnv}):`);
+    issues.forEach(i => console.warn(`  - ${i}`));
+    /* eslint-enable no-console */
   }
 }
 

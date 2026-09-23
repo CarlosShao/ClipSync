@@ -95,6 +95,7 @@ const migrations = [
     user_agent TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     revoked_at TIMESTAMP WITH TIME ZONE
   )`,
 
@@ -240,9 +241,72 @@ async function migrate() {
       const files = fs.readdirSync(migrationsDir)
         .filter(f => f.endsWith('.sql'))
         .sort(); // 按文件名排序（004, 005, 006...）
-      
+
+      // 护栏：数字前缀撞号只告警不 throw——幂等键已是完整文件名，撞号不再互相遮蔽，
+      // throw 会让服务起不来。
+      const byPrefix = new Map();
+      for (const f of files) {
+        const p = f.split('_')[0];
+        if (!byPrefix.has(p)) byPrefix.set(p, []);
+        byPrefix.get(p).push(f);
+      }
+      for (const [prefix, group] of byPrefix) {
+        if (group.length > 1) {
+          logger.error(
+            `Duplicate migration version prefix "${prefix}": ${group.join(', ')}. ` +
+            `Both files will run; rename one to a free number to keep ordering explicit.`
+          );
+        }
+      }
+
+      // 一次性回填：幂等键从「三位数字前缀」改为「完整文件名」后，历史库里的旧式数字记录
+      // 会让全部已执行迁移被误判为未执行而重跑（部分文件不保证幂等）。
+      const legacy = await client.query(
+        `SELECT version FROM schema_migrations WHERE version NOT LIKE '%.sql' ORDER BY version`
+      );
+      let backfilled = 0;
+      for (const row of legacy.rows) {
+        const oldVersion = row.version;
+        // 兼容两种历史自登记写法：数字前缀（'012'）与去掉 .sql 的文件名（012_schema_completion.sql
+        // 自登记成 '012_schema_completion'）。filter 天然去重，同一文件不会被计两次。
+        const matches = files.filter(
+          f => f.split('_')[0] === oldVersion || f === `${oldVersion}.sql`
+        );
+        if (matches.length === 1) {
+          await client.query(
+            'INSERT INTO schema_migrations (version, applied_at) VALUES ($1, NOW()) ON CONFLICT DO NOTHING',
+            [matches[0]]
+          );
+          await client.query('DELETE FROM schema_migrations WHERE version = $1', [oldVersion]);
+          backfilled++;
+        } else if (matches.length > 1) {
+          // 撞号文件一个都不回填：它们的 SQL 均为 IF NOT EXISTS，重跑安全，
+          // 借此治愈「老库因撞号被跳过而缺列」的问题。
+          const pending = [];
+          for (const m of matches) {
+            const r = await client.query('SELECT 1 FROM schema_migrations WHERE version = $1', [m]);
+            if (r.rows.length === 0) pending.push(m);
+          }
+          if (pending.length > 0) {
+            logger.warn(
+              `Legacy migration record "${oldVersion}" maps to ${matches.length} files; not backfilled. ` +
+              `These will run to heal columns skipped by the old numeric key: ${pending.join(', ')}`
+            );
+          } else {
+            // 撞号文件均已按文件名登记，旧数字记录不再参与任何判断，清掉避免每次启动误告警
+            await client.query('DELETE FROM schema_migrations WHERE version = $1', [oldVersion]);
+            logger.info(`Dropped stale legacy record "${oldVersion}"; all ${matches.length} colliding files are registered by filename.`);
+          }
+        } else {
+          logger.warn(`Legacy migration record "${oldVersion}" matches no file in ${migrationsDir}; left untouched.`);
+        }
+      }
+      if (backfilled > 0) {
+        logger.info(`Backfilled ${backfilled} legacy numeric migration record(s) to filename keys.`);
+      }
+
       for (const file of files) {
-        const version = file.split('_')[0]; // 提取版本号（如 "004"）
+        const version = file; // 幂等键 = 完整文件名（数字前缀会撞号，如两个 031 互相遮蔽）
         
         // 检查是否已执行
         const result = await client.query(

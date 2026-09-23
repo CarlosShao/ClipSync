@@ -3,6 +3,14 @@ import config from '../config.js';
 import { isJtiBlacklisted } from '../utils/redis-client.js';
 import { pool } from '../db/pool.js';
 
+/** 2FA 挑战令牌类型声明（登录时密码已过、动态码未过） */
+export const CHALLENGE_TOKEN_TYPE = '2fa_challenge';
+
+// twoFactorChallenge 为旧版声明，一并识别，避免存量令牌绕过
+function isChallengeToken(decoded) {
+  return decoded?.tokenType === CHALLENGE_TOKEN_TYPE || decoded?.twoFactorChallenge === true;
+}
+
 export async function authenticateToken(req, res, next) {
   // 测试环境跳过token验证，使用测试用户
   if (process.env.NODE_ENV === 'test') {
@@ -28,6 +36,11 @@ export async function authenticateToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
+
+    // 挑战令牌不是登录态：只允许 require2faChallenge 保护的「完成 2FA」端点消费
+    if (isChallengeToken(decoded)) {
+      return res.status(401).json({ error: 'Two-factor verification required' });
+    }
 
     // ✅ 会话吊销 / 注销后立即失效：检查 JWT 黑名单（bl:{jti}）
     // Redis 不可用时降级为“未吊销”，由下方 DB 层 user_sessions.is_active 兜底（H2 修复）
@@ -106,6 +119,10 @@ export function optionalAuth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
+    // 挑战令牌等同未认证（optionalAuth 降级为匿名，不注入身份）
+    if (isChallengeToken(decoded)) {
+      return next();
+    }
     req.user = decoded;
     req.userId = decoded.userId;
     // RBAC（#210）：optionalAuth 不查库，给默认普通角色（下游无 roleKey 时等同）
@@ -115,5 +132,39 @@ export function optionalAuth(req, res, next) {
   } catch {
     // Token invalid, continue without auth
   }
+  next();
+}
+
+/**
+ * 只接受 2FA 挑战令牌（完成本次登录），拒绝正式 access token。
+ * 用于「消费挑战」的极小端点集合：POST /api/auth/2fa/verify-login。
+ * 通过后仅挂 req.twoFactorChallenge，不设置 req.user / req.userId——
+ * 避免下游把它误当登录态。
+ */
+export function require2faChallenge(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const bearer = authHeader && authHeader.split(' ')[1];
+  // verify-login 现由请求体传 challengeToken，两种传法都接受
+  const raw = bearer || req.body?.challengeToken;
+
+  if (!raw) {
+    return res.status(401).json({ error: '2FA challenge token required' });
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(raw, config.jwt.secret);
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: '2FA challenge expired' });
+    }
+    return res.status(401).json({ error: 'Invalid 2FA challenge token' });
+  }
+
+  if (!isChallengeToken(decoded)) {
+    return res.status(401).json({ error: 'Not a 2FA challenge token' });
+  }
+
+  req.twoFactorChallenge = decoded;
   next();
 }

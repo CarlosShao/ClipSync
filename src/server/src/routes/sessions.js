@@ -103,7 +103,11 @@ router.delete('/:sessionId', authenticateToken, async (req, res) => {
 router.delete('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { currentSessionId } = req.body;
+    // 当前会话解析与 GET / 同口径：body → x-session-id → JWT sessionId。
+    // 三者都拿不到时必须吊销全部（含当前会话）：`id != NULL` 在 SQL 里恒为 NULL，
+    // 会让本接口返回 200「Revoked 0 sessions」而实际一个会话都没踢（移动端 revokeAllSessions 不发 body）。
+    const currentSessionId =
+      req.body?.currentSessionId || req.headers['x-session-id'] || req.user?.sessionId || null;
 
     // 撤销所有会话（除了当前会话）
     const result = await pool.query(`
@@ -111,9 +115,9 @@ router.delete('/', authenticateToken, async (req, res) => {
       SET is_active = false, updated_at = NOW(), revoked_at = NOW()
       WHERE user_id = $1
         AND is_active = true
-        AND id != $2
+        AND ($2::uuid IS NULL OR id != $2)
       RETURNING id
-    `, [userId, currentSessionId || null]);
+    `, [userId, currentSessionId]);
 
     // 将每个被吊销会话的 jti 写入黑名单，立即使其 JWT 失效
     const ttl = parseDurationToSeconds(config.jwt.expiresIn);

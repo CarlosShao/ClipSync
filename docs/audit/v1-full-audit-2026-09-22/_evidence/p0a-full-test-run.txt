@@ -1,0 +1,1140 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90mD:/work/java/AI-workspace/ClipSync/src/server[39m
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试
+[22m[39m{"timestamp":"2026-09-22T15:24:12.981Z","level":"error","message":"Unhandled Rejection","reason":"Error: Socket already opened"}
+{"timestamp":"2026-09-22T15:24:12.981Z","level":"error","message":"Unhandled Rejection","reason":"Error: Socket already opened"}
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试
+[22m[39m{"timestamp":"2026-09-22T15:24:13.000Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试
+[22m[39m{"timestamp":"2026-09-22T15:24:13.048Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m1. 健康检查接口性能[2m > [22m[2mGET /api/health 应在100ms内响应（P95）
+[22m[39m{"timestamp":"2026-09-22T15:24:13.120Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m1. 健康检查接口性能[2m > [22m[2mGET /api/health 应在100ms内响应（P95）
+[22m[39m    avg=5ms p50=4ms p95=7ms p99=11ms
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m2. 认证接口性能[2m > [22m[2mPOST /api/auth/verify-code 应在200ms内响应（P95）
+[22m[39m{"timestamp":"2026-09-22T15:24:14.084Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+{"timestamp":"2026-09-22T15:24:14.084Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m2. 认证接口性能[2m > [22m[2mPOST /api/auth/verify-code 应在200ms内响应（P95）
+[22m[39m    avg=10ms p50=9ms p95=12ms
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m3. 剪贴板接口性能[2m > [22m[2mPOST /api/clipboard 应在500ms内响应（P95）
+[22m[39m{"timestamp":"2026-09-22T15:24:14.361Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m3. 剪贴板接口性能[2m > [22m[2mPOST /api/clipboard 应在500ms内响应（P95）
+[22m[39m    avg=6ms p50=6ms p95=7ms
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m3. 剪贴板接口性能[2m > [22m[2mGET /api/clipboard 应在200ms内响应（P95）
+[22m[39m{"timestamp":"2026-09-22T15:24:14.663Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m3. 剪贴板接口性能[2m > [22m[2mGET /api/clipboard 应在200ms内响应（P95）
+[22m[39m    avg=9ms p50=9ms p95=15ms
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m4. 同步接口性能[2m > [22m[2mPOST /api/sync/push 应在300ms内响应（P95）
+[22m[39m{"timestamp":"2026-09-22T15:24:15.131Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m4. 同步接口性能[2m > [22m[2mPOST /api/sync/push 应在300ms内响应（P95）
+[22m[39m    avg=6ms p50=6ms p95=7ms
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m5. 并发测试[2m > [22m[2m应该支持50个并发读请求
+[22m[39m{"timestamp":"2026-09-22T15:24:15.501Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m5. 并发测试[2m > [22m[2m应该支持50个并发读请求
+[22m[39m    50并发读: 总耗时=148ms, 全部成功=true
+
+[90mstderr[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m6. 内存稳定性[2m > [22m[2m连续500次请求后内存增长应<10MB
+[22m[39m{"timestamp":"2026-09-22T15:24:15.567Z","level":"error","message":"Unhandled Rejection","reason":"TypeError: (intermediate value) is not iterable"}
+
+[90mstdout[2m | tests/performance.test.js[2m > [22m[2m性能测试[2m > [22m[2m6. 内存稳定性[2m > [22m[2m连续500次请求后内存增长应<10MB
+[22m[39m    内存增长: 11.74MB (前=133MB, 后=145MB)
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/performance.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/performance.test.js [2m([22m[2m8 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 6562[2mms[22m[39m
+       [33m[2m✓[22m[39m GET /api/health 应在100ms内响应（P95） [33m 957[2mms[22m[39m
+       [33m[2m✓[22m[39m POST /api/clipboard 应在500ms内响应（P95） [33m 304[2mms[22m[39m
+       [33m[2m✓[22m[39m GET /api/clipboard 应在200ms内响应（P95） [33m 466[2mms[22m[39m
+       [33m[2m✓[22m[39m 连续500次请求后内存增长应<10MB [33m 1855[2mms[22m[39m
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/refund-request.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:19.393Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstderr[2m | tests/refund-request.test.js[2m > [22m[2m审核通过才真打款[2m > [22m[2m渠道失败 → 申请退回 pending（管理员可重试），订单保持 paid、权益不恢复
+[22m[39m{"timestamp":"2026-09-22T15:24:20.821Z","level":"error","message":"[refund] alipay refund call failed","orderNo":"ORDRQ1790090660779wcfk","actorUserId":"00000000-0000-0000-0000-0000000000f2","code":"40004","subCode":"REFUND_AMOUNT_EXCEED","error":"alipay error 40004: Business Failed"}
+
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/refund-request.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/refund-request.test.js [2m([22m[2m18 tests[22m[2m)[22m[33m 3416[2mms[22m[39m
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/auth-s0-security.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:23.094Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstderr[2m | tests/auth-s0-security.test.js[2m > [22m[2mS0-1 找回密码不泄漏重置码[2m > [22m[2mSMTP 未配置时返回通用文案，响应体不含 code
+[22m[39m{"timestamp":"2026-09-22T15:24:23.269Z","level":"error","message":"[Password Reset] SMTP 未配置或发送失败，重置邮件未送达——密码重置功能当前不可用，请配置 email_channels/smtp_*","email":"s0fp162211@e.co","fallback":true,"reason":"smtp_not_configured"}
+
+[90mstderr[2m | tests/auth-s0-security.test.js[2m > [22m[2mS0-1 找回密码不泄漏重置码[2m > [22m[2m逃生口需双重条件：非生产 + AUTH_EXPOSE_RESET_CODE=true 才回显 6 位码
+[22m[39m{"timestamp":"2026-09-22T15:24:23.299Z","level":"error","message":"[Password Reset] SMTP 未配置或发送失败，重置邮件未送达——密码重置功能当前不可用，请配置 email_channels/smtp_*","email":"s0fp162211@e.co","fallback":true,"reason":"smtp_not_configured"}
+
+[90mstderr[2m | tests/auth-s0-security.test.js[2m > [22m[2mS0-1 找回密码不泄漏重置码[2m > [22m[2m逃生口需双重条件：非生产 + AUTH_EXPOSE_RESET_CODE=true 才回显 6 位码
+[22m[39m{"timestamp":"2026-09-22T15:24:23.312Z","level":"error","message":"[Password Reset] SMTP 未配置或发送失败，重置邮件未送达——密码重置功能当前不可用，请配置 email_channels/smtp_*","email":"s0fp162211@e.co","fallback":true,"reason":"smtp_not_configured"}
+
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/auth-s0-security.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/auth-s0-security.test.js [2m([22m[2m12 tests[22m[2m)[22m[33m 2962[2mms[22m[39m
+     [33m[2m✓[22m[39m 同一重置码只能用一次，第二次 401 [33m 1102[2mms[22m[39m
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/payment-refund.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:26.958Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstderr[2m | tests/payment-refund.test.js[2m > [22m[2m权限与参数守卫[2m > [22m[2m支付宝凭据未配置 → 503 ALIPAY_NOT_CONFIGURED（不静默假退款）
+[22m[39m{"timestamp":"2026-09-22T15:24:27.391Z","level":"error","message":"[refund] requested but alipay channel not configured","orderNo":"ORDRF1790090667376zv82"}
+
+[90mstderr[2m | tests/payment-refund.test.js[2m > [22m[2m退款失败：本地状态一律不动[2m > [22m[2m渠道业务失败（code≠10000）→ 502 REFUND_CHANNEL_FAILED，订单仍 paid、订阅仍 active
+[22m[39m{"timestamp":"2026-09-22T15:24:27.703Z","level":"error","message":"[refund] alipay refund call failed","orderNo":"ORDRF1790090667686pbfe","actorUserId":"00000000-0000-0000-0000-000000000001","code":"40004","subCode":"REFUND_AMOUNT_EXCEED","error":"alipay error 40004: 退款金额超过可退金额"}
+
+[90mstderr[2m | tests/payment-refund.test.js[2m > [22m[2m退款失败：本地状态一律不动[2m > [22m[2mcode=10000 但 fund_status='C'（退款失败）→ 502 REFUND_NOT_CONFIRMED
+[22m[39m{"timestamp":"2026-09-22T15:24:27.756Z","level":"error","message":"[refund] alipay refund not confirmed","orderNo":"ORDRF1790090667736t6ks","fundStatus":"C","actorUserId":"00000000-0000-0000-0000-000000000001"}
+
+[90mstderr[2m | tests/payment-refund.test.js[2m > [22m[2m退款失败：本地状态一律不动[2m > [22m[2m响应报文被篡改（签名对不上）→ 502，订单仍 paid（S3 口径延伸到退款）
+[22m[39m{"timestamp":"2026-09-22T15:24:27.806Z","level":"error","message":"[refund] alipay refund call failed","orderNo":"ORDRF1790090667789ybz5","actorUserId":"00000000-0000-0000-0000-000000000001","error":"alipay response signature invalid for alipay.trade.refund"}
+
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/payment-refund.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/payment-refund.test.js [2m([22m[2m20 tests[22m[2m)[22m[33m 2829[2mms[22m[39m
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/subscription-upgrade.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:30.242Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/subscription-upgrade.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/subscription-upgrade.test.js [2m([22m[2m12 tests[22m[2m)[22m[33m 1980[2mms[22m[39m
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/invoice-download.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:32.666Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/invoice-download.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/invoice-download.test.js [2m([22m[2m14 tests[22m[2m)[22m[33m 1944[2mms[22m[39m
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/feature-flags.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:35.086Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/feature-flags.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/feature-flags.test.js [2m([22m[2m6 tests[22m[2m)[22m[33m 1795[2mms[22m[39m
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/invoices-read.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:37.402Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/invoices-read.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/invoices-read.test.js [2m([22m[2m7 tests[22m[2m)[22m[33m 1849[2mms[22m[39m
+[90mstdout[2m | tests/version.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/version.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/version.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/version.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/version.test.js[2m > [22m[2m版本管理 API
+[22m[39m{"timestamp":"2026-09-22T15:24:39.630Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/version.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/version.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/version.test.js [2m([22m[2m9 tests[22m[2m | [22m[33m2 skipped[39m[2m)[22m[33m 1734[2mms[22m[39m
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/subscription-flag-gate.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:41.870Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/subscription-flag-gate.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/subscription-flag-gate.test.js [2m([22m[2m7 tests[22m[2m)[22m[33m 1582[2mms[22m[39m
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/expiry.test.js[2m > [22m[2m用户侧自动过期集成测试 (exp-api #187)
+[22m[39m{"timestamp":"2026-09-22T15:24:43.828Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/expiry.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/expiry.test.js [2m([22m[2m3 tests[22m[2m)[22m[33m 1536[2mms[22m[39m
+[90mstdout[2m | tests/archive.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/archive.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/archive.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/archive.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/archive.test.js[2m > [22m[2m归档功能集成测试 (arc-api #179)
+[22m[39m{"timestamp":"2026-09-22T15:24:45.965Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/archive.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/archive.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/archive.test.js [2m([22m[2m3 tests[22m[2m)[22m[33m 1773[2mms[22m[39m
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/subscriptions.test.js[2m > [22m[2mSubscription API
+[22m[39m{"timestamp":"2026-09-22T15:24:48.242Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/subscriptions.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/subscriptions.test.js [2m([22m[2m4 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 1679[2mms[22m[39m
+[90mstdout[2m | tests/security.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+[90mstdout[2m | tests/security.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/security.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/security.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/security.test.js[2m > [22m[2m安全测试[2m > [22m[2mSQL注入测试[2m > [22m[2m应该防止SQL注入攻击在登录接口
+[22m[39m{"timestamp":"2026-09-22T15:24:50.092Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/security.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/security.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/security.test.js [2m([22m[2m10 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m[33m 1348[2mms[22m[39m
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/refund-service.test.js[2m > [22m[2mrefundPaidOrder · 服务真库行为[2m > [22m[2m渠道业务失败（code≠10000）→ 502 REFUND_CHANNEL_FAILED，订单仍 paid + 写 failure 审计
+[22m[39m{"timestamp":"2026-09-22T15:24:51.959Z","level":"error","message":"[refund] alipay refund call failed","orderNo":"ORDSV1790090691949v35u","actorUserId":"00000000-0000-0000-0000-0000000000a1","code":"40004","subCode":"REFUND_AMOUNT_EXCEED","error":"alipay error 40004: 退款金额超过可退金额"}
+
+[90mstderr[2m | tests/refund-service.test.js[2m > [22m[2mrefundPaidOrder · 服务真库行为[2m > [22m[2mfund_status='C' → 502 REFUND_NOT_CONFIRMED，订单仍 paid
+[22m[39m{"timestamp":"2026-09-22T15:24:52.005Z","level":"error","message":"[refund] alipay refund not confirmed","orderNo":"ORDSV1790090691995huf0","fundStatus":"C","actorUserId":"00000000-0000-0000-0000-0000000000a1"}
+
+[90mstderr[2m | tests/refund-service.test.js[2m > [22m[2mrefundPaidOrder · 服务真库行为[2m > [22m[2m渠道未配置凭据 → 503 ALIPAY_NOT_CONFIGURED（不静默假退款）
+[22m[39m{"timestamp":"2026-09-22T15:24:52.046Z","level":"error","message":"[refund] requested but alipay channel not configured","orderNo":"ORDSV1790090692039whrs"}
+
+[90mstderr[2m | tests/refund-service.test.js[2m > [22m[2mPOST /api/admin/orders/:orderNo/refund —— 真库端到端（A1 修复后必须动真钱）[2m > [22m[2m渠道退款失败 → 502，管理台不得显示「已退款」
+[22m[39m{"timestamp":"2026-09-22T15:24:52.647Z","level":"error","message":"[refund] alipay refund call failed","orderNo":"ORDSV1790090692627o8nq","actorUserId":"00000000-0000-0000-0000-0000000000a1","code":"40004","subCode":"REFUND_AMOUNT_EXCEED","error":"alipay error 40004: Business Failed"}
+
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/refund-service.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/refund-service.test.js [2m([22m[2m18 tests[22m[2m)[22m[33m 1545[2mms[22m[39m
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付回调路由可达性[2m > [22m[2mPOST /api/webhooks/alipay 不是 404（路由已注册）
+[22m[39m{"timestamp":"2026-09-22T15:24:54.566Z","level":"error","message":"[alipay-notify] ALIPAY_PUBLIC_KEY not configured, rejecting notify","outTradeNo":"ORD_TEST"}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付回调路由可达性[2m > [22m[2mPOST /api/webhooks/alipay 不要求登录（渠道服务器没有 JWT）
+[22m[39m{"timestamp":"2026-09-22T15:24:54.584Z","level":"error","message":"[alipay-notify] ALIPAY_PUBLIC_KEY not configured, rejecting notify","outTradeNo":"ORD_TEST"}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付回调路由可达性[2m > [22m[2m未验签的支付宝回调必须被拒（不得凭未验签报文开通订阅）
+[22m[39m{"timestamp":"2026-09-22T15:24:54.593Z","level":"error","message":"[alipay-notify] ALIPAY_PUBLIC_KEY not configured, rejecting notify","outTradeNo":"ORD_FORGED"}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付回调路由可达性[2m > [22m[2mPOST /api/webhooks/stripe 不是 404 且不要求登录
+[22m[39m{"timestamp":"2026-09-22T15:24:54.600Z","level":"error","message":"[stripe-webhook] STRIPE_WEBHOOK_SECRET not configured"}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付回调路由可达性[2m > [22m[2m回调路径不经过 CSRF（表单 POST 不得被 403 CSRF_INVALID 拦下）
+[22m[39m{"timestamp":"2026-09-22T15:24:54.609Z","level":"error","message":"[alipay-notify] ALIPAY_PUBLIC_KEY not configured, rejecting notify","outTradeNo":"ORD_TEST"}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付安全 - 生产环境不得白送订阅[2m > [22m[2mcreate-order 拒绝未知支付渠道
+[22m[39m{"timestamp":"2026-09-22T15:24:54.654Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstderr[2m | tests/payment-webhooks.test.js[2m > [22m[2m支付安全 - 生产环境不得白送订阅[2m > [22m[2mcreate-order 未带凭据时不得成功
+[22m[39m{"timestamp":"2026-09-22T15:24:54.722Z","level":"error","message":"[payments] alipay channel requested but not configured"}
+
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/payment-webhooks.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/payment-webhooks.test.js [2m([22m[2m7 tests[22m[2m)[22m[33m 1364[2mms[22m[39m
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/ai-agent-ops.test.js
+[22m[39m{"timestamp":"2026-09-22T15:24:56.443Z","level":"error","message":"Duplicate migration version prefix \"031\": 031_ai_provider_context_window.sql, 031_image_hash.sql. Both files will run; rename one to a free number to keep ordering explicit."}
+
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/ai-agent-ops.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/ai-agent-ops.test.js [2m([22m[2m18 tests[22m[2m)[22m[33m 1487[2mms[22m[39m
+[90mstdout[2m | tests/sms.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/sms.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/sms.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/sms.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/sms.test.js[2m > [22m[2mA4 短信：provider=aliyun 且配置完整时走真实 SDK 路径[2m > [22m[2m配置完整 → 不再返回 not_configured（会尝试调用网关）
+[22m[39m{"timestamp":"2026-09-22T15:24:58.079Z","level":"error","message":"Decryption failed:"}
+
+[90mstderr[2m | tests/sms.test.js[2m > [22m[2mA4 短信：provider=aliyun 且配置完整时走真实 SDK 路径[2m > [22m[2m配置完整 → 不再返回 not_configured（会尝试调用网关）
+[22m[39m{"timestamp":"2026-09-22T15:24:58.239Z","level":"error","message":"[sms] 发送失败","phone":"13800138000","provider":"aliyun","error":"InvalidAccessKeyId.NotFound: code: 404, Specified access key is not found. request id: 01A0C9B8-62E2-5EA5-86DF-0D93A1AC1419","code":"InvalidAccessKeyId.NotFound"}
+
+[90mstdout[2m | tests/sms.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/sms.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/sms.test.js [2m([22m[2m9 tests[22m[2m)[22m[33m 1089[2mms[22m[39m
+     [33m[2m✓[22m[39m 配置完整 → 不再返回 not_configured（会尝试调用网关） [33m 607[2mms[22m[39m
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ secrets for agents [www.dotenvx.com]
+
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin-payment-surfaces.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin-payment-surfaces.test.js [2m([22m[2m13 tests[22m[2m)[22m[33m 1001[2mms[22m[39m
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/crypto.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/crypto.test.js [2m([22m[2m20 tests[22m[2m)[22m[33m 854[2mms[22m[39m
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/subscription-api.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/subscription-api.test.js [2m([22m[2m9 tests[22m[2m)[22m[33m 952[2mms[22m[39m
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/ai-orchestration.test.js[2m > [22m[2m统一工具执行管线（handleToolCalls）[2m > [22m[2mask_user：先发 tool_call，门控打开发 ask_user_action，作答后收敛 tool_result
+[22m[39m{"timestamp":"2026-09-22T15:25:04.628Z","level":"error","message":"Failed to log tool audit","error":"insert or update on table \"audit_logs\" violates foreign key constraint \"audit_logs_user_id_fkey\"","tool":"ask_user"}
+
+[90mstderr[2m | tests/ai-orchestration.test.js[2m > [22m[2m统一工具执行管线（handleToolCalls）[2m > [22m[2mask_user 豁免管线超时：toolTimeoutMs=80 而作答在 200ms 后到达，仍成功返回
+[22m[39m{"timestamp":"2026-09-22T15:25:04.951Z","level":"error","message":"Failed to log tool audit","error":"insert or update on table \"audit_logs\" violates foreign key constraint \"audit_logs_user_id_fkey\"","tool":"ask_user"}
+
+[90mstderr[2m | tests/ai-orchestration.test.js[2m > [22m[2m统一工具执行管线（handleToolCalls）[2m > [22m[2m同轮多个 ask_user 串行执行：事件严格成对不交错，第二个不被并发上限误拒
+[22m[39m{"timestamp":"2026-09-22T15:25:05.204Z","level":"error","message":"Failed to log tool audit","error":"insert or update on table \"audit_logs\" violates foreign key constraint \"audit_logs_user_id_fkey\"","tool":"ask_user"}
+
+[90mstderr[2m | tests/ai-orchestration.test.js[2m > [22m[2m统一工具执行管线（handleToolCalls）[2m > [22m[2m同轮多个 ask_user 串行执行：事件严格成对不交错，第二个不被并发上限误拒
+[22m[39m{"timestamp":"2026-09-22T15:25:05.328Z","level":"error","message":"Failed to log tool audit","error":"insert or update on table \"audit_logs\" violates foreign key constraint \"audit_logs_user_id_fkey\"","tool":"ask_user"}
+
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/ai-orchestration.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/ai-orchestration.test.js [2m([22m[2m5 tests[22m[2m)[22m[33m 976[2mms[22m[39m
+     [33m[2m✓[22m[39m ask_user 豁免管线超时：toolTimeoutMs=80 而作答在 200ms 后到达，仍成功返回 [33m 319[2mms[22m[39m
+     [33m[2m✓[22m[39m 同轮多个 ask_user 串行执行：事件严格成对不交错，第二个不被并发上限误拒 [33m 378[2mms[22m[39m
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/ai-rbac.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/ai-rbac.test.js [2m([22m[2m15 tests[22m[2m)[22m[33m 999[2mms[22m[39m
+     [33m[2m✓[22m[39m 管理工具的 executeToolInner 可被 super_admin 调用（含运行时 RBAC 校验） [33m 592[2mms[22m[39m
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/alipay.test.js[2m > [22m[2m支付宝工具 - 回调验签[2m > [22m[2m空签名 / 缺公钥 → 均失败且不抛异常
+[22m[39m{"timestamp":"2026-09-22T15:25:07.927Z","level":"error","message":"[alipay] ALIPAY_PUBLIC_KEY not configured, cannot verify"}
+
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/alipay.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/alipay.test.js [2m([22m[2m35 tests[22m[2m)[22m[33m 799[2mms[22m[39m
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/webhook.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/webhook.test.js [2m([22m[2m6 tests[22m[2m)[22m[33m 655[2mms[22m[39m
+[90mstdout[2m | tests/storage.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+[90mstdout[2m | tests/storage.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/storage.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/storage.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/storage.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/storage.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/storage.test.js [2m([22m[2m6 tests[22m[2m)[22m[33m 695[2mms[22m[39m
+[90mstdout[2m | tests/api.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/api.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/api.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/api.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/api.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/api.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/api.test.js [2m([22m[2m13 tests[22m[2m)[22m[33m 660[2mms[22m[39m
+     [33m[2m✓[22m[39m should export rate limiter middleware [33m 381[2mms[22m[39m
+[90mstdout[2m | tests/validator.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+[90mstdout[2m | tests/validator.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/validator.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/validator.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/validator.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/validator.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/validator.test.js [2m([22m[2m29 tests[22m[2m)[22m[33m 651[2mms[22m[39m
+[90mstdout[2m | tests/proration.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/proration.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/proration.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/proration.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/proration.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/proration.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/proration.test.js [2m([22m[2m14 tests[22m[2m)[22m[33m 731[2mms[22m[39m
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/admin/adminAuth.test.js[2m > [22m[2mrequirePerm(permKey)[2m > [22m[2mDB 查询异常时 fail-closed：返回 500 { code: 5000 }，绝不放行
+[22m[39m{"timestamp":"2026-09-22T15:25:13.636Z","level":"error","message":"[adminAuth] permission check failed","permKey":"admin.users.view","userId":"u6","error":"db down"}
+
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/adminAuth.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/adminAuth.test.js [2m([22m[2m13 tests[22m[2m)[22m[33m 494[2mms[22m[39m
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/refund-policy.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/refund-policy.test.js [2m([22m[2m15 tests[22m[2m)[22m[33m 589[2mms[22m[39m
+[90mstdout[2m | tests/integration.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/integration.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/integration.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/integration.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/integration.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/integration.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/integration.test.js [2m([22m[2m7 tests[22m[2m)[22m[33m 540[2mms[22m[39m
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌生成[2m > [22m[2m应该生成有效的CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌生成[2m > [22m[2m应该为不同用户生成不同的令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'user1'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌生成[2m > [22m[2m应该为不同用户生成不同的令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'user2'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌生成[2m > [22m[2m应该为同一用户生成不同的令牌（每次请求）
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌生成[2m > [22m[2m应该为同一用户生成不同的令牌（每次请求）
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该验证有效的CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该验证有效的CSRF令牌
+[22m[39m[CSRF] CSRF token validated successfully { userId: [32m'test-user-123'[39m }
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝无效的CSRF令牌
+[22m[39m[CSRF] CSRF token not found { token: [32m'invalid-to...'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝过期的CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝过期的CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝过期的CSRF令牌
+[22m[39m[CSRF] CSRF token validated successfully { userId: [32m'test-user-123'[39m }
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝过期的CSRF令牌
+[22m[39m[CSRF] CSRF token not found { token: [32m'e8c4029006...'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝用户ID不匹配的令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝用户ID不匹配的令牌
+[22m[39m[CSRF] CSRF token user mismatch { tokenUserId: [32m'test-user-123'[39m, requestUserId: [32m'different-user'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝会话ID不匹配的令牌（如果提供）
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该拒绝会话ID不匹配的令牌（如果提供）
+[22m[39m[CSRF] CSRF token session mismatch [90mundefined[39m
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该在不提供会话ID时验证成功
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该在不提供会话ID时验证成功
+[22m[39m[CSRF] CSRF token validated successfully { userId: [32m'test-user-123'[39m }
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该处理空令牌
+[22m[39m[CSRF] CSRF token missing [90mundefined[39m
+
+[90mstderr[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌验证[2m > [22m[2m应该处理空令牌
+[22m[39m[CSRF] CSRF token missing [90mundefined[39m
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF中间件[2m > [22m[2m应该对POST请求验证CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js[2m > [22m[2mCSRF防护机制[2m > [22m[2mCSRF令牌清理[2m > [22m[2m应该清理过期的CSRF令牌
+[22m[39m[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+[CSRF] CSRF token generated { userId: [32m'test-user-123'[39m, sessionId: [32m'test-session-456'[39m }
+
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/csrf.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/csrf.test.js [2m([22m[2m15 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[32m 267[2mms[22m[39m
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/users.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/users.test.js [2m([22m[2m23 tests[22m[2m)[22m[32m 255[2mms[22m[39m
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/orders.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/orders.test.js [2m([22m[2m21 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/subscriptions.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/subscriptions.test.js [2m([22m[2m15 tests[22m[2m)[22m[32m 170[2mms[22m[39m
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/roles.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/roles.test.js [2m([22m[2m16 tests[22m[2m)[22m[32m 210[2mms[22m[39m
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ encrypted .env [www.dotenvx.com]
+
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/audit.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/audit.test.js [2m([22m[2m17 tests[22m[2m)[22m[32m 177[2mms[22m[39m
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/configs.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/configs.test.js [2m([22m[2m13 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ◈ secrets for agents [www.dotenvx.com]
+
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/devices.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/devices.test.js [2m([22m[2m10 tests[22m[2m)[22m[32m 136[2mms[22m[39m
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/middleware/runtime-limits.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/middleware/runtime-limits.test.js [2m([22m[2m11 tests[22m[2m)[22m[32m 103[2mms[22m[39m
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/plans.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/plans.test.js [2m([22m[2m8 tests[22m[2m)[22m[32m 93[2mms[22m[39m
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstderr[2m | tests/admin/adminRoutes.test.js[2m > [22m[2mPOST 挂载链：/api/admin（authenticateToken → requireRole(50) → superAdminAudit）[2m > [22m[2mwhoami 查库异常返回 500 错误壳 { code: 5000 }
+[22m[39m{"timestamp":"2026-09-22T15:25:29.825Z","level":"error","message":"[admin] whoami failed","error":"db down"}
+
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/adminRoutes.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/adminRoutes.test.js [2m([22m[2m5 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ override existing { override: true }
+
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/admin/overview.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/admin/overview.test.js [2m([22m[2m5 tests[22m[2m)[22m[32m 71[2mms[22m[39m
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ suppress logs { quiet: true }
+
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m🧪 测试环境初始化...
+
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m✅ 数据库连接正常
+
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m✅ 旧测试数据已清理
+
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m🧪 测试环境清理...
+
+[90mstdout[2m | tests/ai-hallucination-guard.test.js
+[22m[39m✅ 测试环境已清理
+
+ [32m✓[39m tests/ai-hallucination-guard.test.js [2m([22m[2m5 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+[90mstdout[2m | tests/e2e.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+ [2m[90m↓[39m[22m tests/e2e.test.js [2m([22m[2m19 tests[22m[2m | [22m[33m19 skipped[39m[2m)[22m
+[90mstdout[2m | tests/error-recovery.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌘ enable debugging { debug: true }
+
+ [2m[90m↓[39m[22m tests/error-recovery.test.js [2m([22m[2m12 tests[22m[2m | [22m[33m10 skipped[39m[2m)[22m
+[90mstdout[2m | tests/stress.test.js
+[22m[39m◇ injected env (5) from .env.test // tip: ⌁ auth for agents [www.vestauth.com]
+
+ [2m[90m↓[39m[22m tests/stress.test.js [2m([22m[2m7 tests[22m[2m | [22m[33m7 skipped[39m[2m)[22m
+
+[2m Test Files [22m [1m[32m45 passed[39m[22m[2m | [22m[33m3 skipped[39m[90m (48)[39m
+[2m      Tests [22m [1m[32m537 passed[39m[22m[2m | [22m[33m48 skipped[39m[90m (587)[39m
+[2m   Start at [22m 23:24:09
+[2m   Duration [22m 84.70s[2m (transform 2.27s, setup 1.24s, import 21.39s, tests 51.07s, environment 8ms)[22m
+
