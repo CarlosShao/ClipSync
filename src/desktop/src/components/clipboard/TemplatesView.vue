@@ -4,6 +4,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useTemplateStore } from '@/stores/templateStore'
 import { useTemplateVariableStore } from '@/stores/templateVariableStore'
 import type { ClipboardTemplate } from '@/types'
+import { highlightTemplateVars } from '@/utils/htmlText'
 import { FileText, Plus, SearchX, Search, Sparkles, Pencil, Trash2, Zap } from 'lucide-vue-next'
 import TemplateList from './TemplateList.vue'
 import TemplateEditorDialog from './TemplateEditorDialog.vue'
@@ -29,16 +30,7 @@ function onGenerateSaved(created: ClipboardTemplate) {
   genOpen.value = false
 }
 
-/* {{变量}} 高亮预览（原型 .var-hl） */
-function esc(raw: string): string {
-  return String(raw).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-function hlVars(raw: string): string {
-  return esc(raw.replace(/\s+/g, ' ').trim()).replace(
-    /\{\{\s*([^:{}]+?)\s*\}\}/g,
-    (_m, k) => `<span class="var-hl">{{${String(k).trim()}}}</span>`,
-  )
-}
+// P0-C C3：原 esc()/hlVars() 三份副本已抽到 utils/htmlText.highlightTemplateVars —— 豁免理由留在 SFC 里就没法被单测覆盖
 function extractVars(tpl: ClipboardTemplate): string[] {
   return [...new Set((tpl.content.match(/\{\{\s*([^:{}]+?)\s*\}\}/g) || []).map((m) => m.replace(/[{}]/g, '').trim()))]
 }
@@ -198,7 +190,8 @@ async function confirmDelete() {
                 </button>
               </div>
             </div>
-            <div class="tpl-detail-body" v-html="hlVars(selected.content)"></div>
+            <!-- eslint-disable-next-line vue/no-v-html -- 模板正文由用户/AI 撰写，但 highlightTemplateVars（utils/htmlText）先把整段 escapeHtmlText 再做占位符替换，最终字符串里唯一能活的标签只有本项目自己写死的那对 <span class="var-hl">，内容里的任何 < 都已是 &lt;。不变式由 utils/__tests__/vhtml-invariants.test.ts 钉住 -->
+            <div class="tpl-detail-body" v-html="highlightTemplateVars(selected.content)"></div>
             <div v-if="extractVars(selected).length" class="tpl-detail-vars">
               <span v-for="v in extractVars(selected)" :key="v" class="var-chip"
                 >{{ '{' + '{' + v + '}' + '}' }}</span

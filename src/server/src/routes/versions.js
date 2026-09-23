@@ -30,6 +30,35 @@ router.post('/', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid clipboardItemId format' });
     }
 
+    // 版本正文必填校验（P0-C/C1 拆旁路后 version.test.js 第一次真打进这个 handler 才暴露）：
+    // 真正会撞 500 的只有 contentEncrypted —— file_versions.content_encrypted 是 NOT NULL，
+    // 缺字段直接撞 PG 非空约束被 catch 兜成 500；contentSize 传了非数字则是 22P02 → 同样 500。
+    // ⚠ 按 information_schema 实测更正（本次收尾核的）：content_preview 与 content_size
+    //   都是 **NULLABLE 且有默认值**（''/0），并不像下面这条注释的初版所写是 NOT NULL；
+    //   所以「缺这俩字段 → 500」不成立，把它们一并拒成 400 属于**主动收紧契约**而非修 bug。
+    //   现状保留（本仓 desktop/admin-console 均无 POST /api/versions 的调用方，无存量伤害），
+    //   是否放宽（缺失即按 DB 默认值收下）交 owner 定，见 docs/audit/…/_evidence/p0c-c1.md §9。
+    if (typeof contentEncrypted !== 'string' || contentEncrypted.length === 0) {
+      return res.status(400).json({ error: 'contentEncrypted is required' });
+    }
+    // content_preview / content_size 在库里是 NULLABLE 且有默认值（本次按 information_schema 实测核过），
+    // 所以"缺字段"不会撞 500。初版把缺字段一并拒成 400 属主动收紧契约而非修 bug，现退回：
+    // 只在调用方确实给了值时校验类型，缺失交给 DB 默认。防 500 的那部分（contentEncrypted 非空、
+    // 给了值就必须是合法类型）原样保留。
+    if (contentPreview !== undefined && contentPreview !== null && typeof contentPreview !== 'string') {
+      return res.status(400).json({ error: 'contentPreview must be a string' });
+    }
+    let parsedContentSize = null;
+    if (contentSize !== undefined && contentSize !== null) {
+      parsedContentSize = Number(contentSize);
+      if (!Number.isFinite(parsedContentSize) || parsedContentSize < 0) {
+        return res.status(400).json({ error: 'contentSize must be a non-negative number' });
+      }
+    }
+    if (sourceDeviceId !== undefined && sourceDeviceId !== null && !isValidUUID(sourceDeviceId)) {
+      return res.status(400).json({ error: 'Invalid sourceDeviceId format' });
+    }
+
     // 验证剪贴板项属于当前用户
     const itemCheck = await pool.query(
       'SELECT id FROM clipboard_items WHERE id = $1 AND user_id = $2',
@@ -40,12 +69,23 @@ router.post('/', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'Clipboard item not found' });
     }
 
+    // 来源设备同样必须属于当前用户，否则可把版本挂到他人设备上冒名
+    if (sourceDeviceId) {
+      const deviceCheck = await pool.query(
+        'SELECT id FROM devices WHERE id = $1 AND user_id = $2',
+        [sourceDeviceId, req.userId]
+      );
+      if (deviceCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Source device not found' });
+      }
+    }
+
     const version = await createVersion({
       clipboardItemId,
       userId: req.userId,
       contentEncrypted,
       contentPreview,
-      contentSize,
+      contentSize: parsedContentSize,
       metadata,
       sourceDeviceId,
       changeDescription,

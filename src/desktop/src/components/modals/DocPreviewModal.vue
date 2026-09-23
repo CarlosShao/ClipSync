@@ -24,7 +24,7 @@ import ImagePreview from '@/components/doc-preview/ImagePreview.vue'
 import TextPreview from '@/components/doc-preview/TextPreview.vue'
 import { isHtmlContent, sanitizeHtml } from '@/utils/html'
 import { parseTable } from '@/utils/table'
-import { detectFileType, extractToc, extractHtmlToc, ensureHeadingIds, type TocItem } from '@/utils/docPreview'
+import { detectFileType, extractToc, extractHtmlToc, ensureHeadingIds, pptxSlideTextLines, type TocItem } from '@/utils/docPreview'
 import './modal-shared.css'
 
 const props = defineProps<{ previewItem?: any; previewType?: string }>()
@@ -285,7 +285,9 @@ async function renderExcel(arrayBuffer: ArrayBuffer) {
 }
 
 // ===== PowerPoint (.pptx) rendering =====
-const pptxSlides = ref<string[]>([])
+// 每张 slide 是一组「纯文本行」（不是 HTML）：PptxPreview 用 {{ }} 插值渲染。
+// P0-C C3：这里原本自己拼 `<p>${text}</p>` 再交给子组件 v-html，属真风险汇聚点，已改纯文本。
+const pptxSlides = ref<string[][]>([])
 const pptxLoading = ref(false)
 
 async function renderPptx(arrayBuffer: ArrayBuffer) {
@@ -301,19 +303,11 @@ async function renderPptx(arrayBuffer: ArrayBuffer) {
         const nb = parseInt(b.match(/slide(\d+)/i)?.[1] || '0', 10)
         return na - nb
       })
-    const slides: string[] = []
+    const slides: string[][] = []
     for (const slideFile of slideFiles) {
       const xml = await zip.file(slideFile)!.async('text')
-      // 提取 <a:t> 文本节点 → 段落
-      const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || []
-      const lines = textMatches
-        .map((m) => m.replace(/<[^>]+>/g, '').trim())
-        .filter(Boolean)
-      if (lines.length === 0) {
-        slides.push('<p style="color:var(--text-tertiary)">(本页无可提取文本)</p>')
-      } else {
-        slides.push(lines.map((l) => `<p>${l.replace(/</g, '&lt;')}</p>`).join(''))
-      }
+      // 提取 <a:t> 文本节点（utils 内的纯函数，正则保证原始标签不会漏成数据，可单测）
+      slides.push(pptxSlideTextLines(xml))
     }
     pptxSlides.value = slides
   } catch (e) {

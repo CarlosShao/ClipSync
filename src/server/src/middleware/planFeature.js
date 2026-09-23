@@ -112,10 +112,8 @@ async function loadPlanFeatures(userId) {
  */
 function requirePlanFeature(featureKey) {
   return async (req, res, next) => {
-    // 测试环境跳过（与 subscriptionCheck 口径一致）
-    if (process.env.NODE_ENV === 'test') {
-      return next();
-    }
+    // P0-C/C1：原此处的 `if (process.env.NODE_ENV === 'test') return next()` 短路已删除——
+    // 套餐功能墙此前在测试环境整体失效（640+ 绿灯里没有一条真正证明过这道墙存在）。
     try {
       const userId = req.user && req.user.userId;
       if (!userId) {

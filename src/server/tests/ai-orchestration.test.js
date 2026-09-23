@@ -44,6 +44,22 @@ function eventKinds(events) {
     .filter(Boolean)
 }
 
+/**
+ * 等到第 n 个 ask_user_action（门控打开）出现。
+ * 不用固定睡眠：门控是否打开是可观测事件，固定 120ms 在负载下会误判成"并发上限拒了第二个"。
+ * 超时抛错并打印已收到的事件序列，便于区分"真卡住"与"只是慢"。
+ */
+async function waitGateOpen(events, n, timeoutMs = 5000) {
+  const t0 = Date.now()
+  const opened = () => eventKinds(events).filter((k) => k === 'ask_user_action').length
+  while (opened() < n) {
+    if (Date.now() - t0 > timeoutMs) {
+      throw new Error(`等待第 ${n} 个 ask_user_action 超时 (${timeoutMs}ms)，当前序列：${eventKinds(events).join(' → ') || '(空)'}`)
+    }
+    await wait(10)
+  }
+}
+
 describe('统一工具执行管线（handleToolCalls）', () => {
   it('ask_user：先发 tool_call，门控打开发 ask_user_action，作答后收敛 tool_result', async () => {
     const uid = uuidv4()
@@ -52,7 +68,7 @@ describe('统一工具执行管线（handleToolCalls）', () => {
     const tc = askUserToolCall('删除哪个子目录？', ['只删除 A', '只删除 B', '取消'])
 
     const pending = handleToolCalls([tc], uid, sendDelta, null, 'user')
-    await wait(120) // 等门控打开（SSE meta 已下发、pending 已登记）
+    await waitGateOpen(events, 1)
 
     const kinds = eventKinds(events)
     expect(kinds[0]).toBe('tool_call')
@@ -100,10 +116,10 @@ describe('统一工具执行管线（handleToolCalls）', () => {
     const tc2 = askUserToolCall('第二问', ['A2', 'B2'])
 
     const pending = handleToolCalls([tc1, tc2], uid, sendDelta, null, 'user')
-    await wait(120)
+    await waitGateOpen(events, 1)
     const ack1 = await respondAskUserRequest(tc1.id, uid, 'A1')
     expect(ack1.accepted).toBe(true)
-    await wait(120) // 等第一个工具完成、第二个门控打开
+    await waitGateOpen(events, 2) // 第一个结算后第二个门控才打开
     const ack2 = await respondAskUserRequest(tc2.id, uid, 'B2')
     expect(ack2.accepted).toBe(true)
 

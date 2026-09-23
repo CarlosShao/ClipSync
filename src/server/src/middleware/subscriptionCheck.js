@@ -7,10 +7,9 @@ import { logger } from '../utils/logger.js';
  * 检查用户订阅状态，将订阅信息附加到req对象
  */
 async function subscriptionCheck(req, res, next) {
-  // 测试环境跳过订阅检查
-  if (process.env.NODE_ENV === 'test') {
-    return next();
-  }
+  // P0-C/C1：原此处的 `if (process.env.NODE_ENV === 'test') return next()` 短路已删除。
+  // 此前 req.user.plan 在测试里恒为 undefined，下游 checkDeviceLimit / checkClipboardLimit /
+  // requireFeature 全部命中 `if (!plan) return next()` 的放行分支——配额墙从未被验证过。
   try {
     const userId = req.user.userId;
     

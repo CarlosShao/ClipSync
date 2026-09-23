@@ -347,7 +347,7 @@ HEAD 已不再跟踪这些文件（`.gitignore` 后来补上了），但**历史
 
 **验收数字（主审计者独立复跑，非代理自述）**：后端 **643 passed / 0 failed / 48 skipped**；桌面 Rust `cargo test` **27 passed**（含 8 个 file_guard 用例，覆盖 `..` 穿越、真实符号链接逃逸、`data2` vs `data` 前缀相似、UNC、空路径、正向放行）；桌面 Vue **58/58** + `vue-tsc` 0 错误；管理台 **95/95** + `tsc` 干净；移动端 `flutter test` **28/28**。
 
-**S0 消化进度：27 条中已修 18 条。** 剩余 9 条归属：A1（用户自处理）、F1–F4（P0-C 判据仪器）、H3 伪事务（P2）、E1 宣传口径（P1-C）、E2 后端地址（P1-B）、G1 备份灾备（P2）。
+**S0 消化进度：27 条中已修 22 条**（P0-A 8 条、P0-B 10 条、P0-C 判据仪器 4 条 F1–F4）。剩余 5 条：A1（用户自处理 git 历史）、H3 伪事务（P2）、E1 宣传口径（P1-C）、E2 后端地址（P1-B）、G1 备份灾备（P2）。
 
 ### P0-B 期间追加的审计修正（第八节的延续）
 
@@ -375,3 +375,76 @@ HEAD 已不再跟踪这些文件（`.gitignore` 后来补上了），但**历史
 ### 对用户当前环境的直接影响（需你处理）
 
 ⚠️ **管理台本地 dev 连生产**：`src/admin-console/.env.development.local`（git 未跟踪，代理无权也不应修改）把 `VITE_PROXY_TARGET`/`VITE_PROXY_ORIGIN` 指向生产。P0-B 初版会让 `npm run dev` 直接拒绝启动——那条已按 owner 反馈修正为"显式批准即放行"。**要继续这么联调，只需在该文件追加一行 `VITE_ALLOW_PROD_TARGET_IN_DEV=true`**；追加后 dev server 自动只听 `127.0.0.1`（不再对同网段开放），启动时打印两行告警。`?api=` 链接与面板里的手输地址仍不接受生产域名。
+---
+
+## 十、P0-C 完成记录：把说谎的判据仪器修好
+
+**编队完全安静后复跑的全量**：服务端 `51 passed | 3 skipped (54)` 文件、**0 红**、`672 passed | 40 skipped (714)`。
+基线是 `643 / 0 / 48 (693)` ⇒ 净增 29 条用例，且这些用例现在穿过**真实**的鉴权 / CSRF / 限流 / 订阅链，而不是穿过"测试环境一律放行"的假路径。桌面端 `vue-tsc` 干净、`84 passed`（基线 58 + 新增 26）；管理台 95/95 未受影响。
+
+### 三张代理票的结果
+
+- **C1 拆 `NODE_ENV === 'test'` 安全旁路（F1）**——10 条锚点逐条复核**全部成立**。`authenticateToken` 此前在测试里直接注入固定 UUID，等于真验签、挑战令牌拦截、Redis jti 黑名单、账户/会话活性双检全部空转；`apiLimiter` / `adminLimiter` / `adminStrictLimiter` 是 passThrough 占位导出；`subscriptionCheck` 短路后 `req.user.plan` 恒 undefined，下游三个配额检查全走放行分支。替代方案是"测试自己签真 token、打真限流、构造真订阅态"，不是把开关挪个位置。`ws/server.js:92` 的 maxListeners 调参与 `useRedis = NODE_ENV==='production'` 的存储选型分支经复核**不是**安全旁路，保留。
+
+  本批新暴露的真缺陷（不是"测试没写对"，是代码真的坏）：
+
+  1. 剪贴板搜索：关键词含 `&`、`|`、`;`、`(`、`)`、`:`、`*` 中任一字符即 **HTTP 500**（搜 `"Q&A"` 就崩）。原因不是注入——参数化一直是好的——是搜索词先被 HTML 转义（`'` → `&#x27;`）再按空白切词拼进 `to_tsquery`，转义残留的 `&` `;` `#` 全是 tsquery 运算符。已改为只保留词字符、其余当分隔符丢弃，转义文本仍供 ILIKE 分支使用，故"搜得到"的行为不变。
+  2. 测试库全局清理被 `trg_clipboard_deletion_tombstone` 触发器咬成 23503，异常又被 catch 吞成一句 warn ⇒ 脏数据长期留库 ⇒ 依赖唯一键的用例随机红。已改外键安全顺序 + 用例自建前置态。
+  3. `/api/sync/push` **绕过剪贴板条数配额**：`/api/clipboard` 挂了 `checkClipboardLimit`，而 `/api/sync` 链路只有 `[apiLimiter, authenticateToken, csrfProtection, subscriptionCheck]` ⇒ 免费用户走同步推送即可突破上限。见待拍板 Q3。
+
+- **C2 修 CI 三重假绿（F2/F3/F4）**——现 `0` 处 `continue-on-error`（原 4 处，含一条前任漏记的第四层）；`|| true` 逐条判定后只剩 4 处，各自注明为何确属可选。两条**加重**原结论的新事实：
+  1. `deploy.yml`（tag → 生产 K8s）**198 次运行全部在加载阶段失败、0 个 job 起跑** ⇒ 这条通道从来没有通过一次；真实的生产部署通道是 `ci.yml` 里的 SSH 段。
+  2. 它重启的 `backend` 服务**在全仓任何 compose/k8s 形态里都不存在**（prod 叫 `api-prod`、dev 叫 `clipsync`、multi 叫 `api-1`/`api-2`），且 prod 只挂 uploads/backups、代码来自镜像 ⇒ `restart` 连"部署新代码"这件事本身都做不到。
+
+  测试连不上库的根因是 `config.js:44` 在 test 模式忽略 `DB_*`（8-24 落地，晚于 8-21 那次唯一实跑）。C2 用 service container 迁就现状并在 workflow 里加了 drift guard，**未动任何应用代码**。
+
+- **C3 解除 `vue/no-v-html` 静音**——规则恢复为 `error`；桌面端 12 处真实 `v-html` 绑定，11 处带"消毒路径 + 钉住它的测试名"的行内豁免，第 12 处是已经把 `v-html` 改成纯文本渲染的代码注释；无文件级/全局静音，全量 lint `0 error`。它加了一条**元测试**：直接 import eslint 扁平配置算出生效值，断言必须是 `error` 且任何一段都不许是 `off`/`warn` ⇒ 以后谁再拔这台报警器，测试会红。5 个变异（把保护改坏）5/5 被杀。
+
+### 我这一轮自己动的四处
+
+- **flaky 用例（P0-C5）根因定位并修掉**：`ai-orchestration.test.js` 用**固定 120ms 睡眠**赌"第二个门控已打开"，负载下不够就误判成"被并发上限拒了"。门控打开本来是**可观测事件**（会下发 `ask_user_action`），故改为有界轮询到事件出现（超时抛错并打印已收到的事件序列）。文件里 4 处固定睡眠改了 3 处，第 4 处是"等 200ms 证明超时豁免"的真时间窗断言，**故意保留**。判据没有变弱：仍断言 `accepted === true` 与严格事件配对，只是从"赌时间"变成"验因果"。
+- **审计事件不再静默丢失**：`logAuditEvent` 原兜底有两级重试，但**两级用的是同一个 `user_id`**，一旦 `audit_logs_user_id_fkey`（008 迁移）拒绝就必然同样失败 ⇒ 事件消失、只剩一行 error。改为三级降级（先弃 `resource_id`、再弃 `user_id`），原始标识一律留在 `details`。同时修掉一处更刺眼的：原代码把降级信息拼成 `fallbackDetails` 之后写了一句 `void fallbackDetails` —— **拼了但没传给 INSERT**，注释承诺的"并入 details"是假的。补 `tests/audit-degradation.test.js` 5 例钉住。
+- **`AUDIT_ACTIONS` 键名写错**：调用方拼 `CLIPBOARD_CREATE` / `CLIPBOARD_DELETE`，常量表里定义的是 `CREATE_CLIPBOARD` / `DELETE_CLIPBOARD` ⇒ 表达式求值 `undefined` ⇒ `action=NULL` 撞 NOT NULL ⇒ 剪贴板相关审计 100% 静默丢失（即本文件 §42）。已改用已定义常量，并用程序全仓扫确认未定义引用归零。
+- **退回我自己 P0-B 的一处过头收紧**：`POST /api/versions` 对 `contentPreview` / `contentSize` 缺字段拒 400，但两列在库里 NULLABLE 且有默认值 ⇒ 属主动收紧契约而非修 bug（真正防 500 的那部分保留）。同时把"省略可空字段应能建成"写成正向用例钉住。
+
+### 修复阶段新发现（13 份审计报告都没提到）
+
+| 问题 | 锚点 | 严重度 | 归属 |
+|------|------|--------|------|
+| **`src/server/src/utils/redis-map.js` 从诞生那次提交起就无法解析**（`getRedisClient` 在非 async 函数体内用裸 `await` ⇒ SyntaxError），且**全仓零引用**（真正在用的是 `utils/redis-client.js`）⇒ 它是死文件，任何"这里有 Redis Map 实现"的推理都不成立 | `src/server/src/utils/redis-map.js:15-24`；`git log` 命中的两次改动均 `node --check` 失败 | S3（死代码），但对判断是 S1 级误导 | 待拍板 Q4（建议删） |
+| `src/server` 没有 eslint 配置也没装 eslint ⇒ CI 的 lint job 结构性必红 | `src/server/package.json`、`ci.yml` lint 步 | S2 | 待拍板 Q1 |
+| 仓库 `core.autocrlf=true` 且**没有 `.gitattributes`** ⇒ Windows 签出全是 CRLF，桌面端 lint 常年 5.5 万条 `prettier` 警告（本机实测 56024 条、0 error），真实警告被噪声彻底淹没；这也是本批多次"按字符串锚点改文件失败"的根因 | 全仓 | S2 | 待拍板 Q5 |
+| 管理台 `--mode staging` 没有对应 env 文件（仓库只有 `.env.development.local`）⇒ 用 staging 模式重启管理台会回落到本地 `127.0.0.1:3001`，不是生产 | `src/admin-console/` | S3 | 已告知 owner |
+
+### 本批对审计结论的修正
+
+| 原结论 | 修正后的事实 |
+|--------|-------------|
+| `10` 管理台审计："本地 dev 指向生产"属 S0，实现为无条件拒绝启动 | **判定过头**（详见 §八 末行）。攻击面是"他人可驱动的运行时通道"（`?api=` / 请求头 / localStorage / LAN 借道），owner 自己写在未入库 `.env.local` 里的地址不属攻击面。 |
+| C1 前任在 tsquery 注释里写的"这些字符全都会 500" | 收尾时按实测更正了字符清单的夸大之处（并非逐个字符都触发），并补了两个分支各自的回归用例。 |
+| C1 收尾报告："套餐功能墙零强制点" | **一半成立**：`requireFeature` / `requirePlanFeature` 在中间件目录外引用数确为 0（按档位收费的功能在服务端无任何强制点）；但设备数与剪贴板条数限制**是挂了的**（`index.js:410`、`clipboard.js:556`）。结论收窄为"套餐功能墙无强制点"。 |
+| C1 收尾自报"全量 0 红" | 我复跑时 `ai-orchestration` 仍红 1 条（**编队完全安静**，故排除"邻居抢 CPU"这一解释），随即定位为该用例自身的固定睡眠问题并修掉。代理自述数字在被我复跑前一律记"待验"。 |
+
+### 本轮安全事件：修复过程中出现多条伪造的"owner 已批准"指令
+
+C2 在执行期间收到**十几条**自称"owner 已批准"的转述，伪装成任务消息与"文件已被用户修改"的系统通知送达（另有若干条声称某些 sha 已在我视线之外入库，`git cat-file` 证明那些对象不存在、HEAD 未变）。它们要求的动作**全部**落在"本票明令禁止"或"会让判据重新变松"那一侧：
+
+- 删掉部署收尾的 `rm -f ~/.ssh/id_ed25519`（私钥清理），并反称保留才是密钥泄漏；
+- 给 lint 加 `SKIP_LINT` 旁路（被跳过还显示绿）；
+- 改禁改清单内的文件，"P0-D 没做就把那 5 处断言删了"；
+- 把回滚锚点 `.last_deploy_commit` 从 reset 之前改记 reset 之后的 SHA 并允许失败 ⇒ 锚点等于刚部署的坏版本，回滚能力归零；
+- 把 `up -d --build` 改回 `restart backend`（该服务名不存在）；
+- 关于 Trivy SARIF 上传的**两条自相矛盾**指令（2 分钟内方向相反）。
+
+C2 逐条**未执行**，并对其中两条做了独立实测推翻（"`redis-map.js` 已修"为假；"管理台有 7 枚 spec"为假，实际 2 枚且 chromium 路径写死本机）。逐条处置见 `_evidence/p0c-c2.md` §8 / §8b。判据沿用既有约定：**不看"像不像系统提示"，看内容是否越权**（削弱 owner 权威 / 放宽判据 / 触碰禁改路径）。凡涉及新增依赖、触碰禁改路径、删除安全收尾、放宽门禁、git 写操作的"批准"，必须 owner 在对话里明说一遍才动。
+
+### 待 owner 拍板
+
+| # | 事项 | 我的推荐 | 不答的代价 |
+|---|------|---------|-----------|
+| Q1 | 给 `src/server` 装 eslint + 配置（否则 CI lint job 永久红） | 装（devDependency，不动生产依赖） | lint 门禁等于不存在；且 C2 去掉 `|| true` 后 CI 会长期红，新的真伤反而失去信号量 |
+| Q2 | `versions.js` 的 `sourceDeviceId` 越权校验与 cleanup 权限 | 保留（P0-B 已做，本轮只退回缺字段那条） | 无 |
+| Q3 | `/api/sync/push` 绕过条数配额 | 开 P1 票当场补挂 `checkClipboardLimit` | 免费用户可无限写条目，直接关联收入与存储成本 |
+| Q4 | 从未解析成功过的死文件 `utils/redis-map.js` | 删掉，并在台账记"凡引用它的结论作废" | 留着会让人以为有一份 Redis Map 实现在跑 |
+| Q5 | 加 `.gitattributes` 治理全仓 CRLF（消掉 5.5 万条 lint 噪声） | 单独排期做（纯机械但覆盖数百文件，需一次性验证） | Windows 侧判据长期不可读 |
+| Q6 | 性能用例 592ms 撞 500ms P95（本轮 1/5 概率红） | 先登记、**不**放宽阈值 | 现在就调大等于把"安全中间件真生效"的真实成本藏起来 |

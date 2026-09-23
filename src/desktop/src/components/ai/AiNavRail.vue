@@ -6,6 +6,7 @@ import { useResizablePanel } from '@/composables/useResizablePanel'
 import Button from '@/components/ui/button/Button.vue'
 import type { AiConversation, ConversationSearchHit } from '@/api/ai'
 import { searchConversationHistory } from '@/api/ai'
+import { highlightSearchSnippet } from '@/utils/htmlText'
 import {
   Plus,
   Search,
@@ -108,21 +109,11 @@ function clearSearch() {
 
 // snippet 来自会话消息（可能回显剪贴板/跨设备内容），进 v-html 前必须先 HTML 转义，
 // 再对「同样转义过的关键词」做高亮，保证匹配与展示同源，杜绝存储型 XSS。
-function escapeHtml(s: string): string {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function highlightSnippet(snippet: string, keyword: string): string {
-  const esc = escapeHtml(snippet)
-  const k = keyword.trim()
-  if (!k) return esc
-  const re = escapeHtml(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return esc.replace(new RegExp(`(${re})`, 'gi'), '\u0001$1\u0002')
+// P0-C C3：escapeHtml/highlightSnippet 抽到 utils/htmlText（SFC 里的豁免理由没法单测），
+// 并把 <mark> 的替换收进函数内 —— 原先模板里再用 \u0001/\u0002 哨兵二次 replace，
+// 遇到内容本身含这两个控制字符的 snippet 会凭空多出 <mark> 标签。
+function hitSnippetHtml(hit: ConversationSearchHit): string {
+  return highlightSearchSnippet(hit.snippet, searchQuery.value)
 }
 
 // === 重命名（迁自 AiConversationList）===
@@ -253,15 +244,8 @@ function onDockFromFloat() {
                     }}
                   </span>
                 </div>
-                <!-- eslint-disable-next-line vue/no-v-html (highlightSnippet 已对 snippet 做 HTML 转义，仅注入 <mark> 标签) -->
-                <span
-                  class="ai-nav-hit-snippet"
-                  v-html="
-                    highlightSnippet(hit.snippet, searchQuery)
-                      .replace(/\u0001/g, '<mark>')
-                      .replace(/\u0002/g, '</mark>')
-                  "
-                />
+                <!-- eslint-disable-next-line vue/no-v-html -- hitSnippetHtml → utils/htmlText 的 highlightSearchSnippet：snippet 与关键词同走过 escapeHtmlText（& < > " '），函数内只注入固定的 <mark> 对；不变式由 utils/__tests__/vhtml-invariants.test.ts 钉住 -->
+                <span class="ai-nav-hit-snippet" v-html="hitSnippetHtml(hit)" />
               </div>
             </div>
           </div>

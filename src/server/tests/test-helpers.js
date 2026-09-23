@@ -8,7 +8,64 @@
  */
 
 import { createRequire } from 'module';
+import jwt from 'jsonwebtoken';
+import config from '../src/config.js';
 const require = createRequire(import.meta.url);
+
+// ============================================
+// 真凭据签发（P0-C/C1）
+// ============================================
+//
+// 生产代码里的 `NODE_ENV === 'test'` 安全旁路已全部拆除，因此测试不再能指望
+// authenticateToken 白送身份。这里提供**真** JWT / 真 CSRF 头 / 真用户行的构造器：
+// 签名密钥取自 config.jwt.secret（与 src/middleware/auth.js 验签用的是同一个值，
+// 随 .env.test 的 JWT_SECRET 解析，测试代码里不出现任何凭据字面量）。
+//
+// 用法（supertest）：
+//   const auth = await authHeaders();                  // 固定测试用户
+//   await request(app).get('/api/clipboard').set(auth);
+// 前提：该 userId 在 users 表真实存在（authenticateToken 会查库做账户活性校验），
+// 用 ensureAuthUser() 建立。
+
+/** 与 src/middleware/auth.js 旧旁路注入的固定用户保持一致，最小化历史用例改动面 */
+export const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
+export const TEST_PHONE = '13900999999';
+
+/**
+ * 签发**真实可验签**的 access token。
+ * 默认不带 jti：auth.js 只在 token 携带 jti 时才查 Redis 黑名单 / user_sessions 活性，
+ * 需要验证吊销路径的用例请显式传 jti 并自建 session 行。
+ */
+export function signAccessToken(claims = {}, options = {}) {
+  return jwt.sign(
+    { userId: TEST_USER_ID, phone: TEST_PHONE, sessionId: 'test-session-id', ...claims },
+    config.jwt.secret,
+    { expiresIn: '1h', ...options }
+  );
+}
+
+/** 直接可用于 `.set(...)` 的认证头 */
+export function authHeaders(claims = {}, options = {}) {
+  return { Authorization: `Bearer ${signAccessToken(claims, options)}` };
+}
+
+/**
+ * 保证 users 表里有这条账号（auth.js 的账户活性检查会真查库，账号不存在必 401）。
+ * @param {object} executor pg Pool 或 PoolClient
+ */
+export async function ensureAuthUser(
+  executor,
+  { id = TEST_USER_ID, phone = TEST_PHONE, nickname = 'test_user', subscriptionStatus = 'free' } = {}
+) {
+  const { rows } = await executor.query(
+    `INSERT INTO users (id, phone, nickname, password_hash, subscription_status, created_at, updated_at)
+     VALUES ($1, $2, $3, 'test_hash', $4, NOW(), NOW())
+     ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+     RETURNING id`,
+    [id, phone, nickname, subscriptionStatus]
+  );
+  return rows[0].id;
+}
 
 // ============================================
 // 数据库事务隔离

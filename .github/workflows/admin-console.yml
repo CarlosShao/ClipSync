@@ -2,7 +2,16 @@ name: admin-console
 
 on:
   push:
-    branches: ['feature/admin-console', 'dev/cnb', 'main']
+    # 原列表是 ['feature/admin-console', 'dev/cnb', 'main'] —— 其中 main 在本仓库不存在
+    #   （默认分支是 master，见 `git symbolic-ref refs/remotes/origin/HEAD`），
+    #   而 P0-B/P0-D 正在改的 src/admin-console/** 全在 test/** 与 feature/** 上
+    #   ⇒ 这个 workflow 对本次真实改动是瞎的。
+    # 与 ci.yml 用同一套"排除式"触发：列举法只覆盖今天观察到的分支形态，新开 chore/* 就会又漏。
+    # 排除 archive/** 与 backup/**（冻结快照，白烧 runner 分钟）。
+    # 注意这里按**分支名**排除；paths-ignore 排除的是"改动涉及的文件路径"，两者不是一回事。
+    branches-ignore:
+      - 'archive/**'
+      - 'backup/**'
     paths:
       - 'src/admin-console/**'
       - '.github/workflows/admin-console.yml'
@@ -10,6 +19,8 @@ on:
     paths:
       - 'src/admin-console/**'
       - '.github/workflows/admin-console.yml'
+  # 加了手动触发，否则被 branches-ignore 排除的分支就再也没有办法跑这个检查
+  workflow_dispatch:
 
 defaults:
   run:
@@ -19,6 +30,7 @@ jobs:
   verify:
     name: lint / typecheck / build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 

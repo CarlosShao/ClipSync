@@ -11,10 +11,11 @@
 //  - 403 { code: 4030, message: '缺少权限: <permKey>' } —— 已认证但无对应权限点
 //  - 500 { code: 5000, message: '权限校验失败' }        —— 权限查询本身出错（fail-closed，宁可拒绝不可放行）
 //
-// NODE_ENV==='test' 策略（与 auth.js 保持一致）：
-//  - auth.js 在测试环境注入固定测试用户（roleKey='user', roleLevel=10，最小权限），
-//    本中间件不做任何测试旁路 —— 管理端点在测试下默认 fail-closed，
-//    需要管理员身份的用例应在用例内自行构造 req.user（或 mock auth.js）。
+// 测试环境策略（P0-C/C1 后更新）：
+//  - auth.js 的 `NODE_ENV === 'test'` 注入固定用户旁路**已删除**，测试一律自签发真 JWT
+//    （tests/test-helpers.js 的 signAccessToken / authHeaders）；
+//  - 本中间件从未做过任何测试旁路 —— 管理端点在测试下始终 fail-closed，
+//    需要管理员身份的用例在用例内构造 req.user（tests/admin/* 用 vi.mock auth.js 注入）。
 // =============================================
 
 import { pool } from '../db/pool.js';

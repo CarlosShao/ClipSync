@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 
-// 测试环境 auth 中间件固定使用此用户 ID（见 src/middleware/auth.js）
+// 固定测试用户 ID：与 test-helpers 的 TEST_USER_ID 一致（authenticateToken 会真查库校验该账号）
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有请求带真签名 token。
+const auth = authHeaders();
 
 describe('用户侧自动过期集成测试 (exp-api #187)', () => {
   let app;
@@ -52,7 +55,7 @@ describe('用户侧自动过期集成测试 (exp-api #187)', () => {
     itemId = create.rows[0].id;
 
     const future = new Date(Date.now() + 86400000).toISOString();
-    const put = await request(app).put(`/api/clipboard/${itemId}`).send({ expiresAt: future });
+    const put = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ expiresAt: future });
     expect(put.status).toBe(200);
     expect(put.body.expiresAt).toBeTruthy();
     // 回传应为 ISO 字符串（Postgres timestamptz 返格式可能带 Z 或偏移，统一比对时间）
@@ -60,13 +63,13 @@ describe('用户侧自动过期集成测试 (exp-api #187)', () => {
   });
 
   it('PUT expiresAt=null 应清除过期时间并回传 null', async () => {
-    const put = await request(app).put(`/api/clipboard/${itemId}`).send({ expiresAt: null });
+    const put = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ expiresAt: null });
     expect(put.status).toBe(200);
     expect(put.body.expiresAt).toBeNull();
   });
 
   it('PUT expiresAt 传非法字符串应返回 400', async () => {
-    const res = await request(app).put(`/api/clipboard/${itemId}`).send({ expiresAt: 'not-a-date' });
+    const res = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ expiresAt: 'not-a-date' });
     expect(res.status).toBe(400);
   });
 });

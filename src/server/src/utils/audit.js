@@ -46,17 +46,18 @@ export async function logAuditEvent(params) {
     if (safeResourceId.length > 255) safeResourceId = `${safeResourceId.slice(0, 252)}...`;
   }
 
-  const insert = async (withResourceId) => {
+  const insert = async ({ withResourceId = true, actorId = null, extraDetails = null } = {}) => {
+    const merged = extraDetails ? { ...(details ?? {}), ...extraDetails } : details;
     await pool.query(
       `INSERT INTO audit_logs 
        (user_id, action, resource_type, resource_id, details, ip_address, user_agent, status, error_message)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
-        userId || null,
+        actorId,
         action,
         resourceType || null,
         withResourceId ? safeResourceId : null,
-        details ? JSON.stringify(details) : null,
+        merged ? JSON.stringify(merged) : null,
         ipAddress || null,
         userAgent || null,
         status,
@@ -65,26 +66,59 @@ export async function logAuditEvent(params) {
     );
   };
 
-  try {
-    await insert(true);
-  } catch (err) {
-    logger.error('Failed to log audit event', { error: err.message, action });
-    // 兜底：单条审计失败（如 resource_id 约束不兼容）不得让审计整条丢失，
-    // 降级为 resource_id 置空、把原始标识并入 details 后重试一次。
+  // 逐级降级重试：审计可以没有分类字段、没有归属人，但不能没有这条事件本身。
+  // 第 2 级应对 resource_id 约束不兼容，第 3 级应对 user_id 外键不存在（008 迁移里
+  // audit_logs.user_id 是 REFERENCES users(id)；账号被硬删后补记审计必撞 23503，
+  // 而此前两级都用同一个 userId 插，必然同样失败 → 事件静默消失，只剩一行 error 日志）。
+  const steps = [
+    { withResourceId: true, actorId: userId || null, note: null },
+    {
+      withResourceId: false,
+      actorId: userId || null,
+      note: (err) => ({ __resourceId: safeResourceId ?? undefined, __auditInsertError: err.message }),
+    },
+    {
+      withResourceId: false,
+      actorId: null,
+      note: (err) => ({ __userId: userId || undefined, __auditInsertError: err.message }),
+    },
+  ];
+
+  let lastErr = null;
+  const carried = {};
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     try {
-      const fallbackDetails = {
-        ...(details ?? {}),
-        __resourceId: safeResourceId ?? undefined,
-        __auditInsertError: err.message,
-      };
-      await insert(false);
-      logger.warn('Audit event recovered with null resource_id', { action });
-      void fallbackDetails;
-    } catch (retryErr) {
-      logger.error('Audit event dropped after retry', { error: retryErr.message, action });
-      // 审计日志失败不阻塞主流程
+      await insert({
+        withResourceId: step.withResourceId,
+        actorId: step.actorId,
+        extraDetails: i === 0 ? null : { ...carried, ...step.note(lastErr) },
+      });
+      if (i > 0) {
+        logger.warn(`Audit event stored degraded (step ${i}: fields dropped, event kept)`, { action });
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      Object.assign(carried, step.note ? step.note(err) : {});
+      logger.error('Failed to log audit event', {
+        error: err.message,
+        code: err.code,
+        action,
+        step: i,
+      });
     }
   }
+  // 三次都不行才承认丢失，并打出足以人工补记的全部字段。
+  logger.error('Audit event dropped after all degradation steps', {
+    error: lastErr?.message,
+    code: lastErr?.code,
+    action,
+    userId: userId || null,
+    resourceType: resourceType || null,
+    resourceId: safeResourceId,
+    status,
+  });
 }
 
 /**
@@ -266,7 +300,8 @@ export const AUDIT_ACTIONS = {
   // POST /api/subscriptions/resume（routes/subscriptions.js:472）在用它，但常量此前
   // 漏定义 → `AUDIT_ACTIONS.SUBSCRIPTION_RESUME` 求值为 undefined → logAuditEvent
   // 以 action=NULL 插入 → 违反 NOT NULL 后整条审计静默丢失（审计页永远查不到恢复订阅）。
-  // ⚠️ 同类漏键还有 CLIPBOARD_CREATE / CLIPBOARD_DELETE（routes/clipboard.js:710,1069），
-  // 本次未一并处理（不在支付审计范围），见交付报告「未尽事项」。
+  // 同类漏键 CLIPBOARD_CREATE / CLIPBOARD_DELETE 已于 P0-C 修掉：调用方把键名拼错时表达式求值为
+  // undefined ⇒ logAuditEvent 以 action=NULL 插入即违反 NOT NULL ⇒ 整条审计静默丢失（不报错、事后查不到）。
+  // 现 routes/clipboard.js 用的是本对象已定义的 CREATE_CLIPBOARD / DELETE_CLIPBOARD。
   SUBSCRIPTION_RESUME: 'subscription_resume',
 };

@@ -25,6 +25,33 @@ function advisoryLockKey(str) {
   return [h.readUInt32BE(0) & 0x7fffffff, h.readUInt32BE(4) & 0x7fffffff];
 }
 
+/**
+ * 把用户搜索词转成安全的 tsquery 串。
+ *
+ * 修复（P0-C/C1 拆 auth 旁路后由 tests/security.test.js 暴露）：旧实现直接把
+ * `sanitizeString()` 的结果按空白切词后拼 `word:*` 喂给 to_tsquery。sanitizeString 做的是
+ * HTML 实体转义（`'` → `&#x27;`），于是用户输入里的 tsquery 运算符会原样进入查询串，
+ * PostgreSQL 抛 42601 syntax_error ⇒ 被 handler 的 catch 兜成 **HTTP 500**
+ * （任何登录用户都能稳定复现，参数化本身是好的、不是 SQL 注入）。
+ *
+ * 逐字符实测（把旧实现的产物真送去 to_tsquery 跑）确认会 500 的是：
+ *   `(` `)` `:` `!`，以及 `'; DROP TABLE users; --` 这类转义后含 `#x27;` 的组合；
+ * 不会 500 的是 `&` `|` `;` `*` `<` `>`（它们要么被转义成实体、要么本身是合法运算符）
+ * ——「含 `& | ; *` 就 500」是早期注释里未经实测的夸大，已按实测更正；
+ * 权威清单与钉住的用例见 tests/security.test.js 的
+ * '搜索词含 tsquery 运算符或纯符号时不得 500'。
+ *
+ * 现在只保留词字符（字母/数字/下划线/CJK），其余一律当分隔符丢掉；
+ * 转义后的文本仍原样用于 ILIKE 分支，所以「搜得到」的行为不变，500 变 200。
+ * 全部被丢弃时返回空串，调用方走 ILIKE-only（见下）。
+ */
+function buildTsQuery(raw) {
+  const words = String(raw || '')
+    .split(/[^\p{L}\p{N}_]+/u)
+    .filter((w) => w.length > 0);
+  return words.map((w) => `${w}:*`).join(' & ');
+}
+
 // Content type detection helper (rule-based for MVP)
 function detectContentType(content, declaredType) {
   if (declaredType && ['text', 'image', 'file', 'link', 'code'].includes(declaredType)) {
@@ -93,15 +120,11 @@ router.get('/', apiLimiter, async (req, res) => {
       if (cleanSearch) {
         // Use full-text search (tsvector) with fallback to ILIKE
         // tsvector search ranks results by relevance; ILIKE provides fallback for short queries
-        if (cleanSearch.length >= 3) {
+        const tsQuery = buildTsQuery(cleanSearch);
+        if (cleanSearch.length >= 3 && tsQuery) {
           // Full-text search with relevance ranking
           whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1} OR ci.ocr_text ILIKE $${paramIndex + 2})`;
           // Convert search terms: replace spaces with & for AND logic, append :* for prefix matching
-          const tsQuery = cleanSearch
-            .split(/\s+/)
-            .filter(w => w.length > 0)
-            .map(w => w + ':*')
-            .join(' & ');
           params.push(tsQuery);
           params.push(`%${cleanSearch}%`);
           params.push(`%${cleanSearch}%`);
@@ -237,25 +260,30 @@ router.get('/search', apiLimiter, async (req, res) => {
       paramIndex++;
     }
 
-    // Full-text search using tsvector
-    const tsQuery = cleanSearch
-      .split(/\s+/)
-      .filter(w => w.length > 0)
-      .map(w => w + ':*')
-      .join(' & ');
-
-    whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1} OR ci.ocr_text ILIKE $${paramIndex + 2})`;
-    params.push(tsQuery);
-    params.push(`%${cleanSearch}%`);
-    params.push(`%${cleanSearch}%`);
-    paramIndex += 3;
+    // Full-text search using tsvector（纯符号查询退化为 ILIKE-only，见 buildTsQuery 注释）
+    const tsQuery = buildTsQuery(cleanSearch);
+    // relevance 表达式只在 tsQuery 非空时才引用参数；两处 SQL（列表 + COUNT）共用同一个
+    // whereClause，因此参数顺序必须与占位符编号严格一致。
+    let relevanceExpr = '0';
+    if (tsQuery) {
+      whereClause += ` AND (ci.search_vector @@ to_tsquery('simple', $${paramIndex}) OR ci.content_preview ILIKE $${paramIndex + 1} OR ci.ocr_text ILIKE $${paramIndex + 2})`;
+      params.push(tsQuery);
+      params.push(`%${cleanSearch}%`);
+      params.push(`%${cleanSearch}%`);
+      relevanceExpr = `ts_rank(ci.search_vector, to_tsquery('simple', $${paramIndex}))`;
+      paramIndex += 3;
+    } else {
+      whereClause += ` AND (ci.content_preview ILIKE $${paramIndex} OR ci.ocr_text ILIKE $${paramIndex})`;
+      params.push(`%${cleanSearch}%`);
+      paramIndex += 1;
+    }
 
     // Get items with relevance ranking
     const itemsResult = await pool.query(
       `SELECT ci.id, ci.content_type, ci.content_preview, ci.content_size, ci.ocr_text,
               ci.metadata, ci.is_favorite, ci.archived, ci.expires_at, ci.created_at,
               d.device_name, d.platform,
-              ts_rank(ci.search_vector, to_tsquery('simple', $${paramIndex - 2})) AS relevance
+              ${relevanceExpr} AS relevance
        FROM clipboard_items ci
        LEFT JOIN devices d ON ci.source_device_id = d.id
        ${whereClause}
@@ -707,7 +735,7 @@ router.post('/', apiLimiter, idempotencyMiddleware, checkClipboardLimit, async (
     // 审计日志：记录剪贴板创建（在事务内，保证一致性）
     await logAuditEvent({
       userId: req.userId,
-      action: AUDIT_ACTIONS.CLIPBOARD_CREATE,
+      action: AUDIT_ACTIONS.CREATE_CLIPBOARD,
       resourceType: 'clipboard',
       resourceId: item.id,
       details: {
@@ -1066,7 +1094,7 @@ router.delete('/:id', apiLimiter, async (req, res) => {
     // 审计日志：记录剪贴板删除
     await logAuditEvent({
       userId: req.userId,
-      action: AUDIT_ACTIONS.CLIPBOARD_DELETE,
+      action: AUDIT_ACTIONS.DELETE_CLIPBOARD,
       resourceType: 'clipboard',
       resourceId: id,
       details: {

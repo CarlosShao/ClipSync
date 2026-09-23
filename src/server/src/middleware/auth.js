@@ -12,21 +12,9 @@ function isChallengeToken(decoded) {
 }
 
 export async function authenticateToken(req, res, next) {
-  // 测试环境跳过token验证，使用测试用户
-  if (process.env.NODE_ENV === 'test') {
-    req.user = {
-      userId: '00000000-0000-0000-0000-000000000001', // 测试用户ID
-      phone: '13900999999',
-      sessionId: 'test-session-id',
-      // RBAC（#210）：测试用户默认普通角色，避免误开敏感权限
-      roleKey: 'user',
-      roleLevel: 10,
-      isAdmin: false,
-    };
-    req.userId = req.user.userId;
-    return next();
-  }
-
+  // P0-C/C1：原此处的 `if (process.env.NODE_ENV === 'test')` 短路（直接注入固定测试用户、
+  // 跳过验签/黑名单/会话活性检查）已删除。中间件在所有环境执行同一条真实链路；
+  // 测试通过 tests/test-helpers.js 的 signAccessToken()/authHeaders() 自签发真 token。
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 import { invoiceFacts } from '../src/utils/pdf-invoice.js';
 
 /**
@@ -102,7 +102,7 @@ async function cleanup() {
 }
 
 /** 二进制响应：responseType('blob') 让 superagent 用通用 Buffer 解析器（res.body = Buffer） */
-const download = (id) => request(app).get(`/api/invoices/${id}/download`).responseType('blob');
+const download = (id) => request(app).get(`/api/invoices/${id}/download`).set(auth).responseType('blob');
 
 beforeAll(async () => {
   const dbName = (await pool.query('SELECT current_database() AS db')).rows[0].db;
@@ -142,6 +142,9 @@ afterAll(async () => {
   await cleanup().catch(() => {});
   await pool.end().catch(() => {});
 });
+
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有请求带真签名 token。
+const auth = authHeaders();
 
 describe('GET /api/invoices/:id/download —— 真 PDF', () => {
   it('本人下载 → 200 + application/pdf + 真 PDF 字节（%PDF 头 / %%EOF 尾）', async () => {
@@ -193,7 +196,7 @@ describe('GET /api/invoices/:id/download —— 真 PDF', () => {
       metadata: { invoice_url: 'https://invoice.example.test/INVDL-0004.pdf' },
     });
 
-    const res = await request(app).get(`/api/invoices/${invoiceId}/download`).redirects(0);
+    const res = await request(app).get(`/api/invoices/${invoiceId}/download`).set(auth).redirects(0);
     expect([301, 302, 307]).toContain(res.status);
     expect(res.headers.location).toBe('https://invoice.example.test/INVDL-0004.pdf');
   });
@@ -203,9 +206,9 @@ describe('GET /api/invoices/:id/download —— 越权与错误路径', () => {
   it('别人的发票 → 404，且响应是 JSON 而非「标着 PDF 的附件」（顺序错误的回归防线）', async () => {
     const { invoiceId } = await seedInvoice({ invoiceNo: 'INVDL-OTHER', userId: otherUserId });
 
-    // authenticateToken 在 NODE_ENV=test 下固定注入 TEST_USER_ID，
+    // 请求带的是 TEST_USER_ID 的真 token，
     // 所以这张挂在 otherUserId 名下的票对当前请求者就是「无权访问」。
-    const res = await request(app).get(`/api/invoices/${invoiceId}/download`);
+    const res = await request(app).get(`/api/invoices/${invoiceId}/download`).set(auth);
 
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
@@ -215,16 +218,16 @@ describe('GET /api/invoices/:id/download —— 越权与错误路径', () => {
   });
 
   it('发票不存在 → 404 JSON，无 PDF 头', async () => {
-    const res = await request(app).get(
-      '/api/invoices/00000000-0000-4000-8000-0000000000fe/download'
-    );
+    const res = await request(app)
+      .get('/api/invoices/00000000-0000-4000-8000-0000000000fe/download').set(auth)
+      .set(auth);
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
     expect(res.headers['content-disposition']).toBeUndefined();
   });
 
   it('id 不是合法 uuid → 404 而不是 PG 22P02 的 500', async () => {
-    const res = await request(app).get('/api/invoices/not-a-uuid/download');
+    const res = await request(app).get('/api/invoices/not-a-uuid/download').set(auth);
     expect(res.status).toBe(404);
     expect(res.headers['content-disposition']).toBeUndefined();
   });

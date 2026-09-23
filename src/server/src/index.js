@@ -363,10 +363,9 @@ const METRICS_TOKEN = (() => {
 })();
 
 function metricsAuth(req, res, next) {
-  // 测试环境跳过鉴权（与 authenticateToken 的测试旁路保持一致，e2e 用例依赖匿名访问）
-  if (process.env.NODE_ENV === 'test') {
-    return next();
-  }
+  // P0-C/C1：原此处的 `if (process.env.NODE_ENV === 'test') return next()` 已删除——
+  // 它让 /api/metrics 在测试里完全匿名，下面的 METRICS_TOKEN 直通与 requireRole(50)
+  // 两条真实分支从未被任何用例穿过。现在测试须显式带凭据（见 tests/security.test.js）。
   // 生产环境未配置 token：直接拒绝，不放行也不回退默认值
   if (!METRICS_TOKEN) {
     return res.status(503).json({ error: 'metrics disabled: METRICS_TOKEN not configured' });

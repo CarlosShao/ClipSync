@@ -140,11 +140,9 @@ function cleanupExpiredTokens() {
 
 // CSRF保护中间件（异步）
 export async function csrfProtection(req, res, next) {
-  // 测试环境跳过CSRF检查
-  if (process.env.NODE_ENV === 'test') {
-    return next();
-  }
-  
+  // P0-C/C1：原此处的 `if (process.env.NODE_ENV === 'test') return next()` 短路已删除。
+  // 下面的 Bearer 放行（本站无 cookie 认证）与 GET/HEAD/OPTIONS 放行是该中间件在
+  // 生产上真实存在的、有明确安全依据的分支；测试必须穿过这些分支，而不是整体关闭。
   // 跳过GET、HEAD、OPTIONS请求（这些是安全的）
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();

@@ -27,6 +27,7 @@ const isTruncated = computed(() => {
     <div class="code-lines">
       <span v-for="(_, i) in lines" :key="i" class="line-num">{{ i + 1 }}</span>
     </div>
+    <!-- eslint-disable-next-line vue/no-v-html -- renderCode 走 highlight.js：hljs 对输入全文做 HTML 转义，产出的标签只有它自己的 <span class="hljs-*">；catch 兜底也是 replace(< / >) 的转义串。不变式由 utils/__tests__/sanitize.test.ts 的 renderCode 用例钉住（断言输出不含活的 <img/<script 且含 &lt;） -->
     <pre class="code-content"><code v-html="renderCode(content, fileName)"></code></pre>
     <div v-if="isTruncated" class="code-truncated">{{ tf('doc_truncated', '内容已截断') }}</div>
   </div>

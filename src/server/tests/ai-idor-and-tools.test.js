@@ -16,6 +16,12 @@ import { randomUUID } from 'crypto'
 import pool from '../src/db/pool.js'
 import { fetchLatestContextSummary, persistContextSummary } from '../src/routes/aiChatCore.js'
 import { executeTool } from '../src/routes/aiTools.js'
+import { authHeaders } from './test-helpers.js'
+
+// P0-C/C1：auth.js 的 `NODE_ENV==='test'` 旁路已删除 → supertest 必须带真签 token。
+// 身份仍是本文件 beforeAll seed 的那个固定用户。
+const auth = authHeaders()
+
 import { encrypt } from '../src/utils/encryption.js'
 
 let app
@@ -47,7 +53,7 @@ beforeAll(async () => {
   if (dbName !== 'clipsync_test') {
     throw new Error(`[p0b-ai] 仅允许在 clipsync_test 库运行，当前连接的是 ${dbName}`)
   }
-  // supertest 以测试旁路用户身份发请求，确保该用户在库（FK 需要）
+  // supertest 以固定测试用户身份发请求（authenticateToken 会真查库校验账户活性 + FK 需要）
   await pool.query(
     `INSERT INTO users (id, phone, password_hash, nickname, created_at, updated_at)
      VALUES ('00000000-0000-0000-0000-000000000001', '13900999999', 'test_hash', 'test_user', NOW(), NOW())
@@ -106,7 +112,7 @@ describe('A2. POST /api/ai/chat 路由层：他人 conversationId → 404', () =
     const other = await createUser('e')
     const otherConv = await createConversation(other, 'other user conv')
     const res = await request(app)
-      .post('/api/ai/chat')
+      .post('/api/ai/chat').set(auth)
       .send({
         messages: [{ role: 'user', content: 'hi' }],
         options: { conversationId: otherConv },
@@ -117,7 +123,7 @@ describe('A2. POST /api/ai/chat 路由层：他人 conversationId → 404', () =
 
   it('非法 UUID 的 conversationId 同样 404（不进 SQL 也不 500）', async () => {
     const res = await request(app)
-      .post('/api/ai/chat')
+      .post('/api/ai/chat').set(auth)
       .send({
         messages: [{ role: 'user', content: 'hi' }],
         options: { conversationId: "1' OR '1'='1" },

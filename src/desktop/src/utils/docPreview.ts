@@ -319,6 +319,47 @@ export function ensureHeadingIds(html: string): string {
   })
 }
 
+/**
+ * 从一张 .pptx slide XML（JSZip 解出的原始字节按文本读入）里提取可展示文本行。
+ *
+ * PPTX 的文本在 `<a:t>` 节点里，这里不引 XML parser（不新增依赖），但正则必须
+ * 保证「文件里直接写的原始标签」不会被当成数据带出去：
+ *   1. 捕获组 `[^<]*` → 正文里不允许出现裸 `<`（真 PPTX 里 `<` 只能以 `&lt;` 实体存在）；
+ *   2. 再对整段匹配做 `<[^>]+>` 去标签 → 匹配里残留的 `<` 只可能来自标签本身，一起删掉。
+ * 也就是说：恶意 pptx 想塞 `<img onerror=...>`，要么匹配失败（丢掉），要么必须自己
+ * 写成 `&lt;img ...&gt;` —— 那样解出来就是**纯文本**，只能由按文本插值的渲染吃。
+ *
+ * ⚠ 返回值是「文本」不是「HTML」：调用方必须用 {{ }} / v-text 渲染（PptxPreview 如此），
+ *   绝不允许拼成 HTML 交给 v-html；这条契约由 __tests__/vhtml-invariants.test.ts 钉住。
+ * 实体（&lt; / &#60; 等）在此解回字符：改纯文本渲染后 Vue 插值会再转义一次，
+ * 与改动前「innerHTML 自己解实体」的显示结果保持一致（不解就会显示成字面 &lt;）。
+ */
+export function pptxSlideTextLines(xml: string): string[] {
+  if (!xml) return []
+  const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || []
+  return textMatches
+    .map((m) => decodeXmlText(m.replace(/<[^>]+>/g, '').trim()))
+    .filter(Boolean)
+}
+
+const XML_NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+
+/** 解 XML 文本里的命名/数字实体；解不出的一律原样保留（不做二次解码） */
+function decodeXmlText(s: string): string {
+  return s.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([a-zA-Z]+));/g, (full, dec, hex, name) => {
+    if (dec !== undefined) {
+      const cp = Number(dec)
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : full
+    }
+    if (hex !== undefined) {
+      const cp = parseInt(hex, 16)
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : full
+    }
+    const mapped = XML_NAMED_ENTITIES[String(name)]
+    return mapped === undefined ? full : mapped
+  })
+}
+
 /** Render code with highlight.js */
 export function renderCode(content: string, filename?: string): string {
   const lang = filename ? getLangFromExt(filename) : detectLangFromContent(content)

@@ -1,12 +1,14 @@
 /**
  * S0 认证安全修复的针对性验证
  *
- * 生产代码里 authenticateToken / csrf / 部分 limiter 在 NODE_ENV=test 下是 no-op，
- * 因此本文件分两类验证：
- *   1. 中间件单元测试：临时把 NODE_ENV 改成 development，直接调用中间件函数，
- *      绕过 test 旁路，验证「挑战令牌不是登录态」这条真实分支；
+ * ⚠ P0-C/C1 更正本文件头（原文称「生产代码里 authenticateToken / csrf / 部分 limiter 在
+ * NODE_ENV=test 下是 no-op」——那批旁路现已全部拆除，下列分类的意义随之变化）：
+ *   1. 中间件单元测试：下面的 `process.env.NODE_ENV = 'development'` 已成**冗余**
+ *      （auth.js 不再有环境分支），保留仅作防御性说明，不再改变任何行为；
  *   2. HTTP 集成测试：走 storeName != 'api' 的限流器与验证码消费路径
- *      （这些在 test 环境不被旁路），验证限流分桶、重置码一次性、找回密码不回显码。
+ *      （这些从来不被旁路），验证限流分桶、重置码一次性、找回密码不回显码。
+ *      limiter 的用例隔离由 tests/setup.js 的 beforeEach(resetAllRateLimitStores) 提供，
+ *      所以**每条用例自己打满阈值**，不再依赖同文件相邻用例的残留计数。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
@@ -278,15 +280,23 @@ describe('S0-2 重置码一次性消费且受爆破限流', () => {
 
   it('连续尝试触发 429（每 IP / 每账号 15 分钟 5 次）', async () => {
     const email3 = email('s0rp4');
-    // 前面的用例已消耗 3 次 IP 额度，这里再打 4 次必然越过阈值
+    // P0-C/C1 更正（原注释：「前面的用例已消耗 3 次 IP 额度，这里再打 4 次必然越过阈值」）：
+    // 这条用例过去**依赖同文件前两条用例残留在 authCode IP 桶里的 3 次计数**才凑满阈值。
+    // 现在 tests/setup.js 在每个用例前清零限流桶（用例隔离，替代被拆除的 NODE_ENV 旁路），
+    // 跨用例累加不再成立 ⇒ 4 次请求全部落到业务层的 401。
+    // 阈值本身没有被改小或改大：authCodeIpLimiter / authCodeAccountLimiter 仍是
+    // max=5 / windowMs=15min（rateLimiter.js:326-340），且内存桶是「满 5 放行、第 6 拒」。
+    // 因此正确写法是在**同一用例内**打满：前 5 次必须是真认证失败 401（限流器不得吞业务响应），
+    // 第 6 次必须 429 —— 这比原来的 toContain(429) 更强（同时钉住了阈值精确值）。
     const statuses = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       const res = await request(app)
         .post('/api/auth/reset-password')
         .send({ email: email3, code: '000000', newPassword: 'BruteForce1!' });
       statuses.push(res.status);
     }
-    expect(statuses).toContain(429);
+    expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+    expect(statuses[5]).toBe(429);
   });
 });
 

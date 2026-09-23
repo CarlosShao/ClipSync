@@ -99,7 +99,7 @@ export function usePrivacy() {
     const saved = localStorage.getItem(PIN_KEY)
     if (saved === null) return false
     const salt = localStorage.getItem(PIN_SALT_KEY)
-    let ok = false
+    let ok: boolean // if/else 两支各自赋值，初值永不被读（P0-C C3：清掉存量 lint error，让 npm run lint 可用作门禁）
     if (salt) {
       const hash = await hashPin(salt, pin)
       ok = hash === saved

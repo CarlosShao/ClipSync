@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 
 /**
  * 账单/发票只读接口真库测试（§4-G2 / G3 / G4）
@@ -91,11 +91,14 @@ afterAll(async () => {
   await pool.end().catch(() => {});
 });
 
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有请求带真签名 token。
+const auth = authHeaders();
+
 describe('GET /api/invoices —— 账单列表（G2）', () => {
   it('不再 500：返回真实列映射（tax 取 tax_amount，invoiceUrl 取 metadata）', async () => {
     const { invoiceId } = await seedInvoice({ invoiceNo: 'INV-G2-0001', amount: 9.9, taxAmount: 0.57 });
 
-    const res = await request(app).get('/api/invoices');
+    const res = await request(app).get('/api/invoices').set(auth);
 
     expect(res.status).toBe(200);
     expect(res.body.invoices).toHaveLength(1);
@@ -119,7 +122,7 @@ describe('GET /api/invoices —— 账单列表（G2）', () => {
       metadata: { invoice_url: 'https://invoice.example.test/INV-G2-0002.pdf' },
     });
 
-    const res = await request(app).get('/api/invoices');
+    const res = await request(app).get('/api/invoices').set(auth);
     expect(res.status).toBe(200);
     expect(res.body.invoices[0].invoiceUrl).toBe('https://invoice.example.test/INV-G2-0002.pdf');
   });
@@ -127,10 +130,10 @@ describe('GET /api/invoices —— 账单列表（G2）', () => {
   it('status 筛选 + 分页参数非法不再 500', async () => {
     await seedInvoice({ invoiceNo: 'INV-G2-0003' });
 
-    expect((await request(app).get('/api/invoices?status=issued')).status).toBe(200);
-    expect((await request(app).get('/api/invoices?status=void')).body.invoices).toHaveLength(0);
-    expect((await request(app).get('/api/invoices?page=abc&limit=99999')).status).toBe(200);
-    const bad = await request(app).get('/api/invoices?page=abc&limit=99999');
+    expect((await request(app).get('/api/invoices?status=issued').set(auth)).status).toBe(200);
+    expect((await request(app).get('/api/invoices?status=void').set(auth)).body.invoices).toHaveLength(0);
+    expect((await request(app).get('/api/invoices?page=abc&limit=99999').set(auth)).status).toBe(200);
+    const bad = await request(app).get('/api/invoices?page=abc&limit=99999').set(auth);
     expect(bad.body.pagination).toMatchObject({ page: 1, limit: 100 });
   });
 });
@@ -139,7 +142,7 @@ describe('GET /api/invoices/:id —— 账单详情（G3）', () => {
   it('返回全字段（含 orderAmount / planName / planPrice），不再因不存在的列 500', async () => {
     const { invoiceId } = await seedInvoice({ invoiceNo: 'INV-G3-0001', amount: 9.9, taxAmount: 0 });
 
-    const res = await request(app).get(`/api/invoices/${invoiceId}`);
+    const res = await request(app).get(`/api/invoices/${invoiceId}`).set(auth);
 
     expect(res.status).toBe(200);
     expect(res.body.invoice).toMatchObject({
@@ -168,7 +171,7 @@ describe('GET /api/invoices/:id —— 账单详情（G3）', () => {
     const otherId = others[0].id;
     try {
       await pool.query('UPDATE invoices SET user_id = $1 WHERE invoice_no = $2', [otherId, 'INV-G3-0002']);
-      const res = await request(app).get(`/api/invoices/${invoiceId}`);
+      const res = await request(app).get(`/api/invoices/${invoiceId}`).set(auth);
       expect(res.status).toBe(404);
     } finally {
       await pool.query('UPDATE invoices SET user_id = $1 WHERE invoice_no = $2', [TEST_USER_ID, 'INV-G3-0002']);
@@ -182,9 +185,9 @@ describe('GET /api/invoices/:id/download —— 错误路径不得伪装成 PDF�
   // 这里只保留 G4 的那条不变式：出错时必须是纯 JSON，绝不能带附件头，
   // 否则客户端会存下一个「装着 JSON 的 .pdf」损坏文件。
   it('发票不存在 → 404 JSON，且不带 PDF / 附件头', async () => {
-    const res = await request(app).get(
-      '/api/invoices/00000000-0000-4000-8000-0000000000fe/download'
-    );
+    const res = await request(app)
+      .get('/api/invoices/00000000-0000-4000-8000-0000000000fe/download').set(auth)
+      .set(auth);
     expect(res.status).toBe(404);
     expect(res.headers['content-type']).toMatch(/application\/json/);
     // 关键：错误响应绝不能带文件头，否则存下打不开的 .pdf
@@ -198,7 +201,7 @@ describe('GET /api/invoices/:id/download —— 错误路径不得伪装成 PDF�
     });
 
     // .redirects(0)：不跟随到外部 https 地址（跟随会发真实网络请求，CI 里必挂）
-    const res = await request(app).get(`/api/invoices/${invoiceId}/download`).redirects(0);
+    const res = await request(app).get(`/api/invoices/${invoiceId}/download`).set(auth).redirects(0);
     expect([301, 302, 307]).toContain(res.status);
     expect(res.headers.location).toBe('https://invoice.example.test/ok.pdf');
   });

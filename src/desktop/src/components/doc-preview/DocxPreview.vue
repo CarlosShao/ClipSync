@@ -57,6 +57,7 @@ nextTick(() => {
         </li>
       </ul>
     </div>
+    <!-- eslint-disable-next-line vue/no-v-html -- html 只有唯一调用方 DocPreviewModal：docxHtml 的两个赋值点分别是 sanitizeHtml(ensureHeadingIds(mammoth 输出)) 与本项目常量字符串（失败/空文档提示），无远端裸 HTML 通道；docx 管道消毒见 utils/__tests__/sanitize.test.ts 的 S1-1 组 -->
     <div ref="contentRef" class="docx-preview markdown-body" v-html="html" />
   </div>
 </template>

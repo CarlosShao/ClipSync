@@ -187,6 +187,7 @@ onBeforeUnmount(cancelScheduled)
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vue/no-v-html -- html 只由 renderSlice() 写入：sanitizeHtml(marked.parse(...))，catch 分支也是 sanitizeHtml(prepared)，无任何绕过 DOMPurify 的赋值路径 -->
   <div class="ai-stream-text" v-html="html"></div>
 </template>
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import crypto from 'node:crypto';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 import { invalidateFlagsCache, isFlagEnforced } from '../src/utils/featureFlags.js';
 
 /**
@@ -116,12 +116,16 @@ afterAll(async () => {
   await pool.end().catch(() => {});
 });
 
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有 /api 请求带真签名 token
+// （身份仍是固定 TEST_USER_ID，各文件 beforeAll 里的 users seed 因此从「可选」变成「必需」）。
+const auth = authHeaders();
+
 describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () => {
   it('create-order 503 SUBSCRIPTION_DISABLED，且库里不多一张 pending 单', async () => {
     await setFlag('enable_subscription', false);
     const before = await countOrders();
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId });
 
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('SUBSCRIPTION_DISABLED');
@@ -143,7 +147,7 @@ describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () =
 
     const before = await countOrders();
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ subscriptionId: sub.rows[0].id, paymentMethod: 'mock' });
 
     expect(res.status).toBe(503);
@@ -162,7 +166,7 @@ describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () =
     );
     await setFlag('enable_subscription', false);
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo: rows[0].order_no });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo: rows[0].order_no });
 
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('SUBSCRIPTION_DISABLED');
@@ -177,7 +181,7 @@ describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () =
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     await setFlag('enable_subscription', false);
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo: 'ORDNOTEXIST000001' });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo: 'ORDNOTEXIST000001' });
     // 属主自助退款上线后（2026-09-19），/refund 先定位订单再判权限：
     // 「不存在」与「不是你的单」一律 404 ORDER_NOT_FOUND，未授权调用方永远读不到开关状态
     expect(res.status).toBe(404);
@@ -188,7 +192,7 @@ describe('enable_subscription 关闭 → 收钱链路必须关门（F2）', () =
 describe('enable_subscription 打开 → 正常链路不受影响', () => {
   it('create-order 恢复 200 并返回收银台 URL（闸不会误杀真实支付）', async () => {
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ planId, billingCycle: 'monthly' });
 
     expect(res.status).toBe(200);
@@ -197,7 +201,7 @@ describe('enable_subscription 打开 → 正常链路不受影响', () => {
   });
 
   it('refund 过闸：不再 503，继续走真实退款的分流校验（此处订单不存在 → 404）', async () => {
-    const res = await request(app).post('/api/payments/refund').send({ orderNo: 'ORDNOTEXIST000002' });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo: 'ORDNOTEXIST000002' });
     expect(res.status).toBe(404);
     expect(res.body.code).not.toBe('SUBSCRIPTION_DISABLED');
   });

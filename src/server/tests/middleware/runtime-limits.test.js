@@ -26,7 +26,7 @@ vi.mock('../../src/utils/logger.js', () => ({
 }));
 
 import { getRuntimeLimits, invalidateLimitsCache, getCachedRuntimeLimits } from '../../src/utils/runtimeLimits.js';
-import { sendCodeLimiter, checkWsConnectionLimit } from '../../src/middleware/rateLimiter.js';
+import { sendCodeLimiter, apiLimiter, checkWsConnectionLimit } from '../../src/middleware/rateLimiter.js';
 import { logger } from '../../src/utils/logger.js';
 import pool from '../../src/db/pool.js';
 
@@ -160,7 +160,33 @@ describe('runtimeLimits 读取层', () => {
 });
 
 describe('限流器动态阈值与总开关（rateLimiter 接入）', () => {
-  // 注：apiLimiter 在 NODE_ENV=test 下整体短路，故用无 test 门控的 sendCodeLimiter 验证真实链路
+  // P0-C/C1 更正本行旧注释：「apiLimiter 在 NODE_ENV=test 下整体短路，故用无 test 门控的
+  // sendCodeLimiter 验证真实链路」。那句已失效——apiLimiter 的
+  // `NODE_ENV==='test' ? (req,res,next)=>next() : createRateLimiter(...)` 占位三元被删除，
+  // 现在它和 sendCodeLimiter 一样是真 limiter（测试隔离靠 tests/setup.js 的
+  // beforeEach(resetAllRateLimitStores) 清计数，而不是把中间件关掉）。
+  // 下面新增的 apiLimiter 用例就是这句更正的凭据。
+
+  // 这条直接证明「占位导出已拆除」：拆掉的话第 3 次调用不会 429，而会变成 next() 被调用 3 次。
+  it('apiLimiter 不再是 test 占位函数：rate_limit_api_per_min=2 → 同一用户第 3 次 429', async () => {
+    poolState.rows = configRows({ rate_limit_api_per_min: '2' });
+    const userId = 'runtime-limits-apilimiter-user';
+    let res;
+    const nexts = [];
+    for (let i = 0; i < 3; i++) {
+      res = makeRes();
+      const next = vi.fn();
+      nexts.push(next);
+      await apiLimiter({ userId, ip: '10.0.0.9', headers: {}, path: '/api/clipboard' }, res, next);
+      // 写了响应头 = 中间件真的在跑（占位函数什么头都不写）
+      expect(res.headers['X-RateLimit-Limit']).toBe(2);
+    }
+    expect(nexts[0]).toHaveBeenCalledTimes(1);
+    expect(nexts[1]).toHaveBeenCalledTimes(1);
+    expect(nexts[2]).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(429);
+    expect(res.body.error).toContain('API rate limit');
+  });
 
   it('rate_limit_disabled=true → sendCodeLimiter 直接放行（不计数、不 429、无响应头）', async () => {
     poolState.rows = configRows({ rate_limit_disabled: 'true' });

@@ -33,6 +33,7 @@ function scrollToHeading(id: string) {
         {{ item.text }}
       </a>
     </nav>
+    <!-- eslint-disable-next-line vue/no-v-html -- utils/docPreview 的 renderMarkdown 在 return 前一律 sanitizeHtml(marked.parse(...))（catch 兜底分支也转义 < >），内容再可控也只能以文本/安全标签落地；见 utils/__tests__/sanitize.test.ts 的 renderMarkdown 组 -->
     <div class="markdown-preview-content markdown-body" v-html="renderMarkdown(content)"></div>
   </div>
 </template>

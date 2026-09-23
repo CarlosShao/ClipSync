@@ -14,6 +14,7 @@ import Button from '@/components/ui/button/Button.vue'
 import { Sparkles, Loader2, RefreshCw, Save } from 'lucide-vue-next'
 import AiStreamText from '@/components/ai/AiStreamText.vue'
 import type { ClipboardTemplate } from '@/types'
+import { highlightTemplateVars } from '@/utils/htmlText'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; saved: [tpl: ClipboardTemplate] }>()
@@ -90,16 +91,7 @@ watch(status, (s) => {
   }
 })
 
-// --- {{变量}} 高亮（与 TemplatesView/TemplateList 的 hlVars 同一正则与 .var-hl 全局样式；预览保留换行） ---
-function esc(raw: string): string {
-  return String(raw).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-function hlVars(raw: string): string {
-  return esc(raw).replace(
-    /\{\{\s*([^:{}]+?)\s*\}\}/g,
-    (_m, k) => `<span class="var-hl">{{${String(k).trim()}}}</span>`,
-  )
-}
+// P0-C C3：原 esc()/hlVars() 三份副本已抽到 utils/htmlText.highlightTemplateVars —— 豁免理由留在 SFC 里就没法被单测覆盖
 function extractPreviewVars(content: string): string[] {
   return [...new Set((content.match(/\{\{\s*([^:{}]+?)\s*\}\}/g) || []).map((m) => m.replace(/[{}]/g, '').trim()).filter(Boolean))]
 }
@@ -198,7 +190,8 @@ watch(
         <div class="tgd-stage-label">{{ tf('tpl_ai_gen_preview', '模板预览') }}</div>
         <div class="tgd-preview">
           <div class="tgd-preview-name">{{ parsed.name }}</div>
-          <div class="tgd-preview-body" v-html="hlVars(parsed.content)"></div>
+          <!-- eslint-disable-next-line vue/no-v-html -- 模板正文由用户/AI 撰写，但 highlightTemplateVars（utils/htmlText）先把整段 escapeHtmlText 再做占位符替换，最终字符串里唯一能活的标签只有本项目自己写死的那对 <span class="var-hl">，内容里的任何 < 都已是 &lt;。不变式由 utils/__tests__/vhtml-invariants.test.ts 钉住 -->
+          <div class="tgd-preview-body" v-html="highlightTemplateVars(parsed.content, false)"></div>
           <div v-if="parsed.variables.length" class="tgd-preview-vars">
             <span class="tgd-vars-label">{{ tf('tpl_ai_gen_vars', '变量') }}</span>
             <span

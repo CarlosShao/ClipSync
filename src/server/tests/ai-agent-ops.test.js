@@ -19,12 +19,14 @@ import request from 'supertest'
 import { v4 as uuidv4 } from 'uuid'
 import pool from '../src/db/pool.js'
 import { encrypt } from '../src/utils/encryption.js'
-import { getTestApp, ensureTestUser, cleanupTestData } from './test-helpers.js'
+import { getTestApp, ensureTestUser, cleanupTestData, authHeaders } from './test-helpers.js'
 import { executeTool, approveToolRequest, cancelPendingForUser } from '../src/routes/aiTools.js'
 import { assertToolAllowed, getToolsForRole, isToolAllowedForLevel } from '../src/utils/aiSystemPrompt.js'
 
-// 测试环境 auth 中间件固定使用的用户 ID（src/middleware/auth.js）。仅用于 ephemeral 消息落库测试。
+// 固定测试用户 ID（P0-C/C1 后不再由中间件白送，凭据见下面 auth）。仅用于 ephemeral 消息落库测试。
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
+// P0-C/C1：auth.js 的 test 旁路已删除 → 真签 token（身份仍是这个固定用户）
+const auth = authHeaders()
 
 // 本文件专用用户的手机号（13800 号段，setup.js beforeAll 会自动清理）
 const PHONE_U1 = '13800000001'
@@ -447,7 +449,7 @@ describe('读取隐私与 ephemeral 隔离', () => {
     //   属另一个源实现健壮性缺陷（见总结），与本处 ephemeral 语义无关，故此处避免触发。
     const now = new Date().toISOString()
     const save = await request(app)
-      .post(`/api/ai/conversations/${convId}/messages`)
+      .post(`/api/ai/conversations/${convId}/messages`).set(auth)
       .send({
         messages: [
           { role: 'user', content: 'PERSISTED_NORMAL_MESSAGE', createdAt: now },
@@ -459,7 +461,8 @@ describe('读取隐私与 ephemeral 隔离', () => {
     expect(save.body.messages.length).toBe(1) // 仅普通消息被插入
 
     // GET 详情不含 ephemeral 消息
-    const detail = await request(app).get(`/api/ai/conversations/${convId}`)
+    // 对话详情同样要带身份（原来靠旁路白送）；顺带钉住「不属于自己的对话读不到」由 A2 用例负责
+    const detail = await request(app).get(`/api/ai/conversations/${convId}`).set(auth)
     expect(detail.status).toBe(200)
     const contents = detail.body.messages.map((m) => m.content)
     expect(contents).toContain('PERSISTED_NORMAL_MESSAGE')

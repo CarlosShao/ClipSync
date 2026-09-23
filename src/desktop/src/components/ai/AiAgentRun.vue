@@ -90,6 +90,7 @@ const hasContent = computed(() => (props.run.content?.trim().length || 0) > 0)
       :agent-name="displayName"
     />
 
+    <!-- eslint-disable-next-line vue/no-v-html -- run.content 是远端可控文本，但只经本文件 renderMarkdown()：marked.parse 之后立即 sanitizeHtml(DOMPurify)，异常兜底分支同样过 sanitizeHtml，不存在裸 HTML 通道 -->
     <div v-if="hasContent" class="ai-agent-run-content markdown-body" v-html="renderMarkdown(run.content || '')"></div>
   </div>
 </template>

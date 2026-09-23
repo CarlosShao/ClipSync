@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import request from 'supertest';
 import crypto from 'node:crypto';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 import { invalidateFlagsCache } from '../src/utils/featureFlags.js';
 import { clearRefundSettingsCache } from '../src/services/refundPolicy.js';
 import {
@@ -192,12 +192,16 @@ afterAll(async () => {
   await pool.end().catch(() => {});
 });
 
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有 /api 请求带真签名 token
+// （身份仍是固定 TEST_USER_ID，各文件 beforeAll 里的 users seed 因此从「可选」变成「必需」）。
+const auth = authHeaders();
+
 describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => {
   it('申请成功 → 201：订单仍 paid、订阅 canceled、用户回 free、渠道零调用', async () => {
     const { orderId, orderNo, subscriptionId } = await seedOrder();
     const fn = stubGatewayResponse({ code: '10000', msg: 'Success' });
 
-    const res = await request(app).post('/api/payments/refund-request').send({ orderNo, reason: '用不上' });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo, reason: '用不上' });
 
     expect(res.status).toBe(201);
     expect(res.body.request).toMatchObject({ orderNo, status: 'pending', amount: 9.9 });
@@ -219,8 +223,8 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
     const { orderId, orderNo } = await seedOrder();
     stubGatewayResponse({ code: '10000' });
 
-    await request(app).post('/api/payments/refund-request').send({ orderNo });
-    const again = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
+    const again = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     expect(again.status).toBe(409);
     expect(again.body.code).toBe('REFUND_REQUEST_PENDING');
@@ -235,7 +239,7 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
     const { orderNo } = await seedOrder({ userId: OTHER_USER_ID });
     const fn = stubGatewayResponse({ code: '10000' });
 
-    const res = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ORDER_NOT_FOUND');
@@ -247,7 +251,7 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
     const { orderId } = await seedOrder({ paidAt });
     const fn = stubGatewayResponse({ code: '10000' });
 
-    const res = await request(app).post('/api/payments/refund-request').send({ orderId });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderId });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('REFUND_WINDOW_EXPIRED');
@@ -261,12 +265,12 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
     const newer = await seedOrder({ paidAt: new Date() });
     stubGatewayResponse({ code: '10000' });
 
-    const res = await request(app).post('/api/payments/refund-request').send({ orderNo: older.orderNo });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: older.orderNo });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('NOT_CURRENT_SUB_ORDER');
     // 新单仍是锚点，可以退
-    const ok = await request(app).post('/api/payments/refund-request').send({ orderNo: newer.orderNo });
+    const ok = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: newer.orderNo });
     expect(ok.status).toBe(201);
   });
 
@@ -274,7 +278,7 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
     const { orderNo } = await seedOrder({ paymentMethod: 'stripe' });
     const fn = stubGatewayResponse({ code: '10000' });
 
-    const res = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CHANNEL_UNSUPPORTED');
@@ -282,7 +286,7 @@ describe('POST /api/payments/refund-request · 申请阶段绝不动钱', () => 
   });
 
   it('缺 orderNo/orderId → 400', async () => {
-    const res = await request(app).post('/api/payments/refund-request').send({});
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({});
     expect(res.status).toBe(400);
   });
 });
@@ -294,13 +298,13 @@ describe('退款时限改为后台可配置', () => {
     stubGatewayResponse({ code: '10000' });
 
     await setRefundConfig({ windowDays: 3 });
-    const denied = await request(app).post('/api/payments/refund-request').send({ orderNo: first.orderNo });
+    const denied = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: first.orderNo });
     expect(denied.status).toBe(409);
     expect(denied.body.code).toBe('REFUND_WINDOW_EXPIRED');
     expect(denied.body.windowDays).toBe(3);
 
     await setRefundConfig({ windowDays: 30 });
-    const allowed = await request(app).post('/api/payments/refund-request').send({ orderNo: first.orderNo });
+    const allowed = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: first.orderNo });
     expect(allowed.status).toBe(201);
     expect(allowed.body.request.windowDaysAtRequest).toBe(30);
   });
@@ -309,7 +313,7 @@ describe('退款时限改为后台可配置', () => {
     await seedOrder();
     await setRefundConfig({ windowDays: 2, reviewBusinessDays: 5 });
 
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
 
     expect(res.status).toBe(200);
     expect(res.body.windowDays).toBe(2);
@@ -323,10 +327,10 @@ describe('GET /api/payments/refundable-orders · 在途申请标注', () => {
     // 同一订阅挂两笔已付单（真实续费形态）：新单才是锚点
     const newer = await seedOrder({ paidAt: new Date(), subscriptionId: older.subscriptionId });
     stubGatewayResponse({ code: '10000' });
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo: newer.orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: newer.orderNo });
     expect(submitted.status).toBe(201);
 
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
     const byNo = Object.fromEntries(res.body.orders.map((o) => [o.orderNo, o]));
 
     expect(byNo[newer.orderNo]).toMatchObject({ refundable: false, reasonCode: 'REFUND_REQUEST_PENDING' });
@@ -342,9 +346,9 @@ describe('GET /api/payments/refundable-orders · 在途申请标注', () => {
   it('GET /refund-requests/mine 只回自己的申请', async () => {
     const mine = await seedOrder();
     stubGatewayResponse({ code: '10000' });
-    await request(app).post('/api/payments/refund-request').send({ orderNo: mine.orderNo });
+    await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: mine.orderNo });
 
-    const res = await request(app).get('/api/payments/refund-requests/mine');
+    const res = await request(app).get('/api/payments/refund-requests/mine').set(auth);
 
     expect(res.status).toBe(200);
     expect(res.body.requests).toHaveLength(1);
@@ -355,7 +359,7 @@ describe('GET /api/payments/refundable-orders · 在途申请标注', () => {
 describe('审核通过才真打款', () => {
   it('approve → 渠道被调一次、订单 refunded、申请 approved', async () => {
     const { orderId, orderNo, subscriptionId } = await seedOrder();
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
     const requestId = submitted.body.request.id;
 
     const fn = stubGatewayResponse({ code: '10000', msg: 'Success', refund_fee: '9.90' });
@@ -370,7 +374,7 @@ describe('审核通过才真打款', () => {
 
   it('重复审核 → 第二次 409 且渠道不再被调（不会退两次钱）', async () => {
     const { orderId, orderNo } = await seedOrder();
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     stubGatewayResponse({ code: '10000', refund_fee: '9.90' });
     await approveRefundRequest({ requestId: submitted.body.request.id, actorUserId: OTHER_USER_ID });
@@ -386,7 +390,7 @@ describe('审核通过才真打款', () => {
   it('渠道失败 → 申请退回 pending（管理员可重试），订单保持 paid、权益不恢复', async () => {
     const { orderId, subscriptionId } = await seedOrder();
     const submitted = await request(app)
-      .post('/api/payments/refund-request')
+      .post('/api/payments/refund-request').set(auth)
       .send({ orderNo: (await readOrder(orderId)).order_no });
 
     const fn = stubGatewayResponse({ code: '40004', msg: 'Business Failed', sub_code: 'REFUND_AMOUNT_EXCEED' });
@@ -405,7 +409,7 @@ describe('审核通过才真打款', () => {
 describe('驳回要还原权益', () => {
   it('驳回 → 订阅回 active、用户回 pro、申请 rejected、订单仍 paid', async () => {
     const { orderId, orderNo, subscriptionId } = await seedOrder();
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     const fn = stubGatewayResponse({ code: '10000' });
     const result = await rejectRefundRequest({
@@ -424,7 +428,7 @@ describe('驳回要还原权益', () => {
 
   it('驳回时必须带理由，否则 400', async () => {
     const { orderNo } = await seedOrder();
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     await expect(
       rejectRefundRequest({ requestId: submitted.body.request.id, actorUserId: OTHER_USER_ID })
@@ -433,7 +437,7 @@ describe('驳回要还原权益', () => {
 
   it('用户在审核期间又买了新订阅 → 不还原旧订阅（绝不制造两条 active）', async () => {
     const old = await seedOrder();
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo: old.orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo: old.orderNo });
 
     // 模拟用户重新下单并履约成功：新订阅 active，users 指向新订阅
     const fresh = await seedOrder({ paidAt: new Date() });
@@ -464,7 +468,7 @@ describe('管理台审核列表查询', () => {
   it('pending 列表带出用户/套餐/订单信息；通过后 reviewedByName 出现在 approved 列表', async () => {
     const { orderNo } = await seedOrder();
     stubGatewayResponse({ code: '10000', refund_fee: '9.90' });
-    const submitted = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
 
     const pending = await listRefundRequestsForAdmin({ status: 'pending' });
     expect(pending.total).toBe(1);

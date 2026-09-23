@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import request from 'supertest';
 import crypto from 'node:crypto';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 import { invalidateFlagsCache } from '../src/utils/featureFlags.js';
 // 窗口天数按服务的常量走（测试不各写一份 7，否则改了常量测试还绿着 = 假绿）
 import { SELF_REFUND_WINDOW_DAYS } from '../src/services/refundPolicy.js';
@@ -200,13 +200,17 @@ afterAll(async () => {
   await pool.end().catch(() => {});
 });
 
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有 /api 请求带真签名 token
+// （身份仍是固定 TEST_USER_ID，各文件 beforeAll 里的 users seed 因此从「可选」变成「必需」）。
+const auth = authHeaders();
+
 describe('权限与参数守卫', () => {
   it('非属主 + 非管理员 → 404 ORDER_NOT_FOUND（与「订单不存在」同壳），且完全不碰渠道', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const { orderId, orderNo } = await seedOrder({ userId: OTHER_USER_ID, withSubscription: false });
     const fn = stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo, reason: '测试' });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo, reason: '测试' });
 
     // 防探测：别人的单 = 不存在的单，一字不差（不承认存在、不泄露状态、不泄露属主）
     expect(res.status).toBe(404);
@@ -220,7 +224,7 @@ describe('权限与参数守卫', () => {
     const { orderId, orderNo } = await seedOrder();
     const fn = stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     // 2026-09-20 两段式：属主只能申请（POST /refund-request），审核通过才动钱
     expect(res.status).toBe(409);
@@ -230,13 +234,13 @@ describe('权限与参数守卫', () => {
   });
 
   it('缺 orderId/orderNo → 400', async () => {
-    const res = await request(app).post('/api/payments/refund').send({});
+    const res = await request(app).post('/api/payments/refund').set(auth).send({});
     expect(res.status).toBe(400);
   });
 
   it('订单不存在 → 404', async () => {
     const res = await request(app)
-      .post('/api/payments/refund')
+      .post('/api/payments/refund').set(auth)
       .send({ orderNo: 'ORD_NOT_EXIST_9999' });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ORDER_NOT_FOUND');
@@ -246,7 +250,7 @@ describe('权限与参数守卫', () => {
     const { orderNo } = await seedOrder({ status: 'pending' });
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('ORDER_NOT_REFUNDABLE');
@@ -257,7 +261,7 @@ describe('权限与参数守卫', () => {
     const { orderNo } = await seedOrder({ paymentMethod: 'stripe' });
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('REFUND_CHANNEL_UNSUPPORTED');
@@ -269,7 +273,7 @@ describe('权限与参数守卫', () => {
     delete process.env.ALIPAY_PRIVATE_KEY;
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(503);
     expect(res.body.code).toBe('ALIPAY_NOT_CONFIGURED');
@@ -289,7 +293,7 @@ describe('管理员强退通道（自助闸只约束属主，不约束管理员�
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
 
     const res = await request(app)
-      .post('/api/payments/refund')
+      .post('/api/payments/refund').set(auth)
       .send({ orderNo: victim.orderNo, reason: '客服处理' });
 
     expect(res.status).toBe(200);
@@ -302,7 +306,7 @@ describe('管理员强退通道（自助闸只约束属主，不约束管理员�
     const { orderId, orderNo } = await seedOrder();
     stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderId });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderId });
 
     expect(res.status).toBe(200);
     expect(res.body.order.orderNo).toBe(orderNo);
@@ -321,7 +325,7 @@ describe('退款成功（fund_status=Y）', () => {
       refund_amount: '9.90',
     });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderId, reason: '用户误购' });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderId, reason: '用户误购' });
 
     expect(res.status).toBe(200);
     expect(res.body.order).toMatchObject({ orderNo, amount: 9.9, refundAmount: 9.9, status: 'refunded' });
@@ -361,10 +365,10 @@ describe('退款成功（fund_status=Y）', () => {
   it('已退款订单二次请求 → 409 ALREADY_REFUNDED，不再打款', async () => {
     const { orderId, orderNo } = await seedOrder();
     stubGatewayResponse({ code: '10000', fund_status: 'Y', out_trade_no: orderNo, refund_amount: '9.90' });
-    expect((await request(app).post('/api/payments/refund').send({ orderNo })).status).toBe(200);
+    expect((await request(app).post('/api/payments/refund').set(auth).send({ orderNo })).status).toBe(200);
 
     const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
-    const res = await request(app).post('/api/payments/refund').send({ orderId });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderId });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ALREADY_REFUNDED');
     expect(fn).not.toHaveBeenCalled();
@@ -382,7 +386,7 @@ describe('退款失败：本地状态一律不动', () => {
       out_trade_no: orderNo,
     });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('REFUND_CHANNEL_FAILED');
@@ -398,7 +402,7 @@ describe('退款失败：本地状态一律不动', () => {
     const { orderId, orderNo, subscriptionId } = await seedOrder();
     stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'C', refund_amount: '9.90' });
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('REFUND_NOT_CONFIRMED');
@@ -412,7 +416,7 @@ describe('退款失败：本地状态一律不动', () => {
     const tampered = `{${nodeText.replace('9.90', '99.00')},"sign":"${signWith(nodeText)}"}`;
     vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => tampered })));
 
-    const res = await request(app).post('/api/payments/refund').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund').set(auth).send({ orderNo });
 
     expect(res.status).toBe(502);
     expect(res.body.code).toBe('REFUND_CHANNEL_FAILED');
@@ -435,7 +439,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     const foreign = await seedOrder({ userId: OTHER_USER_ID, withSubscription: false, paidAt: new Date(Date.now() + DAY_MS) });
     const pending = await seedOrder({ status: 'pending', withSubscription: false });
 
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
 
     expect(res.status).toBe(200);
     expect(view(res.body.orders)).toEqual([
@@ -454,7 +458,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     const paidAt = new Date(Date.now() - (SELF_REFUND_WINDOW_DAYS + 1) * DAY_MS);
     const { orderNo } = await seedOrder({ paidAt });
 
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
 
     expect(res.body.orders).toHaveLength(1);
     expect(res.body.orders[0]).toMatchObject({
@@ -466,7 +470,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     expect(new Date(res.body.orders[0].paidAt).getTime()).toBe(paidAt.getTime());
 
     // 同源证明：清单说不可退的那一单，提交申请也确实被同一个理由拒掉
-    const denied = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const denied = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
     expect(denied.status).toBe(409);
     expect(denied.body.code).toBe('REFUND_WINDOW_EXPIRED');
   });
@@ -474,11 +478,11 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
   it('清单说可退的那一单，接口真的提得交申请（列表与强制点不能漂移）', async () => {
     await pool.query('UPDATE users SET is_admin = false WHERE id = $1', [TEST_USER_ID]);
     const { orderNo } = await seedOrder();
-    const listed = await request(app).get('/api/payments/refundable-orders');
+    const listed = await request(app).get('/api/payments/refundable-orders').set(auth);
     expect(listed.body.orders[0]).toMatchObject({ orderNo, refundable: true, reasonCode: null });
 
     const fn = stubGatewayResponse({ code: '10000', msg: 'Success', fund_status: 'Y', refund_amount: '9.90' });
-    const res = await request(app).post('/api/payments/refund-request').send({ orderNo });
+    const res = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
     expect(res.status).toBe(201);
     // 申请阶段不动钱：渠道一次都没被调
     expect(fn).not.toHaveBeenCalled();
@@ -491,7 +495,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     });
     const plain = await seedOrder({ amount: 9.9, paidAt: new Date(Date.now() - 3 * DAY_MS), withSubscription: false });
 
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
     const byNo = Object.fromEntries(res.body.orders.map((o) => [o.orderNo, o]));
 
     expect(byNo[upgrade.orderNo]).toMatchObject({ amount: 5.5, originalAmount: 19.9, creditAmount: 14.4 });
@@ -505,7 +509,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
       // 最新一笔挂 active 订阅（锚定单）→ 可退；其余无订阅，新口径下一律不可退
       await seedOrder({ paidAt: new Date(Date.now() - i * DAY_MS), withSubscription: i === 0 });
     }
-    const res = await request(app).get('/api/payments/refundable-orders');
+    const res = await request(app).get('/api/payments/refundable-orders').set(auth);
     expect(res.body.orders).toHaveLength(10);
     expect(res.body.orders[0].refundable).toBe(true);
     expect(res.body.orders.slice(1).every((o) => !o.refundable && o.reasonCode === 'NOT_CURRENT_SUB_ORDER')).toBe(true);
@@ -516,7 +520,7 @@ describe('GET /api/payments/refundable-orders —— 申请退款弹窗清单', 
     await seedOrder();
     await setFlag('enable_subscription', false);
     try {
-      const res = await request(app).get('/api/payments/refundable-orders');
+      const res = await request(app).get('/api/payments/refundable-orders').set(auth);
       expect(res.status).toBe(503);
       expect(res.body.code).toBe('SUBSCRIPTION_DISABLED');
       expect(res.body.flagDisabled).toBe('enable_subscription');

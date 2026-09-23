@@ -5,6 +5,7 @@ import { resetRateLimit } from '../src/middleware/rateLimiter.js';
 import {
   ensureTestUser,
   createTestDevice,
+  signAccessToken,
 } from './test-helpers.js';
 
 // 延迟导入 app，避免触发 server.listen()
@@ -13,6 +14,11 @@ beforeAll(async () => {
   const mod = await import('../src/index.js');
   app = mod.app;
 });
+
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除。
+// auth() 读的是下面 beforeAll 里用 config.jwt.secret 真签出来的 authToken。
+let authToken;
+const auth = () => ({ Authorization: `Bearer ${authToken}` });
 
 function measurePerf(iterations, fn) {
   return async () => {
@@ -35,8 +41,8 @@ function measurePerf(iterations, fn) {
   };
 }
 
+
 describe('性能测试', () => {
-  let authToken;
   let testDeviceId;
   let testUserId;
   const testPhone = '13900440000';  // 性能测试专用手机号
@@ -46,23 +52,20 @@ describe('性能测试', () => {
     try { resetRateLimit('sendCode'); } catch (_) {}
     try { resetRateLimit('loginFailed'); } catch (_) {}
 
-    if (process.env.NODE_ENV === 'test') {
-      authToken = 'test-token';
-      testUserId = await ensureTestUser(pool, testPhone);
-      testDeviceId = await createTestDevice(pool, testUserId, '性能测试设备');
-      return;
-    }
-
-    // 非测试环境：真实登录
-    await request(app).post('/api/auth/send-code').send({ phone: testPhone });
-    const loginRes = await request(app).post('/api/auth/verify-code').send({ phone: testPhone, code: '888888' });
-    authToken = loginRes.body.token;
-
-    const deviceRes = await request(app)
-      .post('/api/devices')
-      .set('Authorization', `Bearer ${authToken}`)
-      .send({ deviceName: '性能测试设备', deviceType: 'mobile', platform: 'ios', platformVersion: '1.0.0' });
-    testDeviceId = deviceRes.body.id || deviceRes.body.deviceId;
+    // P0-C/C1：不再有 test 环境旁路 —— 建真账号，token 用 config.jwt.secret 真签。
+    // 原来这里是一个 `if (NODE_ENV==='test') { authToken='test-token'; return }` 分支 +
+    // 一段永不执行的「非测试环境真实登录」代码（发码 + 固定验证码 888888）。
+    // 旁路拆除后那段死分支被激活过（本次改动过程中实测打到 /api/auth/verify-code），
+    // 现整段删除：性能用例只需要一个真身份，不需要走注册流程。
+    testUserId = await ensureTestUser(pool, testPhone);
+    // 自造干净前置态（P0-C/C1）：testPhone 与 '性能测试设备' 都是固定值，
+    // 而 devices 上有 UNIQUE(user_id, device_name)、createTestDevice 是裸 INSERT（原有 helper，
+    // 语义不动）。上一轮运行的残留行会让本文件的 beforeAll 直接抛 23503 ⇒ 整个 describe 全红。
+    // 本用例账号专用（文件里注释也写明「性能测试专用手机号」），删自己的设备是安全的：
+    // devices 的下游（clipboard_items / device_sync_state / encryption_keys）均为 ON DELETE CASCADE。
+    await pool.query('DELETE FROM devices WHERE user_id = $1', [testUserId]);
+    authToken = signAccessToken({ userId: testUserId });
+    testDeviceId = await createTestDevice(pool, testUserId, '性能测试设备');
   });
 
   describe('1. 健康检查接口性能', () => {
@@ -104,7 +107,7 @@ describe('性能测试', () => {
     it('POST /api/clipboard 应在500ms内响应（P95）', { timeout: 15000 }, async () => {
       const stats = await (measurePerf(50, () =>
         request(app)
-          .post('/api/clipboard')
+          .post('/api/clipboard').set(auth())
           .set('Authorization', `Bearer ${authToken}`)
           .send({
             sourceDeviceId: testDeviceId,
@@ -122,7 +125,7 @@ describe('性能测试', () => {
     it('GET /api/clipboard 应在200ms内响应（P95）', async () => {
       const stats = await (measurePerf(50, () =>
         request(app)
-          .get('/api/clipboard')
+          .get('/api/clipboard').set(auth())
           .set('Authorization', `Bearer ${authToken}`)
       ))();
 
@@ -137,7 +140,7 @@ describe('性能测试', () => {
     it('POST /api/sync/push 应在300ms内响应（P95）', async () => {
       const stats = await (measurePerf(50, () =>
         request(app)
-          .post('/api/sync/push')
+          .post('/api/sync/push').set(auth())
           .set('Authorization', `Bearer ${authToken}`)
           .send({
             deviceId: testDeviceId,
@@ -179,7 +182,7 @@ describe('性能测试', () => {
 
       const sendWrite = (i) => {
         return request(app)
-          .post('/api/clipboard')
+          .post('/api/clipboard').set(auth())
           .set('Authorization', `Bearer ${authToken}`)
           .send({
             sourceDeviceId: testDeviceId,

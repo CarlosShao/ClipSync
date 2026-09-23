@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '@/composables/useI18n'
 import type { ClipboardTemplate } from '@/types'
+import { highlightTemplateVars } from '@/utils/htmlText'
 import { Trash2, Zap, Pencil } from 'lucide-vue-next'
 
 defineProps<{ templates: ClipboardTemplate[] }>()
@@ -11,16 +12,7 @@ const emit = defineEmits<{
   delete: [tpl: ClipboardTemplate]
 }>()
 
-/* {{变量}} 高亮预览（原型 .var-hl）：先转义 HTML，再把 {{name}} 包成高亮 span */
-function esc(raw: string): string {
-  return String(raw).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-function hlVars(raw: string): string {
-  return esc(raw.replace(/\s+/g, ' ').trim()).replace(
-    /\{\{\s*([^:{}]+?)\s*\}\}/g,
-    (_m, k) => `<span class="var-hl">{{${String(k).trim()}}}</span>`,
-  )
-}
+// P0-C C3：原 esc()/hlVars() 三份副本已抽到 utils/htmlText.highlightTemplateVars —— 豁免理由留在 SFC 里就没法被单测覆盖
 function fmtTime(iso: string): string {
   try {
     const d = new Date(iso)
@@ -39,7 +31,8 @@ function fmtTime(iso: string): string {
       <div class="tpl-card-head">
         <span class="tpl-card-name">{{ tpl.name }}</span>
       </div>
-      <div class="tpl-body" v-html="hlVars(tpl.content)"></div>
+      <!-- eslint-disable-next-line vue/no-v-html -- 模板正文由用户/AI 撰写，但 highlightTemplateVars（utils/htmlText）先把整段 escapeHtmlText 再做占位符替换，最终字符串里唯一能活的标签只有本项目自己写死的那对 <span class="var-hl">，内容里的任何 < 都已是 &lt;。不变式由 utils/__tests__/vhtml-invariants.test.ts 钉住 -->
+      <div class="tpl-body" v-html="highlightTemplateVars(tpl.content)"></div>
       <div class="tpl-foot">
         <span class="tpl-card-updated">{{ tf('tpl_updated_ago', '更新于 {ago}', { ago: fmtTime(tpl.updated_at) }) }}</span>
         <span class="tpl-foot-acts">

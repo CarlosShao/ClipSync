@@ -17,8 +17,11 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import pool from '../src/db/pool.js'
 import { removeSharedLinkFiles } from '../src/routes/sharedLinks.js'
+import { authHeaders } from './test-helpers.js'
 
 const TEST_USER_ID = '00000000-0000-0000-0000-000000000001'
+// P0-C/C1：auth.js 的 test 旁路已删除 → 带真签名 token（身份 = 本文件 seed 的 TEST_USER_ID）
+const auth = authHeaders()
 const SHARED_BASE = path.resolve('uploads/shared')
 
 let app
@@ -126,7 +129,7 @@ describe('POST /api/shared-links — fileKey 强制 UUID + 边界校验', () => 
   for (const fileKey of traversalKeys) {
     it(`穿越 fileKey 被拒绝：${JSON.stringify(fileKey)}`, async () => {
       const res = await request(app)
-        .post('/api/shared-links')
+        .post('/api/shared-links').set(auth)
         .send({ contentType: 'file', fileKey, fileName: 'x.txt', fileSize: 1 })
       expect(res.status).toBe(400)
     })
@@ -134,7 +137,7 @@ describe('POST /api/shared-links — fileKey 强制 UUID + 边界校验', () => 
 
   it('格式合法但不存在的 fileKey → 400', async () => {
     const res = await request(app)
-      .post('/api/shared-links')
+      .post('/api/shared-links').set(auth)
       .send({ contentType: 'file', fileKey: randomUUID(), fileName: 'x.txt', fileSize: 1 })
     expect(res.status).toBe(400)
     expect(res.body?.error).toBe('uploaded file not found')
@@ -146,17 +149,17 @@ describe('POST /api/shared-links — fileKey 强制 UUID + 边界校验', () => 
     await fs.writeFile(path.join(dir, `${randomUUID()}.txt`), 'shared-payload')
 
     const created = await request(app)
-      .post('/api/shared-links')
+      .post('/api/shared-links').set(auth)
       .send({ contentType: 'file', fileKey: key, fileName: 'report.txt', fileSize: 14 })
     expect(created.status).toBe(201)
     const token = created.body.token
     madeTokens.push(token)
 
-    const dl = await request(app).get(`/api/shared-links/public/${token}/download`)
+    const dl = await request(app).get(`/api/shared-links/public/${token}/download`).set(auth)
     expect(dl.status).toBe(200)
     expect(String(dl.text ?? dl.body)).toContain('shared-payload')
 
-    const del = await request(app).delete(`/api/shared-links/${created.body.id}`)
+    const del = await request(app).delete(`/api/shared-links/${created.body.id}`).set(auth)
     expect(del.status).toBe(204)
     expect(existsSync(dir)).toBe(false)
   })
@@ -169,7 +172,7 @@ describe('POST /api/shared-links — fileKey 强制 UUID + 边界校验', () => 
        VALUES ($1, $2, 'x', 'x', 'file', '/etc/passwd', NULL)`,
       [TEST_USER_ID, token]
     )
-    const res = await request(app).get(`/api/shared-links/public/${token}/download`)
+    const res = await request(app).get(`/api/shared-links/public/${token}/download`).set(auth)
     expect(res.status).toBe(404)
   })
 })

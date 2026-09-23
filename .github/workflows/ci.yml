@@ -1,15 +1,27 @@
 # GitHub Actions CI/CD for ClipSync
-# 触发：push / PR 到 master
-# 设计目标：核心检查（lint + build）失败发邮件提醒；测试失败仅警告不发邮件
-# 触发分支是 master（你的仓库实际分支）
+# 触发：master / 各工作分支的 push + 任意分支之间的 PR
+# 设计目标（P0-C C2 之后）：**这一步失败就必须让 job 变红**。
+#   原注释写的是"测试失败仅警告不发邮件"，实际效果是"测试失败也报绿"——已作废。
+# 历史教训（见 docs/audit/v1-full-audit-2026-09-22/_evidence/p0c-c2.md §1.1）：
+#   触发分支只有 master，而 2026-08-21 之后所有工作都在 feature/** 与 test/** 上，
+#   新增的 39 个服务端测试文件（16 → 55）一次都没进过 CI。
 
 name: CI/CD - ClipSync
 
 on:
   push:
-    branches: [master]
+    # 取舍：用"排除式"而不是列举在用分支，因为列举法只能覆盖我今天*观察到*的分支形态
+    #   （master / dev/cnb / feature/* / fix/* / test/* / release/*），
+    #   明天新开 chore/* 或 spike/* 就又漏了 —— 漏一次 = 那批改动没有判据。
+    # 排除的两类：archive/** 与 backup/**（desktop-v1、split-refactor-20260827 等冻结快照），
+    #   对它们跑全量 npm ci + 测试只会白烧 runner 分钟；需要时用 workflow_dispatch 手点。
+    # 注意：这里按**分支名**排除；`paths-ignore` 排除的是"改动涉及的文件路径"，
+    #   两者不是一回事，不能拿来"不匹配 archive 分支"。
+    branches-ignore:
+      - 'archive/**'
+      - 'backup/**'
   pull_request:
-    branches: [master]
+    branches: ['**']
   workflow_dispatch:
 
 # 取消上一次正在跑的 pipeline
@@ -23,21 +35,20 @@ env:
   # 在 GitHub 仓库 Settings → Secrets 添加 FEISHU_WEBHOOK_URL
   FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
 
-# ============ 通知策略 ============
-# 默认 GitHub 会给所有失败 workflow 发邮件。
-# 我们想：lint 和 build 失败发邮件；tests 失败不发（避免"没修代码"也被骚扰）。
-# 用下面的 jobs.<id>.steps 显式控制。
-# 另加：构建/部署结果同步推送到飞书群（自定义机器人 Webhook）。
-
-# ============ 飞书通知辅助 ============
-# 复用：`${{ fromJSON(env.FEISHU_NOTIFY).run }}` 语法在 GitHub Actions 中不可用，
-# 这里用 shell 函数 + 环境变量实现，避免跨步骤共享复杂 JSON。
+# ============ 通知策略（P0-C C2 重写）============
+# 判据仪器的第一原则：结论必须反映真实执行结果。
+#   - lint / 语法 / 测试：失败 ⇒ job 红 ⇒ 下游 deploy 不放行。不再有 || true、不再有 continue-on-error。
+#   - 飞书通知：本质可选（webhook 抽风不该把一次好提交判成坏提交）。原先是 `|| true`（完全静默），
+#     现在改成 `|| echo "::warning::…"`：仍然不阻塞判定，但失败会在 run 页面上留下可见告警。
+# 已知残余：lint job 当前会因为 src/server 没装 eslint 而**真实变红**（不是回归，是第一次如实反映）。
+#   修法见证据文件 §6 U1 —— 需要一个 owner 批准的新增依赖，本票禁止加。
 
 jobs:
-  # ============ 1. Lint（必须通过）============
+  # ============ 1. 静态检查（必须通过）============
   lint:
     name: "Lint"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -51,11 +62,48 @@ jobs:
         working-directory: src/server
         run: npm ci
 
-      - name: Lint
+      # 真门禁、零新依赖：Node 自带的语法解析（type=module ⇒ 按 ESM 解析）。
+      # 本地实测：src/server/src 132 个 .js 里 1 个失败（utils/redis-map.js:24），tests 55 个全过。
+      - name: Syntax gate (node --check, all server sources)
         working-directory: src/server
-        run: npx eslint src/ --ext .js --max-warnings=0 || true
+        run: |
+          node -e '
+            const { execFileSync } = require("node:child_process");
+            const fs = require("node:fs"), path = require("node:path");
+            const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
+              const p = path.join(d, e.name);
+              if (e.name === "node_modules") return [];
+              return e.isDirectory() ? walk(p) : (p.endsWith(".js") ? [p] : []);
+            });
+            const files = [...walk("src"), ...walk("tests")];
+            const bad = [];
+            for (const f of files) {
+              try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); }
+              catch (e) { bad.push(f + "\n    " + String(e.stderr).split("\n")[0]); }
+            }
+            console.log(`checked ${files.length} js files, ${bad.length} with syntax errors`);
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+          '
 
-      - name: 通知飞书 Lint 结果
+      # P0-C C2 去掉了这里原来的 `|| true`（锚点 :56）。
+      # 不能直接跑 `npx eslint`：src/server 的 devDependencies 里没有 eslint（只有 supertest/vitest），
+      # npx 会每次从 npm 现拉一个 floating 版本（不走 lockfile ⇒ 自身就是供应链面），
+      # 而且仓库里没有 eslint.config.* / .eslintrc*，拉到的 v9+ 只认 flat config ⇒ 必然 exit 2。
+      # 所以这里先做**确定性探测**（只看本地 node_modules，不受 npx 缓存影响，实测：
+      # src/server=ABSENT、src/admin-console=PRESENT），探测不到就明确失败并给出修法，绝不静默放行。
+      - name: Lint gate (eslint, only if it is actually installed from the lockfile)
+        working-directory: src/server
+        run: |
+          if ! node -e 'require.resolve("eslint/package.json", { paths: [process.cwd()] })' 2>/dev/null; then
+            echo "::error::eslint 不在 src/server 的依赖里（npm ci 后 node_modules 里没有它），lint 这一步无法成为真门禁。"
+            echo "::error::修法：给 src/server 增加 eslint 依赖 + 一份匹配的配置（需 owner 批准新增依赖），"
+            echo "::error::装好后本步骤的探测会自动放行，下面的 lint 就会真实拦截。"
+            exit 1
+          fi
+          node -e 'const r=require("eslint/package.json").version; if(!r) process.exit(1); console.log("eslint "+r)'
+          npx --no-install eslint src/ --ext .js --max-warnings=0
+
+      - name: 通知飞书 Lint 结果（可选步骤，失败不影响判定）
         if: env.FEISHU_WEBHOOK_URL != '' && always()
         env:
           JOB_STATUS: ${{ job.status }}
@@ -65,48 +113,57 @@ jobs:
             "content": {
               "text": "🔍 [ClipSync CI] Lint ${{ env.JOB_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n分支: ${{ github.ref_name }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
-          }' || true
+          }' || echo "::warning::飞书通知发送失败（不影响 CI 判定）"
 
-  # ============ 2. Tests（失败不阻塞、仅警告）============
+  # ============ 2. Tests（必须通过；这是唯一的服务端测试门禁）============
+  # 故意不写 needs: lint —— 否则 linter 缺失（当前真实状态）会把测试结论一起吞掉，
+  # 两个独立信号比"一个红了就全看不见"更有用。deploy job 仍然 needs 两者。
   test:
     name: "Tests"
     runs-on: ubuntu-latest
-    needs: lint
-    # 关键：test 失败不让 workflow 失败
-    continue-on-error: true
+    timeout-minutes: 20
+    # P0-C C2：删掉了 job 级 continue-on-error（锚点 :76）和步骤级 continue-on-error（锚点 :156）。
+    # 原先两层叠加 = 测试怎么失败 workflow 都是绿的。2026-08-21 那次实跑就是 1 failed 却报 success。
     env:
       NODE_ENV: test
-      PORT: 3001
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_NAME: clipsync_test
-      DB_USER: postgres
-      DB_PASSWORD: postgres
+      # ⚠️ DB_* 这四个变量在测试模式下**不生效**：src/server/src/config.js:44 明确写了
+      #    `if (nodeEnv !== 'test' && process.env.DB_*)`，测试期一律以 src/config/test.js 的字面值为准
+      #    （host=localhost / port=5433 / name=clipsync_test / user=clipsync + 该文件里的公共默认口令）。
+      #    本票禁改 src/server/src/**，所以只能让 service container 去迁就 test.js —— 见下面的
+      #    "drift guard" 步骤：test.js 哪天被改，这里会立刻红，而不是静默连不上库。
+      #    这里刻意**不再**声明 DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD，避免留下"我配过了"的假象。
       REDIS_HOST: localhost
-      REDIS_PORT: 6380
+      REDIS_PORT: "6380"
+      # 与下面 services.redis.command 的 --requirepass 必须一致（REDIS_* 在测试模式下是生效的，
+      # 两处不一致时 src/config/test.js 的 redis 口令会被这个 env 覆盖，表现成 NOAUTH 随机失败）。
+      REDIS_PASSWORD: clipsync-ci-test-only-redis
       JWT_SECRET: ci-test-jwt-secret-not-for-production
       REQUEST_TIMEOUT: 180000
     services:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: clipsync
+          POSTGRES_PASSWORD: dev_password_change_me   # = src/config/test.js 的公共默认值，非真实凭据
           POSTGRES_DB: clipsync_test
+        # 关键：宿主机侧端口是 **5433**（test.js 写死的），不是 5432。
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U clipsync -d clipsync_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
           --memory="512m"
       redis:
         image: redis:7-alpine
+        # 必须带口令：src/config/test.js 里 redis.password 非空，node-redis 会对无口令的服务端发 AUTH
+        # 并被拒（"ERR Client sent AUTH, but no password is set"）。原配置漏了这一点。
+        command: ["redis-server", "--requirepass", "clipsync-ci-test-only-redis"]
         ports:
           - 6380:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "redis-cli -a clipsync-ci-test-only-redis ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -123,28 +180,43 @@ jobs:
         working-directory: src/server
         run: npm ci
 
-      # 等 Postgres 健康（health-cmd 可能不够稳，加个 sleep 兜底）
+      # 判据仪器自身也要防漂移：workflow 里这组容器参数是"抄"src/config/test.js 来的，
+      # 一旦被抄错（或 test.js 被改），宁可在这里红，也不要红在"测试连不上库"那种看不懂的地方。
+      - name: Drift guard — container wiring must equal src/config/test.js
+        working-directory: src/server
+        run: |
+          node --input-type=module -e '
+            const c = (await import("./src/config/test.js")).default;
+            const want = { host: "localhost", port: 5433, name: "clipsync_test", user: "clipsync" };
+            const got = { host: c.db.host, port: c.db.port, name: c.db.name, user: c.db.user };
+            const drift = Object.keys(want).filter(k => String(want[k]) !== String(got[k]));
+            if (!c.db.password) drift.push("db.password 为空（postgres 容器会拒绝连接）");
+            if (String(c.redis.port) !== process.env.REDIS_PORT) drift.push("redis.port != REDIS_PORT");
+            if (c.redis.host !== process.env.REDIS_HOST) drift.push("redis.host != REDIS_HOST");
+            if (drift.length) {
+              console.error("❌ service container 与 src/config/test.js 不再一致：", drift.join("; "));
+              console.error("   实际值:", JSON.stringify(got), JSON.stringify({redis_port:c.redis.port}));
+              console.error("   修法: 同步改 .github/workflows/ci.yml 的 services.postgres / services.redis 与 job env");
+              process.exit(1);
+            }
+            console.log("✅ 测试库/Redis 接线与 src/config/test.js 一致");
+          '
+
       - name: Wait for Postgres
         run: |
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if (echo > /dev/tcp/localhost/5432) 2>/dev/null; then
-              echo "postgres up"
-              break
-            fi
-            echo "waiting postgres... $i"
-            sleep 3
+          for i in $(seq 1 20); do
+            if (echo > /dev/tcp/localhost/5433) 2>/dev/null; then echo "postgres up (5433)"; exit 0; fi
+            echo "waiting postgres... $i"; sleep 3
           done
+          echo "::error::Postgres 5433 探活失败"; exit 1
 
       - name: Wait for Redis
         run: |
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if (echo > /dev/tcp/localhost/6380) 2>/dev/null; then
-              echo "redis up"
-              break
-            fi
-            echo "waiting redis... $i"
-            sleep 3
+          for i in $(seq 1 20); do
+            if (echo > /dev/tcp/localhost/6380) 2>/dev/null; then echo "redis up (6380)"; exit 0; fi
+            echo "waiting redis... $i"; sleep 3
           done
+          echo "::error::Redis 6380 探活失败"; exit 1
 
       - name: Run migrations
         working-directory: src/server
@@ -152,10 +224,26 @@ jobs:
 
       - name: Run tests
         working-directory: src/server
-        run: npm test -- --reporter=verbose
-        continue-on-error: true
+        run: |
+          set -o pipefail   # 没有这行的话 `npm test | tee` 的退出码来自 tee，会凭空造一个假绿
+          npm test -- --reporter=verbose 2>&1 | tee /tmp/vitest.log
 
-      - name: 通知飞书 Tests 结果
+      # 防"零用例假绿"：全部文件被 skip / 没匹配到测试时 vitest 也能给出 0 failed 的成功码。
+      # 注意 vitest 的汇总行带 ANSI 颜色码（2026-08-21 那次真实日志里就是
+      # `^[[2m Test Files ^[[22m ...1 failed`），所以必须先脱色再匹配 —— 否则这个守卫会在
+      # 一次**成功**的运行上误报红，而那正是人们把守卫删掉的经典理由。
+      - name: Guard — tests actually executed
+        run: |
+          sed -e 's/\x1b\[[0-9;]*m//g' /tmp/vitest.log > /tmp/vitest.plain.log
+          if grep -q "No test files found" /tmp/vitest.plain.log; then
+            echo "::error::vitest 没有找到任何测试文件"; exit 1
+          fi
+          if ! grep -qE "Test Files.*[0-9]+ (passed|failed)" /tmp/vitest.plain.log; then
+            echo "::error::日志里没有 vitest 汇总行，说明测试没有真正跑完"; exit 1
+          fi
+          grep -E "Test Files|Tests +[0-9]|Duration" /tmp/vitest.plain.log
+
+      - name: 通知飞书 Tests 结果（可选步骤，失败不影响判定）
         if: env.FEISHU_WEBHOOK_URL != '' && always()
         env:
           JOB_STATUS: ${{ job.status }}
@@ -165,7 +253,7 @@ jobs:
             "content": {
               "text": "🧪 [ClipSync CI] Tests ${{ env.JOB_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n分支: ${{ github.ref_name }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
-          }' || true
+          }' || echo "::warning::飞书通知发送失败（不影响 CI 判定）"
 
   # Docker Build 已删除：你用单台服务器本地 docker compose 部署，GH 打镜像无用
   # 如未来需要恢复，把下面的注释解开，并改 deploy 的 needs 加 build
@@ -186,17 +274,25 @@ jobs:
   #         push: false
   #         tags: clipsync-server:ci-${{ github.sha }}
 
-  # ============ 部署策略说明 ============
-  # 触发方式：手动触发（GitHub 网页点 Run workflow 按钮）
-  # 原因：服务器已就绪但首次建议手动验证，再考虑 push 自动触发。
+  # ============ 部署（单机 docker compose）============
+  # 触发方式：仍然只有手动（GitHub 网页点 Run workflow），但闸门收紧了：
+  #   1) needs [lint, test] ⇒ 静态检查/测试不绿就不能部署（原来 test 挂着 continue-on-error，
+  #      "needs: test" 等于没门禁）；
+  #   2) 只有从 master 分支点才放行。原因：远端脚本固定 `git reset --hard origin/master`，
+  #      从别的分支点按钮时"被测的是分支 X、被部署的是 master"，job 却按 X 报部署结果。
+  #   3) 本 job 的 continue-on-error（原 :199，票面漏记的第四层中和）已删除：部署失败必须红。
+  # ⚠️ 服务名订正（原脚本重启的是一个不存在的服务，见证据 §1.3）：
+  #      docker-compose.prod.yml → API 服务叫 api-prod（不是 backend）
+  #      docker-compose.dev.yml  → API 服务叫 clipsync （不是 backend）
+  #      docker-compose.yml      → 根本没有 services ⇒ 不再作为兜底，直接判失败
   deploy:
     name: "Deploy to Server"
     runs-on: ubuntu-latest
+    # 卡死不是"还没跑完"：一个挂住的 job 会一直显示 in progress，比红更糟。
+    # 45 分钟 = 覆盖远端 `up -d --build`（服务器现拉 npm + 建镜像）+ 最长 3 轮 ×10 次健康重试。
+    timeout-minutes: 45
     needs: [lint, test]
-    # 只在手动点 "Run workflow" 按钮时触发；push/PR 不会动服务器
-    if: github.event_name == 'workflow_dispatch'
-    # 失败不阻塞（SSH 抽风可以手动看日志）
-    continue-on-error: true
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -205,7 +301,7 @@ jobs:
       - name: 检查 Secret 是否配置
         run: |
           if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "❌ Secrets 未配齐。请在仓库 Settings → Secrets 添加 DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY"
+            echo "::error::Secrets 未配齐：需要 DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY"
             exit 1
           fi
           echo "✅ Secrets 已就绪，准备部署到 $DEPLOY_USER@$DEPLOY_HOST"
@@ -213,8 +309,8 @@ jobs:
       - name: 配置 SSH（ed25519）
         run: |
           mkdir -p ~/.ssh
-          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           echo "✅ SSH 客户端已配置"
 
@@ -222,27 +318,29 @@ jobs:
         env:
           DEPLOY_PROJECT_DIR: ${{ secrets.DEPLOY_PROJECT_DIR }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
-              "$DEPLOY_USER@$DEPLOY_HOST" << 'REMOTE_EOF'
+          # ⚠️ 原来这里是 `ssh host << 'REMOTE_EOF'`：heredoc 定界符带引号 ⇒ 本地不展开，
+          #    而 SSH 默认又不会把 DEPLOY_PROJECT_DIR 送进远端环境（SendEnv/AcceptEnv 未配），
+          #    于是远端的 "$DEPLOY_PROJECT_DIR" 恒为空——文档里写的"首选手动指定路径"从来没生效过。
+          #    现在显式把它作为远端环境变量注入（值是指向目录的路径，不是凭据）。
+          case "$DEPLOY_PROJECT_DIR" in
+            *\'*) echo "::error::DEPLOY_PROJECT_DIR 含单引号，无法安全注入远端"; exit 1 ;;
+          esac
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
+              "DEPLOY_PROJECT_DIR='$DEPLOY_PROJECT_DIR' bash -s" << 'REMOTE_EOF'
             set -e
 
             echo "==> 当前 SSH 用户: $(whoami)"
             echo "==> 当前 HOME: $HOME"
-            echo "==> Secrets.DEPLOY_PROJECT_DIR: '$DEPLOY_PROJECT_DIR'"
-            echo "==> 探测以下路径（标记 Y 表示存在）："
-            for d in "$DEPLOY_PROJECT_DIR" "/root/CodeBuddy" "/root/CodeBuddy/clipsync" "/root/clipsync" "/root/Clipboard" "/home/$(whoami)/clipsync"; do
-              if [ -n "$d" ]; then
-                echo "    [$([ -d "$d" ] && echo Y || echo N).$([ -d "$d/.git" ] && echo Y || echo N)] $d"
-              fi
-            done
+            echo "==> Secrets.DEPLOY_PROJECT_DIR: '${DEPLOY_PROJECT_DIR}'"
 
+            # 纯诊断输出，不参与任何判定；这里保留 || true 是有意为之（失败后果：只是少一行日志）。
             echo "==> 兜底：全盘搜 .git 目录（最远 5 层）"
             find /root /home /opt /srv /var/www -maxdepth 5 -type d -name ".git" 2>/dev/null | head -10 || true
 
-            # 路径探测
             PROJECT_DIR=""
 
-            # 1) 优先：Secrets.DEPLOY_PROJECT_DIR（你手动指定，最稳）
+            # 1) 优先：Secrets.DEPLOY_PROJECT_DIR
             if [ -n "$DEPLOY_PROJECT_DIR" ] && [ -d "$DEPLOY_PROJECT_DIR" ]; then
               PROJECT_DIR="$DEPLOY_PROJECT_DIR"
               echo "==> 使用 DEPLOY_PROJECT_DIR: $PROJECT_DIR"
@@ -269,7 +367,7 @@ jobs:
             fi
 
             if [ -z "$PROJECT_DIR" ]; then
-              echo "❌ 实在找不到项目目录。请在仓库 Settings → Secrets 添加 DEPLOY_PROJECT_DIR=绝对路径，例如 /root/CodeBuddy"
+              echo "::error::找不到项目目录。请在仓库 Settings → Secrets 添加 DEPLOY_PROJECT_DIR=绝对路径"
               exit 1
             fi
 
@@ -277,31 +375,75 @@ jobs:
             echo "==> 当前目录: $(pwd)"
             ls -la docker-compose*.yml 2>/dev/null || echo "⚠️ 当前目录没有 docker-compose 文件"
 
+            # 回滚锚点：这一行写不进去，出事时就没有"上一个版本"可回 —— 必须硬失败（原 :281 是 || true）。
             echo "==> 记录当前版本（用于万一回滚）"
-            git log -1 --oneline > .last_deploy_commit 2>/dev/null || true
+            git rev-parse HEAD > .last_deploy_commit
+            git log -1 --oneline | tee -a .last_deploy_log
+            echo "    上一版本已记录: $(cat .last_deploy_commit)"
 
-            echo "==> 拉取最新代码"
+            echo "==> 拉取最新代码（本 job 已限定只在 master 上手动触发）"
             git fetch origin master
             git reset --hard origin/master
 
-            echo "==> 重启后端（按文件存在情况自动挑 compose 配置）"
+            # === 重启后端：按 compose 文件挑**真实存在**的服务名，挑不出来就失败 ===
             if [ -f docker-compose.prod.yml ]; then
-              docker compose -f docker-compose.prod.yml restart backend || true
+              COMPOSE_FILE="docker-compose.prod.yml"; API_SERVICE="api-prod"
             elif [ -f docker-compose.dev.yml ]; then
-              docker compose -f docker-compose.dev.yml restart backend || true
+              COMPOSE_FILE="docker-compose.dev.yml"; API_SERVICE="clipsync"
             else
-              docker compose restart backend || true
+              # 裸 docker-compose.yml 里没有任何 services（只有 networks/volumes），不是可用的部署形态。
+              echo "::error::既没有 docker-compose.prod.yml 也没有 docker-compose.dev.yml，无法确定 API 服务名。"
+              echo "::error::原脚本在这里会 `docker compose restart backend` 然后报成功，但 backend 这个服务在本仓库任何 compose 文件里都不存在。"
+              exit 1
             fi
-            echo "✅ 后端已重启"
+            echo "==> 使用 $COMPOSE_FILE 的服务 $API_SERVICE"
 
-            sleep 5
+            if ! docker compose -f "$COMPOSE_FILE" config --services | grep -qx "$API_SERVICE"; then
+              echo "::error::$COMPOSE_FILE 里没有服务 $API_SERVICE；实际服务: $(docker compose -f "$COMPOSE_FILE" config --services | tr '\n' ' ')"
+              exit 1
+            fi
+
+            echo "==> 重建并启动（pull + up -d，restart 不会拉起新镜像/新代码）"
+            docker compose -f "$COMPOSE_FILE" up -d --build "$API_SERVICE"
+
+            # === 部署后验证：必须看到 /api/health 200，否则整个 job 红 ===
+            # 注意：服务端只有 /api/health 与 /api/ready（src/index.js:276/284），没有 /health。
+            echo "==> 健康检查 /api/health"
+            OK=0
+            for port in "${API_PORT:-3000}" 3000 3001; do
+              for i in $(seq 1 10); do
+                code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/api/health" || echo 000)
+                if [ "$code" = "200" ]; then
+                  echo "✅ 健康检查通过 (port=$port, 第 $i 次)"
+                  OK=1; break 2
+                fi
+                echo "   port=$port 第 $i 次 HTTP $code，等待 6s..."
+                sleep 6
+              done
+            done
+            if [ "$OK" != "1" ]; then
+              echo "::error::部署后 /api/health 不可达 —— 代码已 reset 但服务没起来，需要人工介入"
+              # 下面两个 || true 位于**已经判定失败**的分支里（下一步就 exit 1）：
+              # 它们的唯一作用是"取证日志拉不到时别把真实错误码盖掉"，不会把失败改成成功。
+              docker compose -f "$COMPOSE_FILE" ps "$API_SERVICE" || true
+              docker compose -f "$COMPOSE_FILE" logs --tail=50 "$API_SERVICE" || true
+              echo "➡️  回滚锚点在 $PROJECT_DIR/.last_deploy_commit（上一版本 SHA）"
+              exit 1
+            fi
+
+            # 状态快照：与前面用的是同一个 -f（原 :299/:300 漏了 -f，看的是那个没有 services 的裸文件）
             echo "==> 服务状态快照"
-            docker compose ps || true
-            docker compose logs --tail=20 backend || true
+            docker compose -f "$COMPOSE_FILE" ps "$API_SERVICE"
+            docker compose -f "$COMPOSE_FILE" logs --tail=20 "$API_SERVICE"
             echo "🎉 部署完成: $(date)"
           REMOTE_EOF
 
-      - name: 通知飞书 部署结果
+      # 私钥落在 runner 上只是暂时的，但"用完就删"不该被当成可省掉的收尾。
+      - name: 清理 runner 上的私钥
+        if: always()
+        run: rm -f ~/.ssh/deploy_key && echo "已删除 runner 上的私钥文件"
+
+      - name: 通知飞书 部署结果（可选步骤，失败不影响判定）
         if: env.FEISHU_WEBHOOK_URL != '' && always()
         env:
           DEPLOY_STATUS: ${{ job.status }}
@@ -311,4 +453,4 @@ jobs:
             "content": {
               "text": "🚀 [ClipSync CI] 部署 ${{ env.DEPLOY_STATUS }}\n仓库: ${{ github.repository }}\n提交: ${{ github.sha }}\n目标: ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}\n运行: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
-          }' || true
+          }' || echo "::warning::飞书通知发送失败（不影响 CI 判定）"

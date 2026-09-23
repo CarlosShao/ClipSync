@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, TEST_USER_ID, authHeaders } from './test-helpers.js';
 
-// 测试环境 auth 中间件固定使用此用户 ID（见 src/middleware/auth.js）
-const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
+// P0-C/C1：auth.js 不再有 NODE_ENV==='test' 旁路，本文件统一带真签名 token。
+// 沿用固定用户 ID（test-helpers 里的 TEST_USER_ID），下面的 seed 因此仍是必需品
+// ——authenticateToken 会真查 users 表做账户活性校验。
+const auth = authHeaders();
 
 describe('归档功能集成测试 (arc-api #179)', () => {
   let app;
@@ -15,8 +17,8 @@ describe('归档功能集成测试 (arc-api #179)', () => {
     const { app: a } = await getTestApp();
     app = a;
 
-    // 测试环境 auth 中间件固定使用 TEST_USER_ID，但该用户不一定存在于 users 表中
-    // 必须先 seed 该用户，否则 devices/clipboard_items 的外键约束会失败
+    // TEST_USER_ID 必须真实存在于 users 表：既是 devices/clipboard_items 的外键前提，
+    // 也是 authenticateToken 账户活性检查的前提（不存在 → 401 Account not found）。
     await pool.query(
       `INSERT INTO users (id, phone, nickname, password_hash, created_at, updated_at)
        VALUES ($1, $2, '归档测试用户', 'test_hash', NOW(), NOW())
@@ -54,31 +56,31 @@ describe('归档功能集成测试 (arc-api #179)', () => {
     );
     itemId = create.rows[0].id;
 
-    let list = await request(app).get('/api/clipboard');
+    let list = await request(app).get('/api/clipboard').set(auth);
     expect(list.status).toBe(200);
     expect(list.body.items.find((i) => i.id === itemId)).toBeTruthy();
 
-    const put = await request(app).put(`/api/clipboard/${itemId}`).send({ archived: true });
+    const put = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ archived: true });
     expect(put.status).toBe(200);
     expect(put.body.archived).toBe(true);
 
-    list = await request(app).get('/api/clipboard');
+    list = await request(app).get('/api/clipboard').set(auth);
     expect(list.body.items.find((i) => i.id === itemId)).toBeFalsy();
 
-    const arc = await request(app).get('/api/clipboard?view=archive');
+    const arc = await request(app).get('/api/clipboard?view=archive').set(auth);
     expect(arc.status).toBe(200);
     expect(arc.body.items.find((i) => i.id === itemId)).toBeTruthy();
 
-    const restore = await request(app).put(`/api/clipboard/${itemId}`).send({ archived: false });
+    const restore = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ archived: false });
     expect(restore.status).toBe(200);
     expect(restore.body.archived).toBe(false);
 
-    list = await request(app).get('/api/clipboard');
+    list = await request(app).get('/api/clipboard').set(auth);
     expect(list.body.items.find((i) => i.id === itemId)).toBeTruthy();
   });
 
   it('PUT archived 传入非布尔值应返回 400', async () => {
-    const res = await request(app).put(`/api/clipboard/${itemId}`).send({ archived: 'yes' });
+    const res = await request(app).put(`/api/clipboard/${itemId}`).set(auth).send({ archived: 'yes' });
     expect(res.status).toBe(400);
   });
 
@@ -91,9 +93,9 @@ describe('归档功能集成测试 (arc-api #179)', () => {
     );
     const searchItemId = create.rows[0].id;
 
-    await request(app).put(`/api/clipboard/${searchItemId}`).send({ archived: true });
+    await request(app).put(`/api/clipboard/${searchItemId}`).set(auth).send({ archived: true });
 
-    const search = await request(app).get('/api/clipboard/search?q=搜索归档唯一词xyz');
+    const search = await request(app).get('/api/clipboard/search?q=搜索归档唯一词xyz').set(auth);
     expect(search.status).toBe(200);
     expect(search.body.items.find((i) => i.id === searchItemId)).toBeFalsy();
 

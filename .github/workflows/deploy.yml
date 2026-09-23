@@ -2,11 +2,31 @@
 # 触发方式: 推送 v* 标签时自动部署到生产环境
 #
 # 使用前需要配置的 GitHub Secrets:
-#   - DOCKER_REGISTRY: 容器仓库地址 (默认 ghcr.io)
-#   - DOCKER_USERNAME: 仓库用户名
-#   - DOCKER_PASSWORD: 仓库密码/PAT
 #   - KUBE_CONFIG_BASE64: Kubeconfig (base64 编码)
-#   或使用 K8s Service Account + Workload Identity
+#   - K8S_DB_USER / K8S_DB_PASSWORD / K8S_REDIS_PASSWORD / K8S_JWT_SECRET
+#     K8S_ENCRYPTION_KEY / K8S_CSRF_SECRET  （只写变量名，值不进仓库）
+#     或使用 K8s Service Account + Workload Identity
+#
+# ⚠️⚠️ 现状事实（P0-C C2 复核，2026-09-23）：**这个 workflow 从来没有成功加载过一次。**
+#   gh run list --workflow 303882987 → 198 条记录，198 条 conclusion=failure、jobs=[]，
+#   且 name 字段退化成了文件路径 ".github/workflows/deploy.yml"（GitHub 加载失败时的签名），
+#   触发事件全是分支 push（而本文件只声明 tag 触发）。时间跨度 2026-06-29 → 2026-09-21。
+#   ⇒ 也就是说：目前真实的生产变更通道**不是**这里，而是 ci.yml 的 Deploy to Server（SSH 单机）。
+#   最可能的加载失败原因是 `release` job 的 `if: ... !env.IS_PRERELEASE`
+#   （job 级 if 拿不到 env 上下文）—— 这一条本轮已改掉，但**未经验证**，
+#   因为验证它需要真跑一次，而本轮明确禁止触发任何 workflow 运行。
+#
+# P0-C C2 的改动（详见 docs/audit/v1-full-audit-2026-09-22/_evidence/p0c-c2.md）：
+#   1) 新增 verify job：lint + 服务端测试（真 Postgres/Redis service container），
+#      build-and-push 与 deploy-k8s 都必须 needs 它 ⇒ tag 不再能绕过测试直接上生产。
+#   2) Trivy 扫描去掉 continue-on-error，改成真门禁（CRITICAL/HIGH 未修复即失败），
+#      并修掉"扫一个从未 push 过的 tag"这个让门禁形同虚设的引用错误。
+#   3) `kubectl rollout status statefulset/clipsync-postgres` → 该资源其实是 Deployment
+#      （k8s/base/postgres.yaml），原命令恒失败还被 || true 吞掉。
+#   4) 部署后健康检查的路径 /health → /api/health（服务端只有 /api/health、/api/ready，
+#      见 src/server/src/index.js:276/284）。原来那条 curl 恒 404。
+#   5) ghcr 镜像名必须小写，而 github.repository 是 CarlosShao/ClipSync ⇒ 原拼接法 push 必失败；
+#      改为在 build job 里算出全小写 image ref 并用 job output 串起来（单一真相源）。
 
 name: Deploy - Production
 
@@ -18,8 +38,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/clipsync-server
-  # 部署环境判断
+  # ⚠️ 这里**不再**拼 IMAGE_NAME：ghcr 要求镜像路径全小写，而 github.repository 带大写
+  #    （CarlosShao/ClipSync），拼出来的 ref 会被 registry 直接拒。真实的镜像名由
+  #    build-and-push job 的 `image_ref` output 提供（用 tr 小写化），下游一律 needs.*.outputs 取。
+  # 部署环境判断（step 级可用；job 级 if 拿不到 env 上下文 ⇒ 别在 jobs.<id>.if 里引用它）
   IS_PRERELEASE: ${{ contains(github.ref, '-') }}
 
 concurrency:
@@ -27,16 +49,165 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ==================== 0. 前置门禁：静态检查 + 服务端测试 ====================
+  # 为什么内联一份而不是调用 reusable workflow：
+  #   .github/workflows/*.yml 里带 service container 的 job 能否被 workflow_call 复用，
+  #   我没有可靠依据、也不能靠"跑一次看看"来验证（本轮禁止触发运行）。内联是确定能加载的形状。
+  # 代价：这一步与 ci.yml 的 lint/test 是两份拷贝，会漂移。两处都各自带了
+  #   "Drift guard — container wiring must equal src/config/test.js"，任一侧抄错都会红，
+  #   但"检查项本身变弱"这件事只能靠改的时候两边一起改（跟进项见证据 §6 U4）。
+  verify:
+    name: "CI Gate (lint + server tests)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      # 与 ci.yml 的 test job 同步：测试模式下 DB_* 被 src/server/src/config.js:44 忽略，
+      # 一切以 src/config/test.js 的字面值为准 ⇒ service container 必须迁就它（端口 5433）。
+      REDIS_HOST: localhost
+      REDIS_PORT: "6380"
+      REDIS_PASSWORD: clipsync-ci-test-only-redis
+      JWT_SECRET: ci-test-jwt-secret-not-for-production
+      REQUEST_TIMEOUT: 180000
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clipsync
+          POSTGRES_PASSWORD: dev_password_change_me   # = src/config/test.js 的公共默认值，非真实凭据
+          POSTGRES_DB: clipsync_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U clipsync -d clipsync_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --memory="512m"
+      redis:
+        image: redis:7-alpine
+        command: ["redis-server", "--requirepass", "clipsync-ci-test-only-redis"]
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli -a clipsync-ci-test-only-redis ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/server/package-lock.json
+
+      - name: Install
+        working-directory: src/server
+        run: npm ci
+
+      - name: Syntax gate (node --check, all server sources)
+        working-directory: src/server
+        run: |
+          node -e '
+            const { execFileSync } = require("node:child_process");
+            const fs = require("node:fs"), path = require("node:path");
+            const walk = d => fs.readdirSync(d, { withFileTypes: true }).flatMap(e => {
+              const p = path.join(d, e.name);
+              if (e.name === "node_modules") return [];
+              return e.isDirectory() ? walk(p) : (p.endsWith(".js") ? [p] : []);
+            });
+            const files = [...walk("src"), ...walk("tests")];
+            const bad = [];
+            for (const f of files) {
+              try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); }
+              catch (e) { bad.push(f + "\n    " + String(e.stderr).split("\n")[0]); }
+            }
+            console.log(`checked ${files.length} js files, ${bad.length} with syntax errors`);
+            if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
+          '
+
+      - name: Lint gate (eslint, only if it is actually installed from the lockfile)
+        working-directory: src/server
+        run: |
+          if ! node -e 'require.resolve("eslint/package.json", { paths: [process.cwd()] })' 2>/dev/null; then
+            echo "::error::eslint 不在 src/server 的依赖里 ⇒ lint 无法成为真门禁；生产部署不放行。"
+            echo "::error::修法与 ci.yml 同一处：给 src/server 装 eslint + 配置。"
+            exit 1
+          fi
+          npx --no-install eslint src/ --ext .js --max-warnings=0
+
+      - name: Drift guard — container wiring must equal src/config/test.js
+        working-directory: src/server
+        run: |
+          node --input-type=module -e '
+            const c = (await import("./src/config/test.js")).default;
+            const want = { host: "localhost", port: 5433, name: "clipsync_test", user: "clipsync" };
+            const got = { host: c.db.host, port: c.db.port, name: c.db.name, user: c.db.user };
+            const drift = Object.keys(want).filter(k => String(want[k]) !== String(got[k]));
+            if (!c.db.password) drift.push("db.password 为空（postgres 容器会拒绝连接）");
+            if (String(c.redis.port) !== process.env.REDIS_PORT) drift.push("redis.port != REDIS_PORT");
+            if (drift.length) {
+              console.error("❌ service container 与 src/config/test.js 不再一致:", drift.join("; "));
+              console.error("   实际值:", JSON.stringify(got));
+              process.exit(1);
+            }
+            console.log("✅ 测试库/Redis 接线与 src/config/test.js 一致");
+          '
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 20); do
+            if (echo > /dev/tcp/localhost/5433) 2>/dev/null; then echo "postgres up (5433)"; exit 0; fi
+            echo "waiting postgres... $i"; sleep 3
+          done
+          echo "::error::Postgres 5433 探活失败"; exit 1
+
+      - name: Run migrations
+        working-directory: src/server
+        run: npm run db:migrate
+
+      - name: Run tests
+        working-directory: src/server
+        run: |
+          set -o pipefail
+          npm test -- --reporter=verbose 2>&1 | tee /tmp/vitest.log
+
+      - name: Guard — tests actually executed
+        run: |
+          # 先脱 ANSI 颜色码再匹配（vitest 汇总行带 ^[[..m，直接 grep 会在成功运行上误报红）
+          sed -e 's/\x1b\[[0-9;]*m//g' /tmp/vitest.log > /tmp/vitest.plain.log
+          if grep -q "No test files found" /tmp/vitest.plain.log; then
+            echo "::error::vitest 没有找到任何测试文件"; exit 1
+          fi
+          if ! grep -qE "Test Files.*[0-9]+ (passed|failed)" /tmp/vitest.plain.log; then
+            echo "::error::日志里没有 vitest 汇总行，说明测试没有真正跑完"; exit 1
+          fi
+          grep -E "Test Files|Tests +[0-9]|Duration" /tmp/vitest.plain.log
+
   # ==================== 构建并推送镜像 ====================
   build-and-push:
     name: "Build & Push Image"
     runs-on: ubuntu-latest
+    # 冷缓存下 buildx 建镜像 + Trivy 扫分层；上限给宽一点（上限只花挂钟时间，不花预算换判据）
+    timeout-minutes: 60
+    needs: verify          # P0-C C2：tag 不再能绕过 lint/测试直接产出生产镜像
     outputs:
+      image_ref: ${{ steps.image.outputs.ref }}
       image_tag: ${{ steps.meta.outputs.version }}
       digest: ${{ steps.build.outputs.digest }}
     permissions:
       contents: read
       packages: write
+      # 申请这一项是为了让 Trivy 的 CRITICAL/HIGH 落到 Security tab 做存量登记。
+      # 判断依据：本 job 早已持有 packages: write（能发布生产镜像，权限远大于此项），
+      # security-events: write 只能发布 code-scanning 结果，边际风险很小；
+      # 反过来不申请的真实代价 = 漏洞清单只活在 90 天的 run 日志里，等于没有台账，
+      # 而"没有台账的扫描"正是本票要拆掉的那类假绿的温床。
+      # 若你认为这条该撤：删掉本行 + 下面 `Upload Trivy SARIF to Security tab` 一步即可，
+      # 门禁判定不受影响（判定在 Scan 步的 exit-code: '1'）。
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +218,14 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "timestamp=$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      # ghcr 只接受全小写的镜像路径；github.repository = CarlosShao/ClipSync 含大写 ⇒ 在这里归一化
+      - name: Compute lowercase image reference
+        id: image
+        run: |
+          REF=$(printf '%s' "${{ github.repository }}/clipsync-server" | tr '[:upper:]' '[:lower:]')
+          echo "ref=${{ env.REGISTRY }}/${REF}" >> "$GITHUB_OUTPUT"
+          echo "image ref = ${{ env.REGISTRY }}/${REF}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -62,7 +241,7 @@ jobs:
         id: docker-meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.ref }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -85,29 +264,59 @@ jobs:
             NODE_ENV=production
             VERSION=${{ steps.meta.outputs.version }}
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+      # ==== P0-C C2：Trivy 变成真门禁 ====
+      # 改动前：:97 的 continue-on-error 把结果中和掉；而且 :91 扫的是 `${{ github.sha }}`
+      #   （40 位全 SHA）—— 上面 metadata-action 根本没有产出这个 tag
+      #   （type=sha,prefix= 产出的是短 SHA），所以即使拿掉 continue-on-error，
+      #   它也只会以"镜像拉不到"失败，扫不到任何漏洞。现在扫本次真正 push 出去的 :<version>。
+      - name: Scan pushed image (fail on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          image-ref: ${{ steps.image.outputs.ref }}:${{ steps.meta.outputs.version }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           exit-code: '1'
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
-        continue-on-error: true
 
-      - name: Upload Trivy scan results
+      # 扫描失败也要把 SARIF 传上去 —— Security tab 恰恰最需要看到失败的那一次。
+      # 用"文件在不在"做条件，而不是用 continue-on-error 把整步抹平（原 :104 的写法）。
+      - name: Check SARIF presence
+        id: trivy-summary
         if: always()
+        run: |
+          if [ -s trivy-results.sarif ]; then
+            echo "sarif_present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sarif_present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::trivy-results.sarif 不存在或为空 —— 漏洞数据进不了 Security tab；门禁结论不受影响（判定在 Scan 步）"
+          fi
+
+      - name: Upload Trivy SARIF to Security tab
+        if: always() && steps.trivy-summary.outputs.sarif_present == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
-        continue-on-error: true
+
+      # 同一份 SARIF 再留一份构建产物（90 天），避免"只有 Security tab 一个出口"。
+      - name: Save SARIF copy as build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-${{ github.ref_name }}
+          path: trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 90
 
   # ==================== 部署到 Kubernetes ====================
   deploy-k8s:
     name: "Deploy to K8s (${{ needs.build-and-push.outputs.image_tag }})"
     runs-on: ubuntu-latest
-    needs: build-and-push
+    # 最坏路径：rollout 300+300+120s + 健康重试 10×15s + readiness ≈ 15 分钟 ⇒ 25 分钟留一倍余量
+    timeout-minutes: 25
+    # P0-C C2：verify 现在是 build 的前置，这里再显式 needs 一次，
+    # 免得将来有人把 build-and-push 的 needs 改掉就又绕过了测试门禁。
+    needs: [verify, build-and-push]
     environment:
       name: production
       # 域名与 src/shared/domains.js 保持一致
@@ -116,6 +325,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # 空的 K8S_* 会让下面 `--from-literal=JWT_SECRET=""` 静默地把生产密钥刷成空串。
+      # 这里只判断"有没有值"，永远不打印值。
+      - name: Refuse to roll out with missing secrets
+        env:
+          S_DB_USER: ${{ secrets.K8S_DB_USER }}
+          S_DB_PASSWORD: ${{ secrets.K8S_DB_PASSWORD }}
+          S_REDIS_PASSWORD: ${{ secrets.K8S_REDIS_PASSWORD }}
+          S_JWT_SECRET: ${{ secrets.K8S_JWT_SECRET }}
+          S_ENCRYPTION_KEY: ${{ secrets.K8S_ENCRYPTION_KEY }}
+          S_CSRF_SECRET: ${{ secrets.K8S_CSRF_SECRET }}
+          S_KUBECONFIG: ${{ secrets.KUBE_CONFIG_BASE64 }}
+        run: |
+          missing=""
+          for pair in "KUBE_CONFIG_BASE64=$S_KUBECONFIG" "K8S_DB_USER=$S_DB_USER" \
+                      "K8S_DB_PASSWORD=$S_DB_PASSWORD" "K8S_REDIS_PASSWORD=$S_REDIS_PASSWORD" \
+                      "K8S_JWT_SECRET=$S_JWT_SECRET" "K8S_ENCRYPTION_KEY=$S_ENCRYPTION_KEY" \
+                      "K8S_CSRF_SECRET=$S_CSRF_SECRET"; do
+            name="${pair%%=*}"; value="${pair#*=}"
+            if [ -z "$value" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::以下 secret 未配置或为空，拒绝部署（否则会把它刷成空串）:$missing"
+            exit 1
+          fi
+          echo "✅ 部署所需 secret 均已配置（只校验存在性，未打印任何值）"
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
@@ -150,7 +385,7 @@ jobs:
       - name: Deploy with Kustomize (Production)
         run: |
           cd k8s/overlays/production
-          kustomize edit set image clipsync/server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+          kustomize edit set image clipsync/server=${{ needs.build-and-push.outputs.image_ref }}:${{ needs.build-and-push.outputs.image_tag }}
           kustomize build . | kubectl apply -f -
           echo "✅ Kustomize 部署完成"
 
@@ -158,48 +393,62 @@ jobs:
         run: |
           echo "⏳ 等待 API 滚动更新..."
           kubectl rollout status deployment/clipsync-api -n clipsync --timeout=300s
-          
+
           echo "⏳ 等待 PostgreSQL 就绪..."
-          kubectl rollout status statefulset/clipsync-postgres -n clipsync --timeout=120s || true
-          
+          # 改动前这里是 `statefulset/clipsync-postgres ... || true`，两处错：
+          #   1) 资源类型错 —— k8s/base/postgres.yaml 里 clipsync-postgres 是 kind: Deployment；
+          #   2) `|| true` 把一个恒失败的断言伪装成"等过了数据库"。
+          # 现在写对类型并去掉中和：数据库没起来就是部署失败，不要往下走健康检查。
+          kubectl rollout status deployment/clipsync-postgres -n clipsync --timeout=300s
+
           echo "⏳ 等待 Redis 就绪..."
-          kubectl rollout status deployment/clipsync-redis -n clipsync --timeout=60s
+          kubectl rollout status deployment/clipsync-redis -n clipsync --timeout=120s
 
       # === 部署后健康检查 ===
       - name: Post-deploy health check
         run: |
           echo "🔍 执行部署后健康检查..."
-          
+
           MAX_RETRIES=10
           RETRY_INTERVAL=15
-          
+
+          # ⚠️ 路径订正：服务端只有 /api/health 与 /api/ready（src/server/src/index.js:276/284）。
+          #    原来 curl 的是 /health 与 /health/ready ⇒ 恒 404 ⇒ 这一步其实只是在证明"路径写错了"。
           for i in $(seq 1 $MAX_RETRIES); do
             HTTP_CODE=$(kubectl exec deployment/clipsync-api -n clipsync -- \
-              curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
-            
+              curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health 2>/dev/null || echo "000")
+
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ 健康检查通过! (尝试 $i/$MAX_RETRIES, HTTP $HTTP_CODE)"
-              
-              # 额外验证 readiness
-              READY_CODE=$(kubectl exec deployment/clipsync-api -n clipsync -- \
-                curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health/ready 2>/dev/null || echo "000")
-              echo "📊 Readiness: HTTP $READY_CODE"
-              exit 0
+              echo "✅ Liveness /api/health 通过 (尝试 $i/$MAX_RETRIES)"
+              break
             fi
-            
+
             echo "⏳ 健康检查中... (尝试 $i/$MAX_RETRIES, HTTP $HTTP_CODE)"
             sleep $RETRY_INTERVAL
           done
-          
-          echo "❌ 健康检查失败! 超过最大重试次数"
-          exit 1
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::健康检查失败：/api/health 在 $((MAX_RETRIES * RETRY_INTERVAL))s 内没有返回 200（最后一次 HTTP $HTTP_CODE）"
+            # 这里的 || true 在**已判定失败**的分支里（下一行就 exit 1）：取证日志拉不到时不要把真实错误码盖掉。
+            kubectl logs deployment/clipsync-api -n clipsync --tail=50 || true
+            exit 1
+          fi
+
+          # Readiness 单独判定：它检查 DB/Redis 真连接，503 就必须拦下来（不能只打印一行字）。
+          READY_CODE=$(kubectl exec deployment/clipsync-api -n clipsync -- \
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/ready 2>/dev/null || echo "000")
+          echo "📊 Readiness /api/ready: HTTP $READY_CODE"
+          if [ "$READY_CODE" != "200" ]; then
+            echo "::error::readiness 未通过（HTTP $READY_CODE）：进程活着但依赖不可用，部署判定为失败"
+            exit 1
+          fi
 
       # === 记录部署信息 ===
       - name: Record deployment info
         run: |
           echo "📋 部署信息:"
           echo "  版本: ${{ needs.build-and-push.outputs.image_tag }}"
-          echo "  镜像: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
+          echo "  镜像: ${{ needs.build-and-push.outputs.image_ref }}:${{ needs.build-and-push.outputs.image_tag }}"
           echo "  Digest: ${{ needs.build-and-push.outputs.digest }}"
           echo ""
           kubectl get pods -n clipsync -l app.kubernetes.io/component=api -o wide
@@ -210,6 +459,7 @@ jobs:
   rollback-if-failed:
     name: "Rollback on Failure"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build-and-push, deploy-k8s]
     if: failure() && needs.deploy-k8s.result == 'failure'
 
@@ -236,10 +486,10 @@ jobs:
           kubectl rollout undo deployment/clipsync-api -n clipsync
           kubectl rollout status deployment/clipsync-api -n clipsync --timeout=180s
           
-          # 验证回滚成功
+          # 验证回滚成功（路径同前：服务端是 /api/health，不是 /health）
           sleep 10
           ROLLBACK_STATUS=$(kubectl exec deployment/clipsync-api -n clipsync -- \
-            curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
+            curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/health 2>/dev/null || echo "000")
           
           if [ "$ROLLBACK_STATUS" = "200" ]; then
             echo "✅ 回滚成功! 服务已恢复到上一个稳定版本"
@@ -263,8 +513,15 @@ jobs:
   release:
     name: "Create Release"
     runs-on: ubuntu-latest
-    needs: deploy-k8s
-    if: success() && !env.IS_PRERELEASE
+    timeout-minutes: 10
+    needs: [verify, build-and-push, deploy-k8s]
+    # ⚠️ 改动前只 `needs: deploy-k8s`，却在名字里取 `needs.build-and-push.outputs.image_tag` ——
+    #    needs 上下文只包含**直接**依赖，跨级取值得到空串（不报错）。build-and-push 本来就在链上，
+    #    显式列出来既不改语义又能拿到版本号。
+    # ⚠️ 改动前是 `if: success() && !env.IS_PRERELEASE` —— job 级 if **取不到 env 上下文**，
+    #    这正是本 workflow 文件加载失败（198 次红、0 个 job）的最可能原因。
+    #    现在直接用 github 上下文判断预发布，不再依赖 env。
+    if: success() && !contains(github.ref_name, '-')
 
     steps:
       - uses: actions/checkout@v4
@@ -295,32 +552,36 @@ jobs:
 
             ### 镜像信息
             - **Registry**: `${{ env.REGISTRY }}`
-            - **Image**: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}`
-            - **Digest**: `${{ needs.build-andpush.outputs.digest }}`
+            - **Image**: `${{ needs.build-and-push.outputs.image_ref }}:${{ needs.build-and-push.outputs.image_tag }}`
+            - **Digest**: `${{ needs.build-and-push.outputs.digest }}`
+            - **镜像扫描**: Trivy CRITICAL/HIGH 门禁已在 build-and-push 内执行（未修复项存在即不会部署到这里）
 
             ### 部署命令
             ```bash
-            # K8s 部署
+            # K8s 部署（与上面 job 用的是同一个全小写 image ref）
             cd k8s/overlays/production
-            kustomize edit set image clipsync/server=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+            kustomize edit set image clipsync/server=${{ needs.build-and-push.outputs.image_ref }}:${{ needs.build-and-push.outputs.image_tag }}
             kustomize build . | kubectl apply -f -
 
-            # 或者直接用 tag 触发 CI/CD 自动部署
-            git tag v${NEXT_VERSION}
-            git push origin v${NEXT_VERSION}
+            # 或者用 tag 触发本流水线（注意：tag 之前必须让 ci.yml 的 lint/test 变绿）
+            git tag v<下一版本>
+            git push origin v<下一版本>
             ```
 
             ---
             🤖 由 GitHub Actions 自动发布
           draft: false
-          prerelease: ${{ fromJSON('["false","true"]')[env.IS_PRERELEASE == 'true'] }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
 
   # ==================== 部署通知 ====================
   notify:
     name: "Deployment Notification"
     runs-on: ubuntu-latest
-    needs: [deploy-k8s, release, rollback-if-failed]
+    timeout-minutes: 5
+    # 需要显式列 build-and-push：它的 image_tag 在本 job 的正文里被引用，
+    # 而 needs 上下文只暴露**直接**依赖（原来只列了 deploy-k8s/release/rollback ⇒ 取到空串）。
+    needs: [build-and-push, deploy-k8s, release, rollback-if-failed]
     if: always()
 
     steps:

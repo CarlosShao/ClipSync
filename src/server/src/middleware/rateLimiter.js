@@ -220,14 +220,15 @@ function createRateLimiter(options) {
   const memoryStore = memoryStores[storeName];
 
   return async (req, res, next) => {
-    // 测试环境跳过
-    if (process.env.NODE_ENV === 'test' && storeName === 'api') {
-      return next();
-    }
+    // P0-C/C1：原此处的 `if (NODE_ENV === 'test' && storeName === 'api') return next()` 已删除。
+    // 测试环境的隔离手段不是「关掉限流」，而是 resetAllRateLimitStores()（见 tests/setup.js
+    // 的 beforeEach）——用例之间清零计数，用例之内阈值真实生效。
 
     // CO-10：运行时阈值——每次限流检查取当前快照（getRuntimeLimits 自带 5s TTL 缓存，
     // 命中缓存时只有一次 Promise resolve 的开销；读库失败 fail-closed 回退默认值）。
     // rate_limit_disabled=true → 该 limiter 整体放行，不计数、不写响应头。
+    // ⚠ 这是**产品功能**（管理台 system_configs 总闸，CO-11 已禁止在生产写 true），
+    //   不是环境旁路：它读的是库里的配置，与 NODE_ENV 无关。
     const snapshot = await getRuntimeLimits();
     if (snapshot.disabled) return next();
     const effectiveMax = limitKey ? (snapshot[limitKey] ?? max) : max;
@@ -265,21 +266,22 @@ function createRateLimiter(options) {
 /**
  * API调用限流（每IP）
  * 默认：每分钟100次
+ * P0-C/C1：此处原为 `process.env.NODE_ENV === 'test' ? (req,res,next)=>next() : createRateLimiter(...)`
+ * ——测试环境导出的是一个**什么都不做的占位函数**，全仓穿过 /api/* 的用例因此
+ * 从未证明过 apiLimiter 生效。现统一导出真实 limiter（测试隔离见 resetAllRateLimitStores）。
  */
-export const apiLimiter = process.env.NODE_ENV === 'test'
-  ? (req, res, next) => next()
-  : createRateLimiter({
-      windowMs: 60 * 1000,  // 1分钟
-      max: 300,             // 兜底默认；运行时读 rate_limit_api_per_min（CO-10）
-      limitKey: 'apiPerMin',
-      message: 'API rate limit exceeded, please try again later',
-      keyGenerator: (req) => {
-        // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）
-        if (req.userId) return `user:${req.userId}`;
-        return clientIp(req);
-      },
-      storeName: 'api',
-    });
+export const apiLimiter = createRateLimiter({
+  windowMs: 60 * 1000,  // 1分钟
+  max: 300,             // 兜底默认；运行时读 rate_limit_api_per_min（CO-10）
+  limitKey: 'apiPerMin',
+  message: 'API rate limit exceeded, please try again later',
+  keyGenerator: (req) => {
+    // 已登录请求按用户限流（C5 修复）；匿名请求回退到 IP（兼容配对/匿名路由）
+    if (req.userId) return `user:${req.userId}`;
+    return clientIp(req);
+  },
+  storeName: 'api',
+});
 
 /**
  * 验证码发送限流（每手机号）
@@ -418,35 +420,31 @@ export const strictLimiter = createRateLimiter({
  * 与 apiLimiter 的 store 隔离，不影响客户端 API 现有限流；按 IP 而非用户计数，
  * 避免单个被盗管理员凭据在多出口 IP 下绕过阈值。
  */
-export const adminLimiter = process.env.NODE_ENV === 'test'
-  ? (req, res, next) => next()
-  : createRateLimiter({
-      windowMs: 60 * 1000,
-      max: 100,
-      message: 'Admin API rate limit exceeded, please try again later',
-      keyGenerator: (req) => clientIp(req),
-      storeName: 'admin',
-    });
+export const adminLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: 'Admin API rate limit exceeded, please try again later',
+  keyGenerator: (req) => clientIp(req),
+  storeName: 'admin',
+});
 
 /**
  * AN-07：管理台高危写操作限流（退款 / 强制下线 / 运维动作等，挂载见 routes/admin/index.js）。
  * 每 IP + URL 首段资源分桶 10 次/分钟：单类高危端点保持 strict 级别 10 次/分钟上限，
  * 分桶是为了同一管理员在多类高危操作间不互相挤兑（工单 AN-07：POST /api/admin/* 高危写操作额外挂更严限流）。
  */
-export const adminStrictLimiter = process.env.NODE_ENV === 'test'
-  ? (req, res, next) => next()
-  : createRateLimiter({
-      windowMs: 60 * 1000,
-      max: 10,
-      message: 'Sensitive admin operation rate limit exceeded, please try again later',
-      keyGenerator: (req) => {
-        const ip = clientIp(req);
-        // 按 URL 首段资源分桶：/orders/xxx/refund → 'orders'、/ops/actions → 'ops'
-        const segment = req.path.split('/').filter(Boolean)[0] || 'root';
-        return `${ip}:${segment}`;
-      },
-      storeName: 'adminStrict',
-    });
+export const adminStrictLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Sensitive admin operation rate limit exceeded, please try again later',
+  keyGenerator: (req) => {
+    const ip = clientIp(req);
+    // 按 URL 首段资源分桶：/orders/xxx/refund → 'orders'、/ops/actions → 'ops'
+    const segment = req.path.split('/').filter(Boolean)[0] || 'root';
+    return `${ip}:${segment}`;
+  },
+  storeName: 'adminStrict',
+});
 
 /**
  * 文件上传限流
@@ -529,6 +527,19 @@ export async function resetRateLimit(storeName, key) {
   }
 }
 
+/**
+ * 清空全部内存限流桶（测试隔离用；由 tests/setup.js 的 beforeEach 调用）。
+ *
+ * ⚠ 这不是「把限流关掉」：中间件与阈值照常执行，只是用例之间的历史计数被清零，
+ *   等价于 `resetRateLimit(store)` 的一次性全量版。单个用例之内连续打满阈值依旧 429
+ *   （见 tests/auth-s0-security.test.js / tests/middleware/runtime-limits.test.js）。
+ *   生产环境走 Redis 分支时本函数无效果，也不会被调用。
+ */
+export function resetAllRateLimitStores() {
+  for (const store of Object.values(memoryStores)) store.clear();
+  wsConnections.clear();
+}
+
 export default {
   apiLimiter,
   sendCodeLimiter,
@@ -544,6 +555,7 @@ export default {
   adminStrictLimiter,
   getRateLimitStatus,
   resetRateLimit,
+  resetAllRateLimitStores,
 };
 
 // Export factory function for creating custom rate limiters

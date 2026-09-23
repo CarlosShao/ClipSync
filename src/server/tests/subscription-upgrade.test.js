@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import crypto from 'node:crypto';
 import pool from '../src/db/pool.js';
-import { getTestApp } from './test-helpers.js';
+import { getTestApp, authHeaders } from './test-helpers.js';
 import { markOrderPaid } from '../src/services/orderFulfillment.js';
 import { roundToCent } from '../src/services/proration.js';
 
@@ -175,10 +175,14 @@ afterAll(async () => {
   await pool.end().catch(() => {});
 });
 
+// P0-C/C1：auth.js 的 NODE_ENV==='test' 旁路已删除 → 本文件所有 /api 请求带真签名 token
+// （身份仍是固定 TEST_USER_ID，各文件 beforeAll 里的 users seed 因此从「可选」变成「必需」）。
+const auth = authHeaders();
+
 describe('create-order · 无 active 订阅（维持现状：全价新订）', () => {
   it('月付：金额 = price_monthly，无 proration，metadata 带 planId/billingCycle', async () => {
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ planId: plan.Pro.id, billingCycle: 'monthly' });
 
     expect(res.status).toBe(200);
@@ -197,7 +201,7 @@ describe('create-order · 无 active 订阅（维持现状：全价新订）', (
 
   it('年付：金额 = price_yearly（billingCycle=yearly 支持）', async () => {
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ planId: plan.Pro.id, billingCycle: 'yearly' });
 
     expect(res.status).toBe(200);
@@ -210,7 +214,7 @@ describe('create-order · 无 active 订阅（维持现状：全价新订）', (
   it('套餐未配价（如 Free 的 0 元）→ 400 PLAN_PRICE_MISSING，不留 0 元订单', async () => {
     const free = await pool.query("SELECT id FROM subscription_plans WHERE name = 'Free'");
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ planId: free.rows[0].id, billingCycle: 'monthly' });
 
     expect(res.status).toBe(400);
@@ -229,7 +233,7 @@ describe('create-order · 档位判定', () => {
       cycleDays: 30,
     });
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId: plan.Pro.id });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId: plan.Pro.id });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('ALREADY_SUBSCRIBED');
     expect(res.body.error).toBeTruthy();
@@ -243,7 +247,7 @@ describe('create-order · 档位判定', () => {
       cycleDays: 30,
     });
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId: plan.Pro.id });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId: plan.Pro.id });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('DOWNGRADE_NOT_ALLOWED');
   });
@@ -259,7 +263,7 @@ describe('create-order · 档位判定', () => {
       [TEST_USER_ID, plan.Pro.id]
     );
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId: plan.Pro.id });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId: plan.Pro.id });
     expect(res.status).toBe(200);
     expect(res.body.order.amount).toBe(plan.Pro.monthly);
     expect(res.body.proration).toBeNull();
@@ -275,7 +279,7 @@ describe('create-order · 升档折抵', () => {
       cycleDays: 30,
     });
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId: plan.Enterprise.id });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId: plan.Enterprise.id });
 
     expect(res.status).toBe(200);
     const expectedCredit = roundToCent(plan.Pro.monthly * 0.5);
@@ -314,7 +318,7 @@ describe('create-order · 升档折抵', () => {
       cycleDays: 365,
     });
 
-    const res = await request(app).post('/api/payments/create-order').send({ planId: plan.Enterprise.id });
+    const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId: plan.Enterprise.id });
     expect(res.status).toBe(200);
 
     const credit = res.body.proration.creditAmount;
@@ -335,7 +339,7 @@ describe('create-order · 升档折抵', () => {
     });
 
     const res = await request(app)
-      .post('/api/payments/create-order')
+      .post('/api/payments/create-order').set(auth)
       .send({ subscriptionId, planId: plan.Enterprise.id, billingCycle: 'monthly' });
 
     expect(res.status).toBe(200);

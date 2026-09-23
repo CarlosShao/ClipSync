@@ -22,6 +22,7 @@ const sourceText = computed(() => {
   <div class="html-preview-stack">
     <div class="html-preview-section">
       <div class="html-section-label">{{ t('preview') }}</div>
+      <!-- eslint-disable-next-line vue/no-v-html -- html 是本文件 computed：两条分支（metadata.html 捕获片段 / content 嗅探回退）都各自 sanitizeHtml(DOMPurify) 后才返回，不存在裸 HTML 通道；见 utils/__tests__/sanitize.test.ts -->
       <div class="html-preview" v-html="html" />
     </div>
     <div class="html-source-section">

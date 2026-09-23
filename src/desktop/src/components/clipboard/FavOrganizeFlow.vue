@@ -63,7 +63,7 @@ const ORGANIZE_PROMPT = [
 
 // --- 上下文构建 ---
 function contentPreview(item: ClipItem): string {
-  let raw = ''
+  let raw: string // 三分支各自赋值，初值永不被读（P0-C C3：清掉存量 lint error，让 npm run lint 可用作门禁）
   if (item.type === 'image') raw = '（图片）'
   else if (item.type === 'file') {
     try {

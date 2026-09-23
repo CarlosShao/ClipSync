@@ -68,6 +68,7 @@ function selectSheet(idx: number) {
 
     <div class="sheet-body">
       <!-- sheet_to_html 输出的是完整 <table>（经 ensureThead 注入表头），以 v-html 注入 -->
+      <!-- eslint-disable-next-line vue/no-v-html -- processedSheets[].html 由本文件 ensureThead() 产出，其两条返回路径（DOMParser 成功 / catch 兜底）都以 sanitizeHtml(DOMPurify) 结尾：xlsx 的 sheet_to_html 不转义超链接 href（javascript: 可进 <a href>），必须经这一步；同一消毒函数在 utils/__tests__/sanitize.test.ts 已按 xss payload 列表覆盖 -->
       <div v-if="processedSheets[activeIdx]" class="sheet-html" v-html="processedSheets[activeIdx].html" />
       <div v-else class="sheet-empty">{{ tf('doc_no_content', '无内容') }}</div>
     </div>
