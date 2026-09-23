@@ -22,15 +22,17 @@ import { pool } from '../db/pool.js'
  * 无感延续记忆（即使前端 messages 已被前端过滤掉 system 角色）。
  * @returns {Promise<string|null>}
  */
-export async function fetchLatestContextSummary(conversationId) {
-  if (!conversationId) return null
+export async function fetchLatestContextSummary(conversationId, userId) {
+  if (!conversationId || !userId) return null
   try {
+    // 归属过滤落在 SQL 层（JOIN ai_conversations.user_id），防止传入他人 conversationId 读到其会话摘要
     const res = await pool.query(
-      `SELECT content FROM ai_messages
-       WHERE conversation_id = $1 AND role = 'system'
-         AND COALESCE(metadata->>'is_context_summary','false') = 'true'
-       ORDER BY created_at DESC LIMIT 1`,
-      [conversationId],
+      `SELECT m.content FROM ai_messages m
+       JOIN ai_conversations c ON c.id = m.conversation_id
+       WHERE m.conversation_id = $1 AND c.user_id = $2 AND m.role = 'system'
+         AND COALESCE(m.metadata->>'is_context_summary','false') = 'true'
+       ORDER BY m.created_at DESC LIMIT 1`,
+      [conversationId, userId],
     )
     return res.rows[0]?.content || null
   } catch (e) {
@@ -46,15 +48,17 @@ export async function fetchLatestContextSummary(conversationId) {
  * 让前端 messages 保存路径（全量替换）能够保留这条摘要而不被误删。
  * @returns {Promise<boolean>} 是否成功
  */
-export async function persistContextSummary(conversationId, summary) {
-  if (!conversationId || !summary) return false
+export async function persistContextSummary(conversationId, summary, userId) {
+  if (!conversationId || !summary || !userId) return false
   try {
-    await pool.query(
+    // 归属过滤落在 SQL 层：会话不属于该用户时 INSERT 零行，防止向他人会话植入持久化提示注入
+    const res = await pool.query(
       `INSERT INTO ai_messages (conversation_id, role, content, metadata)
-       VALUES ($1, 'system', $2, $3::jsonb)`,
-      [conversationId, summary, JSON.stringify({ is_context_summary: true })],
+       SELECT $1, 'system', $2, $3::jsonb
+       WHERE EXISTS (SELECT 1 FROM ai_conversations WHERE id = $1 AND user_id = $4)`,
+      [conversationId, summary, JSON.stringify({ is_context_summary: true }), userId],
     )
-    return true
+    return res.rowCount > 0
   } catch (e) {
     logger.warn('[AI] persistContextSummary failed:', e.message)
     return false
@@ -371,6 +375,7 @@ async function compressConversationHistory(messages, opts) {
       await persistContextSummary(
         conversationId,
         `【历史对话压缩摘要 · 时间 ${new Date().toISOString()}】\n${summary}`,
+        userId,
       )
     } catch (e) {
       logger.warn('[AI] persistContextSummary skipped:', e.message)
@@ -441,7 +446,7 @@ export async function runChatLoop({
   // ===== 把上一次自动压缩的摘要注入到对话开头（system 之后）=====
   // 实现"无感延续记忆"：之前压缩留下的摘要会持续生效，避免下一轮再次触发压缩
   // （把刚刚写入的摘要再压缩一次），也避免用户感觉 AI "忘了"先前的上下文。
-  const priorSummary = await fetchLatestContextSummary(conversationId)
+  const priorSummary = await fetchLatestContextSummary(conversationId, userId)
   if (priorSummary) {
     const anchorIndex = currentMessages.findIndex((m) => m.role === 'system')
     const note = `【先前对话要点摘要（来自自动压缩，请把它当作历史延续记忆，不再重新压缩）】\n${priorSummary}`

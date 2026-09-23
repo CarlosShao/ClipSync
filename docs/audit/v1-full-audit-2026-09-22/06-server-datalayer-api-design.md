@@ -92,7 +92,7 @@
 
 - **影响**：**安全（任意账户接管 / 权限提升）+ 合规（密钥入库）**。属任务定义中「生产用了不安全默认值」与「必填配置缺失时静默用默认值跑起来」两条 S0 判据的交集。
 
-- **修法**：`config.js` 生产分支改为 fail-fast（收集到任何 warning 即 `logger.error(...)` + `process.exit(1)`），黑名单换成「最小长度 32 + 已知弱值集合（含 `<REDACTED:JWT_SECRET>`、`dev_encryption_key_32chars_min!!`、`clipsync-dev-secret`、`clipsync-test-secret`）」；`nodeEnv` 遇未识别值直接退出而不是回退 development；`git rm --cached src/server/.env.test` + 删掉 `.gitignore:15` 的 `!.env.test`，并**轮换其中全部五项密钥**；`docker-compose.dev.yml` 的 `:-默认值` 改为无默认（缺失即启动失败）。
+- **修法**：`config.js` 生产分支改为 fail-fast（收集到任何 warning 即 `logger.error(...)` + `process.exit(1)`），黑名单换成「最小长度 32 + 已知弱值集合（含 `<REDACTED:JWT_SECRET>`、`<REDACTED:ENCRYPTION_KEY>`、`clipsync-dev-secret`、`clipsync-test-secret`）」；`nodeEnv` 遇未识别值直接退出而不是回退 development；`git rm --cached src/server/.env.test` + 删掉 `.gitignore:15` 的 `!.env.test`，并**轮换其中全部五项密钥**；`docker-compose.dev.yml` 的 `:-默认值` 改为无默认（缺失即启动失败）。
 
 ---
 

@@ -305,6 +305,8 @@ export async function restoreVersion(versionId, userId) {
  * @returns {number} 清理的版本数量
  */
 export async function cleanupOldVersions(retentionDays = VERSION_CONFIG.retentionDays) {
+  // 数据访问层下限兜底：即使调用方漏校验，0/负数/NaN 也不可能生效
+  const days = Math.max(1, Math.floor(Number(retentionDays)) || VERSION_CONFIG.retentionDays);
   const result = await pool.query(
     `DELETE FROM file_versions
      WHERE created_at < NOW() - INTERVAL '1 day' * $1
@@ -314,7 +316,7 @@ export async function cleanupOldVersions(retentionDays = VERSION_CONFIG.retentio
        FROM file_versions
        ORDER BY clipboard_item_id, version_number DESC
      )`,
-    [retentionDays]
+    [days]
   );
 
   return result.rowCount;
@@ -326,6 +328,8 @@ export async function cleanupOldVersions(retentionDays = VERSION_CONFIG.retentio
  * @returns {number} 清理的版本数量
  */
 export async function limitVersionsPerItem(maxVersions = VERSION_CONFIG.maxVersionsPerItem) {
+  // 数据访问层下限兜底：0/负数/NaN 不可能生效（0 会删光每个项的全部版本）
+  const maxVersionsSafe = Math.max(1, Math.floor(Number(maxVersions)) || VERSION_CONFIG.maxVersionsPerItem);
   const result = await pool.query(
     `DELETE FROM file_versions
      WHERE id IN (
@@ -336,7 +340,7 @@ export async function limitVersionsPerItem(maxVersions = VERSION_CONFIG.maxVersi
        ) t
        WHERE rn > $1
      )`,
-    [maxVersions]
+    [maxVersionsSafe]
   );
 
   return result.rowCount;

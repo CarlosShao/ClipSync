@@ -39,6 +39,73 @@ async function ensureSharedDirs() {
 }
 ensureSharedDirs().catch(err => logger.error('[sharedLinks] failed to create upload dirs', { error: err.message }));
 
+// fileKey 必须是服务端上传路径生成的 UUID（uuidv4），拒绝任何含路径分隔符/..的取值
+const FILE_KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+let sharedBaseRealCache = null;
+async function sharedBaseRealpath() {
+  if (!sharedBaseRealCache) {
+    await ensureSharedDirs();
+    sharedBaseRealCache = await fs.realpath(SHARED_UPLOAD_BASE);
+  }
+  return sharedBaseRealCache;
+}
+
+// realpath 后按路径分量（path.relative）判断是否位于 SHARED_UPLOAD_BASE 之内，
+// 不能用字符串 startsWith——否则 /uploads/shared2 会被误判在 /uploads/shared 内。
+async function realpathUnderSharedBase(target) {
+  if (typeof target !== 'string' || !target) return null;
+  const baseReal = await sharedBaseRealpath();
+  let real;
+  try {
+    real = await fs.realpath(target);
+  } catch {
+    return null;
+  }
+  const rel = path.relative(baseReal, real);
+  if (!rel || rel === '..' || rel.startsWith('..' + path.sep) || rel.startsWith('../') || path.isAbsolute(rel)) return null;
+  return real;
+}
+
+// 用（格式已校验的）fileKey 拼出分享文件目录并做边界校验；非法/不存在返回 null
+async function resolveSharedFileDir(fileKey) {
+  if (typeof fileKey !== 'string' || !FILE_KEY_RE.test(fileKey)) return null;
+  return realpathUnderSharedBase(path.join(SHARED_UPLOAD_BASE, fileKey));
+}
+
+/**
+ * 删除分享链接关联的落盘目录（撤销链接与 AI delete_shared_link 工具共用）。
+ * 只信任 file_key（UUID 校验后重新拼目录），不用 path.dirname(file_path) 反推——
+ * 防止 file_path 被投毒后把删除范围引到 uploads/shared 之外或其自身。
+ * @param {Array<{file_key?: string|null, file_path?: string|null}>} rows
+ */
+export async function removeSharedLinkFiles(rows) {
+  let removed = 0;
+  for (const r of rows || []) {
+    let dir = null;
+    if (r.file_key) {
+      dir = await resolveSharedFileDir(r.file_key);
+    } else if (r.file_path) {
+      // 兼容未回填 file_key 的历史行：realpath 后必须恰好是 base/<uuid>/<file> 两层，才删 <uuid> 目录
+      const real = await realpathUnderSharedBase(r.file_path);
+      if (real) {
+        const baseReal = await sharedBaseRealpath();
+        const segs = path.relative(baseReal, real).split(/[\\/]/);
+        if (segs.length === 2 && FILE_KEY_RE.test(segs[0])) dir = path.join(baseReal, segs[0]);
+      }
+    }
+    if (dir) {
+      try {
+        await fs.rm(dir, { recursive: true, force: true });
+        removed++;
+      } catch (e) {
+        logger.warn('[sharedLinks] failed to remove shared file dir', { error: e.message });
+      }
+    }
+  }
+  return removed;
+}
+
 const sharedFileStorage = multer.diskStorage({
   destination: SHARED_TMP_DIR,
   filename: (req, file, cb) => cb(null, `${uuidv4()}.shared.tmp`),
@@ -162,7 +229,11 @@ router.post('/upload-file', ...protect, apiLimiter, requireFlag('enable_public_s
     const fileKey = uuidv4();
     const destDir = path.join(SHARED_UPLOAD_BASE, fileKey);
     await fs.mkdir(destDir, { recursive: true });
-    const destPath = path.join(destDir, req.file.originalname);
+    // 落盘名用服务端生成，originalname 只保留 basename 后的扩展名——防其携带 ../ 逃出 destDir
+    const origBase = path.basename(String(req.file.originalname || 'file')).slice(0, 200);
+    const extRaw = path.extname(origBase);
+    const ext = /^.[A-Za-z0-9]{1,10}$/.test(extRaw) ? extRaw : '';
+    const destPath = path.join(destDir, `${uuidv4()}${ext}`);
     await fs.rename(req.file.path, destPath);
     res.json({
       fileKey,
@@ -185,20 +256,28 @@ router.post('/', ...protect, apiLimiter, requireFlag('enable_public_sharing', '�
     const { content, title, contentType, expiresInHours, fileKey, fileName, fileSize } = req.body || {};
     const safeType = typeof contentType === 'string' ? contentType.slice(0, MAX_TYPE) : 'text';
 
-    // 文件类型：必须有 fileKey 且文件存在
+    // 文件类型：必须有合法 UUID 格式的 fileKey 且文件存在（拒绝 ../ 穿越）
     let filePath = null;
     let safeFileName = null;
     let safeFileSize = null;
+    let safeFileKey = null;
     if (safeType === 'file') {
-      if (!fileKey || typeof fileKey !== 'string') {
+      if (!fileKey || typeof fileKey !== 'string' || !FILE_KEY_RE.test(fileKey)) {
         return res.status(400).json({ error: 'fileKey is required for file share' });
       }
-      const candidateDir = path.join(SHARED_UPLOAD_BASE, fileKey);
+      const candidateDir = await resolveSharedFileDir(fileKey);
+      if (!candidateDir) {
+        return res.status(400).json({ error: 'uploaded file not found' });
+      }
       const entries = await fs.readdir(candidateDir).catch(() => []);
       if (entries.length === 0) {
         return res.status(400).json({ error: 'uploaded file not found' });
       }
-      filePath = path.join(candidateDir, entries[0]);
+      filePath = await realpathUnderSharedBase(path.join(candidateDir, entries[0]));
+      if (!filePath) {
+        return res.status(400).json({ error: 'uploaded file not found' });
+      }
+      safeFileKey = fileKey;
       safeFileName = typeof fileName === 'string' ? fileName.slice(0, MAX_TITLE) : entries[0];
       safeFileSize = typeof fileSize === 'number' ? fileSize : 0;
     }
@@ -225,10 +304,10 @@ router.post('/', ...protect, apiLimiter, requireFlag('enable_public_sharing', '�
     const preview = safeType === 'file' ? safeFileName : content.slice(0, 200);
 
     const { rows } = await pool.query(
-      `INSERT INTO shared_links (user_id, token, title, content_encrypted, content_preview, content_type, file_path, file_name, file_size, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO shared_links (user_id, token, title, content_encrypted, content_preview, content_type, file_path, file_name, file_size, file_key, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, token, title, content_type, file_name, file_size, views, created_at, expires_at`,
-      [req.userId, token, safeTitle, contentEncrypted, preview, safeType, filePath, safeFileName, safeFileSize, expiresAt],
+      [req.userId, token, safeTitle, contentEncrypted, preview, safeType, filePath, safeFileName, safeFileSize, safeFileKey, expiresAt],
     );
     const r = rows[0];
     res.status(201).json({
@@ -282,21 +361,11 @@ router.get('/', ...protect, apiLimiter, async (req, res) => {
 router.delete('/:id', ...protect, apiLimiter, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT file_path FROM shared_links WHERE id = $1 AND user_id = $2',
+      'SELECT file_path, file_key FROM shared_links WHERE id = $1 AND user_id = $2',
       [req.params.id, req.userId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'not found' });
-    // 删除关联文件（如果存在）
-    for (const r of rows) {
-      if (r.file_path) {
-        try {
-          const dir = path.dirname(r.file_path);
-          await fs.rm(dir, { recursive: true, force: true });
-        } catch (e) {
-          logger.warn('[sharedLinks] failed to remove shared file', { path: r.file_path, error: e.message });
-        }
-      }
-    }
+    await removeSharedLinkFiles(rows);
     await pool.query('DELETE FROM shared_links WHERE id = $1 AND user_id = $2', [req.params.id, req.userId]);
     res.status(204).end();
   } catch (err) {
@@ -388,7 +457,12 @@ router.get('/public/:token/download', apiLimiter, async (req, res) => {
     if (!r.file_path) {
       return res.status(404).json({ error: 'no file attached' });
     }
-    const stat = await fs.stat(r.file_path).catch(() => null);
+    // 边界校验：file_path 必须 realpath 后仍位于 uploads/shared 内（防历史投毒行对外提供任意文件）
+    const realPath = await realpathUnderSharedBase(r.file_path);
+    if (!realPath) {
+      return res.status(404).json({ error: 'file not found' });
+    }
+    const stat = await fs.stat(realPath).catch(() => null);
     if (!stat) {
       return res.status(404).json({ error: 'file not found' });
     }
@@ -396,7 +470,7 @@ router.get('/public/:token/download', apiLimiter, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(r.file_name || 'download')}`);
     res.setHeader('Content-Length', stat.size);
     res.setHeader('Content-Type', 'application/octet-stream');
-    res.sendFile(path.resolve(r.file_path));
+    res.sendFile(realPath);
   } catch (err) {
     logger.error('[sharedLinks] download failed', err);
     res.status(500).json({ error: 'internal error' });

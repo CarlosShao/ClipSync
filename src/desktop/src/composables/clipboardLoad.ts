@@ -65,6 +65,11 @@ export async function fetchFullContentDecrypted(item: Pick<ClipItem, 'id' | 'met
 // 设备列表（用于筛选下拉），懒加载 + 内存缓存，避免每次打开筛选面板都打 /api/devices
 let devicesCache: { id: string; name: string; platform?: string }[] = []
 
+/** 登出/换号：设备列表属于上一个账号，必须失效重取 */
+export function clearDevicesCache() {
+  devicesCache = []
+}
+
 // === 删除感知（墓碑）同步游标 ===
 // 每次成功拉取列表后记录同步点；WS 重连注册成功后用 since 拉取断线窗口内的删除流水，
 // 把其他设备已删除的条目从本地列表移除（新增条目靠 refresh 第一页覆盖，删除只有墓碑能感知）。

@@ -100,8 +100,9 @@ class MainActivity : FlutterFragmentActivity() {
                     val deviceId = call.argument<String>("deviceId")
                     val autoSyncScreenshots = call.argument<Boolean>("autoSyncScreenshots") ?: true
                     val autoSaveImagesToAlbum = call.argument<Boolean>("autoSaveImagesToAlbum") ?: true
+                    val e2eActive = call.argument<Boolean>("e2eActive") ?: false
                     SyncForegroundService.saveSyncConfig(
-                        this, baseUrl, token, deviceId, autoSyncScreenshots, autoSaveImagesToAlbum
+                        this, baseUrl, token, deviceId, autoSyncScreenshots, autoSaveImagesToAlbum, e2eActive
                     )
                     result.success(true)
                 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ import 'services/e2e_crypto.dart';
 import 'services/error_report_service.dart';
 import 'services/local_notification_service.dart';
 import 'services/server_config.dart';
+import 'services/session_cleanup.dart';
 import 'services/sync_service.dart';
 import 'services/token_store.dart';
 import 'services/ws_service.dart';
@@ -38,6 +40,12 @@ void main() async {
   PerformanceUtils.recordAppStart();
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // S1-5：release 构建下 debug 级日志一律不输出（debugPrint 统一收口；
+  // print() 直调点已单独清除/脱敏）
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
 
   // 初始化性能优化
   PerformanceUtils.cleanMemory();
@@ -69,6 +77,15 @@ void main() async {
   final settingsProvider = SettingsProvider();
   await settingsProvider.init();
 
+  // 功能开关 Provider：管理台开关 → 全端入口显隐（分享/订阅/注册审核提示）。
+  // MA-04：先于路由表创建——createAppRouter 的深链能力守卫需同步读取
+  // flags 快照，并把本 Provider 并入 refreshListenable。
+  // （提前到 syncConfigToNative 之前：E2E 双闸门计算需要套餐特性位）
+  final featureFlagsProvider = FeatureFlagsProvider();
+
+  // 设备列表 Provider：在 main() 创建（.value 注入），登出清理需要触达它
+  final deviceProvider = DeviceProvider();
+
   // T3.1/T3.2：剪贴板采集管线绑定 + 登录态启停前台服务挂钩
   // - EchoAwareClipboardProvider：WS 推送内容登记进采集去重环（回环抑制）
   // - ClipboardCaptureService：持有列表引用 + 设备 id，采集文本去重后入库
@@ -89,6 +106,10 @@ void main() async {
       final baseUrl = ServerConfig.baseUrl;
       final autoSync = settingsProvider.autoSyncScreenshots;
       final autoSaveAlbum = settingsProvider.autoSaveImagesToAlbum;
+      // S1-4：E2E 双闸门（本地开关 ∧ 套餐特性位，与 ClipboardCapture._isE2eEnabled
+      // 同口径）计算结果下发原生——原生采集直传与回写据此绕行
+      final e2eActive = settingsProvider.e2eEnabled &&
+          featureFlagsProvider.e2eEncryptionAllowed;
       if (deviceId != null && deviceId.isNotEmpty) {
         await SyncService.instance.updateSyncConfig(
           baseUrl: baseUrl,
@@ -96,6 +117,7 @@ void main() async {
           deviceId: deviceId,
           autoSyncScreenshots: autoSync,
           autoSaveImagesToAlbum: autoSaveAlbum,
+          e2eActive: e2eActive,
         );
       }
     } catch (e) {
@@ -106,6 +128,7 @@ void main() async {
   syncConfigToNative();
   authProvider.addListener(syncConfigToNative);
   settingsProvider.addListener(syncConfigToNative);
+  featureFlagsProvider.addListener(syncConfigToNative);
 
   // B3：网络恢复 → WS 自动重连。WsService 连续重连 10 次失败会按既有策略
   // 永久放弃，此处由 SyncService 的 connectivity 恢复事件重新发起连接；
@@ -129,13 +152,35 @@ void main() async {
     );
   };
 
-  // 功能开关 Provider：管理台开关 → 全端入口显隐（分享/订阅/注册审核提示）。
-  // MA-04：先于路由表创建——createAppRouter 的深链能力守卫需同步读取
-  // flags 快照，并把本 Provider 并入 refreshListenable。
-  final featureFlagsProvider = FeatureFlagsProvider();
+  // 功能开关 Provider 已在上方创建（syncConfigToNative 的 E2E 闸门需要）。
+  // 管理台开关推送 → 全端入口显隐即时生效。
   WsService.globalFeatureFlagsHook = (msg) {
     featureFlagsProvider.applyFlags(msg['flags'] as Map<String, dynamic>?);
   };
+
+  // P0-B S0-1：登出清理任务注册（SessionCleanup.purgeAll 由 AuthProvider.logout
+  // 与冷启动凭据失效路径触发）。核心磁盘数据（离线队列/缓存）在 SessionCleanup
+  // 内置清理；这里补内存 Provider 态、通知与原生侧凭据。
+  SessionCleanup.registerAll(<FutureOr<void> Function()>[
+    () {
+      wsProvider.disconnect();
+      clipboardProvider.clearUserData();
+      deviceProvider.clear();
+      featureFlagsProvider.reset();
+      ClipboardCaptureService.instance.resetLocalState();
+    },
+    () => LocalNotificationService.instance.cancelAll(),
+    // 原生 clipsync_sync_config 存有 JWT 明文（S1-6）：登出必须抹掉，
+    // 否则常驻进程仍持上个用户的凭据直传
+    () => SyncService.instance.updateSyncConfig(
+          baseUrl: ServerConfig.baseUrl,
+          token: null,
+          deviceId: null,
+          autoSyncScreenshots: settingsProvider.autoSyncScreenshots,
+          autoSaveImagesToAlbum: settingsProvider.autoSaveImagesToAlbum,
+          e2eActive: false,
+        ),
+  ]);
 
   // 创建 go_router 路由表（守卫依赖 authProvider / guardState / featureFlagsProvider）
   final appRouter = createAppRouter(
@@ -168,8 +213,7 @@ void main() async {
         .logout()
         .then((_) => appRouter.go(AppRoutes.login))
         .catchError((_) => appRouter.go(AppRoutes.login));
-    // ignore: avoid_print
-    print('[WsDebug] force logout by admin${reason is String ? ": $reason" : ""}');
+    debugPrint('[WsDebug] force logout by admin${reason is String ? ": $reason" : ""}');
   };
   featureFlagsProvider.addListener(() {
     SyncService.instance
@@ -451,6 +495,7 @@ void main() async {
     settingsProvider: settingsProvider,
     clipboardProvider: clipboardProvider,
     wsProvider: wsProvider,
+    deviceProvider: deviceProvider,
     featureFlagsProvider: featureFlagsProvider,
   ));
 }
@@ -484,6 +529,9 @@ class ClipSyncApp extends StatefulWidget {
   /// B3：WS Provider（main() 中创建，onNetworkRestored 钩子与 UI 共用）
   final WsProvider wsProvider;
 
+  /// 设备列表 Provider（main() 中创建：登出清理需触达，S0-1）
+  final DeviceProvider deviceProvider;
+
   /// 功能开关 Provider（main() 中创建，globalFeatureFlagsHook 钩子与 UI 共用）
   final FeatureFlagsProvider featureFlagsProvider;
 
@@ -495,6 +543,7 @@ class ClipSyncApp extends StatefulWidget {
     required this.settingsProvider,
     required this.clipboardProvider,
     required this.wsProvider,
+    required this.deviceProvider,
     required this.featureFlagsProvider,
   });
 
@@ -549,7 +598,8 @@ class _ClipSyncAppState extends State<ClipSyncApp> with WidgetsBindingObserver {
         // 泛型精确匹配查找，注册成子类类型会导致 Consumer<ClipboardProvider>
         // 抛 ProviderNotFoundException（真机已踩坑）
         ChangeNotifierProvider<ClipboardProvider>.value(value: widget.clipboardProvider),
-        ChangeNotifierProvider(create: (context) => DeviceProvider()),
+        // S0-1：DeviceProvider 改为 main() 创建 + .value 注入（登出清理需触达）
+        ChangeNotifierProvider<DeviceProvider>.value(value: widget.deviceProvider),
         // B3：WsProvider 在 main() 创建（onNetworkRestored 钩子与 UI 共用）
         ChangeNotifierProvider<WsProvider>.value(value: widget.wsProvider),
         // 功能开关快照（main() 创建，WS 钩子与 UI 共用）

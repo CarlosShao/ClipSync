@@ -73,6 +73,39 @@ pub fn ignore_next_image_hash(hash: u64) {
     *IGNORE_NEXT_IMAGE_HASH.lock().unwrap() = Some(hash);
 }
 
+/// 检测剪贴板是否被来源应用标记为"勿监听/敏感"（1Password、Bitwarden、KeePass、
+/// 浏览器密码框等普遍设置）。命中的内容整条跳过：不 emit、不进同步链路、不记录内容。
+///
+/// 检测的是微软官方文档（Cloud Clipboard and Clipboard History Formats）定义的
+/// 三个注册格式——它们正是 GetClipboardMetadata 报告 isTransient 的数据来源，
+/// 直接查格式无需 Win10 1809+ 的额外 API：
+/// - ExcludeClipboardContentFromMonitorProcessing：存在任意数据即排除
+/// - CanIncludeInClipboardHistory：DWORD 值为 0 时排除
+/// - CanUploadToCloudClipboard：DWORD 值为 0 时排除（本产品会同步上云，语义等同）
+///
+/// 必须在剪贴板已 open 的临界区内调用。
+pub fn clipboard_is_marked_excluded() -> bool {
+    use clipboard_win::raw;
+
+    if let Some(f) = raw::register_format("ExcludeClipboardContentFromMonitorProcessing") {
+        if raw::is_format_avail(f.get()) {
+            return true;
+        }
+    }
+    for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
+        let Some(f) = raw::register_format(name) else { continue };
+        let code = f.get();
+        if !raw::is_format_avail(code) {
+            continue;
+        }
+        let mut buf = [0u8; 4];
+        if raw::get(code, &mut buf).unwrap_or(0) >= 4 && u32::from_le_bytes(buf) == 0 {
+            return true;
+        }
+    }
+    false
+}
+
 /// Monitors clipboard changes and emits `clipboard-changed` events.
 ///
 /// ARCHITECTURE (2026-07-11, rewritten to fix "consecutive screenshots only
@@ -392,6 +425,10 @@ fn handle_content(
                     debug!("[ClipMon]   {}", p);
                 }
 
+                // 用户在本机复制的文件 = 后续 read/upload IPC 的唯一"任意路径"授权来源，
+                // 必须在 emit 之前登记（前端收到事件后会立刻回调读文件命令）
+                crate::file_guard::register_paths(paths.iter().map(|s| s.as_str()));
+
                 let preview = if paths.len() == 1 {
                     let name = std::path::Path::new(&paths[0])
                         .file_name()
@@ -499,6 +536,12 @@ fn read_clipboard_raw() -> ClipContent {
     }
 
     let _guard = ClipGuard;
+
+    // 密码管理器等标记"勿监听"的内容整条跳过（不 emit → 不进同步链路/本地库/日志）
+    if clipboard_is_marked_excluded() {
+        debug!("[ClipMon] clipboard marked transient/excluded (password manager?), skipping");
+        return ClipContent::Empty;
+    }
 
     let format_count = raw::count_formats().unwrap_or(0);
     if format_count == 0 {

@@ -1,5 +1,6 @@
 import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
+import { clearAllUserState } from '@/utils/userDataCleanup'
 
 const CSRF_STORAGE_KEY = 'clipsync-csrf'
 let csrfToken: string | null = null
@@ -154,20 +155,30 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
-// 会话彻底失效：清全部凭证 + 广播事件（router 监听后跳 /auth）
+// 会话彻底失效：走与主动登出完全相同的清理出口 + 广播事件（router 监听后跳 /auth）。
+// 此前只清 token/refresh/csrf 三样，离线队列/内容缓存等用户数据会残留，
+// 下一个登录账号首屏 flush 时会把上个账号的剪贴板条目静默刷进自己账号（跨用户串号）。
 function forceLogout() {
   try {
-    localStorage.removeItem('clipsync-token')
-    localStorage.removeItem(REFRESH_KEY)
-    localStorage.removeItem(CSRF_STORAGE_KEY)
+    clearAllUserState()
   } catch {
-    /* ignore */
+    /* 清理模块异常也不能阻断登出，兜底手动清凭证 */
+    try {
+      localStorage.removeItem('clipsync-token')
+      localStorage.removeItem(REFRESH_KEY)
+      localStorage.removeItem(CSRF_STORAGE_KEY)
+    } catch {
+      /* ignore */
+    }
   }
   csrfToken = null
   csrfExpiresAt = 0
   try {
     const config = useConfigStore()
     config.config.token = null
+    config.config.user_id = null
+    config.config.device_id = null
+    config.user = { name: '', email: '', phone: '', plan: 'Free' }
   } catch {
     /* store 未初始化则忽略 */
   }

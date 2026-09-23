@@ -326,3 +326,51 @@ HEAD 已不再跟踪这些文件（`.gitignore` 后来补上了），但**历史
 4. 未对生产服务器做任何操作（未 ssh、未跑 docker/备份/回滚脚本）。G1、S1-36 的结论来自仓库内文件与文档，**服务器上实际有什么未核实**。
 5. 各代理的严重度评级口径可能有细微差异；去重与升级（如 H1 由 S1 升为 S0）以主审计者复核结果为准。标"代理证据"的条目尚未由主审计者逐条复核，**修复前必须先复现**。已亲手复核的条目在表中标 ✅，共 12 条。
 6. **本次审计未覆盖的维度**（如需完整保证需另开一轮）：性能压测与容量规划（只有静态判断，无真实负载数据）、真实浏览器/真机上的视觉与交互回归（未开窗、未截图）、依赖包的 CVE 扫描（未跑 `npm audit`/`cargo audit`/`pip-audit` 等）、可访问性的实测（仅静态看 aria）、以及官网 `src/website`（仅 370 行，未单独立项审计）。
+
+---
+
+## 九、修复进度：P0-A 与 P0-B 已完成
+
+### P0-A 止血（commit `00e212b`）
+
+修掉 B1–B4（账号接管链）、H1（迁移 031 撞车）、H2（`.env.test` 出库）、配置 fail-fast、S1-9（`user_sessions.updated_at`）、限流 key 共享桶。全量测试 525 → **537 passed / 0 failed**。
+
+### P0-B 拆利用链（4 个写码代理，目录级互斥）
+
+| 代理 | 范围 | 修掉 |
+|------|------|------|
+| G1 | `src/desktop/src-tauri/**` | D3 生产 `9222` 调试端口、D1 `open_url` 命令注入、C3 IPC 任意文件读（新增 `file_guard.rs` 统一闸口 + 本机捕获登记表）、E5 密码管理器剪贴板排除 |
+| G2 | `src/desktop/src/**`、`src/admin-console/**` | D2 Markdown XSS、S1-22 docx XSS、E4 桌面端登出串号（userId 命名空间）、D4 管理台 dev 指向生产（三层硬拒绝）；顺带修 AiNavRail 与 SpreadsheetPreview 两处同类注入 |
+| G3 | `src/server/**` | C1 `versions/cleanup` 越权、C2 AI 会话跨用户、C4 分享链接路径穿越 + 递归删库、C5 SSRF IPv6 绕过 + DNS rebinding、S1-4 `aiTools` 幽灵列、会话吊销键（`auth-session.js`）；顺带修 `media.js`×3 / `aiOcr.js`×1 / `aiTools`×1 同类穿越 |
+| G4 | `src/mobile/**` | E3 Android 密文回写剪贴板（最小干预）、E4 移动端登出串号、S1-20 release logcat 泄 JWT/OTP + ProGuard 规则拼写错误、S1-21 `allowBackup` |
+
+**验收数字（主审计者独立复跑，非代理自述）**：后端 **643 passed / 0 failed / 48 skipped**；桌面 Rust `cargo test` **27 passed**（含 8 个 file_guard 用例，覆盖 `..` 穿越、真实符号链接逃逸、`data2` vs `data` 前缀相似、UNC、空路径、正向放行）；桌面 Vue **58/58** + `vue-tsc` 0 错误；管理台 **95/95** + `tsc` 干净；移动端 `flutter test` **28/28**。
+
+**S0 消化进度：27 条中已修 18 条。** 剩余 9 条归属：A1（用户自处理）、F1–F4（P0-C 判据仪器）、H3 伪事务（P2）、E1 宣传口径（P1-C）、E2 后端地址（P1-B）、G1 备份灾备（P2）。
+
+### P0-B 期间追加的审计修正（第八节的延续）
+
+| 原结论 / 我给代理的方案 | 实际 |
+|------------------------|------|
+| `07` 报告建议"`open_url` 全平台改用 `opener::open`" | **不可行**。`opener` 根本不在 `Cargo.toml`/`Cargo.lock` 里 —— 意味着 **非 Windows 分支在 HEAD 上从来就编译不过**（项目只构建 Windows 所以未暴露）。G1 改用 http/https 白名单 + Windows `ShellExecuteExW`，零新依赖，并顺手修掉另外两处 `opener::` 悬空引用 |
+| `09` 报告"移动端凭据需从 `shared_preferences` 迁到安全存储" | **不成立**。Dart 侧凭据早已在 `flutter_secure_storage`，因此无掉登录态风险，只做了 manifest 层防护 |
+| `08` 报告把登出串号归因于"`forceLogout` 单独不清理" | 根因更宽：三条登出路径各自实现、无统一清理入口，且缓存键本身无用户隔离。G2 收敛为单一 `clearAllUserState()` 并加命名空间 |
+| 我要求 G2「若被禁改文件卡住就停下报告」 | 未发生。经核实 `admin-console/src/api/configs.ts` 与 base URL 解析无关，G2 在 `vite.config.ts` + `upstream.ts` 两层即可完成 |
+
+### P0-B 新发现（原 13 份报告都没有的）
+
+1. **`k8s/overlays/staging` 设 `NODE_ENV=staging`**（base 与 production 均为 `production`）→ 落进 development 配置 → **固定验证码 `888888` 在 staging 有效**。前置问题：`k8s/` 是否真在用（`12` 报告标其疑似废弃，但 `deploy.yml` 声称部署到生产 K8s，两处矛盾，**需 owner 确认**）。
+2. **`docker-compose.dev.yml:21,44,161` 的 DB / Redis / MinIO 端口未指定宿主 IP**，Docker 默认绑 `0.0.0.0` → 整机网络可达；而它们用的是仓库里公开可读的 dev 口令。⚠️ API 的 `0.0.0.0:3001` 是**真机测试必需**，不能动；DB/Redis/MinIO 不需要对外，建议改 `127.0.0.1:` 前缀（宿主 GUI 客户端仍可用）。**需重启容器，故交 owner 决定时机。**
+3. **测试中 `audit_logs_user_id_fkey` 违反被 catch 吞掉**（"Failed to log tool audit"）→ 测试环境里工具审计从未真正落库，与 S1-42「剪贴板审计 100% 静默丢失」是同一类"审计静默失效"。
+4. **`ai-orchestration.test.js` 的「同轮多个 ask_user 串行执行」在并发下假失败**（单跑 5/5 绿，全量并发跑偶红）。flaky 测试会让人养成忽略红灯的习惯，属 P0-C。
+5. `FavoritesView` 的"在文件夹中显示"**本来就是坏的**（plugin-shell 的 `open()` 只接受 URL，传裸目录被其 scope 正则拒掉且静默）；已改走加固后的 `open_url`。
+6. 同一个 dev 口令/密钥值**重复出现在 4 个已跟踪文件**（`.env.development.example`、`docker-compose.dev.yml`、`config/development.js`、`config/test.js`），且两套 `ENCRYPTION_KEY` 默认值互不一致。DB 口令经核实是占位符（无需拉黑），Redis 口令是实值但生产 compose 无默认值 → 降级为 **P2 小项**（不建议为此把公开口令字面量再抄进源码）。
+7. `eslint.config.js` 全局关闭了 `vue/no-v-html` 规则 —— 等于把"最该报警的 XSS sink 规则"永久静音，属判据仪器问题，归 P0-C。
+
+### 因安全加固而必须同步落地的回退（已补）
+
+`file_guard` 收紧后，远端同步条目的本地文件路径会被拒绝（这正是加固目的），但预览若没有服务端回退就会**白屏且不报错**。已在 `DocPreviewModal` 的 image 分支补上 `/api/media/:id/download` 回退（此前只有 docx/excel/pptx/pdf 分支有）。**教训：收紧白名单时必须同时问"哪类存量合法数据今天会被拒、回退路径是什么"。**
+
+### 对用户当前环境的直接影响（需你处理）
+
+⚠️ **`src/admin-console/.env.development.local` 指向生产后端，现在 `npm run dev` 会主动报错拒绝启动**（这是 D4 修复的预期行为）。要跑管理台本地开发，请把该文件的地址改回本地。该文件未被 git 跟踪，代理无权修改。

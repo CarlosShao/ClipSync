@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import dns from 'node:dns'
+import net from 'node:net'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
@@ -53,17 +54,24 @@ async function validateProviderBaseUrl(input) {
   if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
     return { ok: false, error: 'Base URL host is not allowed' }
   }
-  // 直接是 IP：立即校验
-  if (/^[\d.]+$/.test(host) || host.includes(':')) {
-    if (isPrivateIp(host)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
+  // 直接是 IP（含 [::1] / ::ffff:x 等 IPv6 字面量，URL.hostname 对 IPv6 保留方括号）：立即校验
+  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+  if (net.isIP(bare)) {
+    if (isPrivateIp(bare)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
     return { ok: true }
   }
-  // 主机名：解析后再校验一次，防 DNS rebinding 指向内网
+  // 主机名：解析出全部地址逐个校验，防 DNS rebinding 指向内网；解析失败一律拒绝（fail-closed）
+  let addresses
   try {
-    const { address } = await dns.promises.lookup(host)
-    if (isPrivateIp(address)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
+    addresses = await dns.promises.lookup(host, { all: true, verbatim: true })
   } catch {
     return { ok: false, error: 'Base URL host cannot be resolved' }
+  }
+  if (!addresses || addresses.length === 0) {
+    return { ok: false, error: 'Base URL host cannot be resolved' }
+  }
+  for (const a of addresses) {
+    if (isPrivateIp(a.address)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
   }
   return { ok: true }
 }

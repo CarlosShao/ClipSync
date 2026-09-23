@@ -23,6 +23,47 @@ object NativeClipboardUploader {
             return
         }
         val appContext = context.applicationContext
+
+        // S1-4：E2E 开启时原生绝不直传明文——密钥只在 Dart 侧
+        // （flutter_secure_storage），把文本转交 Dart 采集管线加密上传；
+        // Dart 引擎不可达时 fail-closed 丢弃，不回退明文。
+        val e2eActive = try {
+            appContext.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
+                .getBoolean("e2eActive", false)
+        } catch (_: Throwable) {
+            false
+        }
+        if (e2eActive) {
+            val channel = SyncForegroundService.dartChannel
+            if (channel != null) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    try {
+                        channel.invokeMethod(
+                            "onClipboardCaptured",
+                            mapOf("text" to body),
+                            object : io.flutter.plugin.common.MethodChannel.Result {
+                                override fun success(result: Any?) {}
+                                override fun error(code: String, msg: String?, detail: Any?) {
+                                    Log.w(TAG, "e2e handoff rejected by Dart: $code")
+                                }
+                                override fun notImplemented() {
+                                    Log.w(TAG, "e2e handoff not implemented on Dart side")
+                                }
+                            }
+                        )
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "e2e handoff to Dart failed", t)
+                    }
+                }
+                Log.i(TAG, "e2e active — capture handed off to Dart pipeline (${body.length} chars)")
+                onDone?.invoke(true)
+            } else {
+                Log.w(TAG, "e2e active but Dart channel unavailable — capture dropped (fail-closed, no plaintext upload)")
+                onDone?.invoke(false)
+            }
+            return
+        }
+
         Thread {
             val ok = uploadBlocking(appContext, body)
             Log.i(TAG, "text upload ${if (ok) "SUCCESS" else "FAILED"} (${body.length} chars)")

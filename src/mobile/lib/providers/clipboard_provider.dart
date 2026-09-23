@@ -1059,6 +1059,25 @@ class ClipboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 登出清理（P0-B S0-1）：缓存之外的全部用户态——搜索历史本地镜像、
+  /// 本机设备 id 缓存、筛选/错误残留。设备 id 缓存必须清：下个账号会
+  /// 重新注册设备，旧 id 属于上个账号。
+  void clearUserData() {
+    clearCache();
+    _cachedDeviceId = null;
+    _searchHistory = const <SearchHistoryItem>[];
+    _lastRecordedQuery = null;
+    _error = null;
+    _searchQuery = null;
+    _contentTypeFilter = null;
+    _favoritesOnly = false;
+    _filterDateRange = null;
+    _filterDeviceId = null;
+    _filterCustomFrom = null;
+    _filterCustomTo = null;
+    _archiveView = false;
+  }
+
   static DateTime? _parseDate(dynamic v) =>
       v is String ? DateTime.tryParse(v) : null;
 }

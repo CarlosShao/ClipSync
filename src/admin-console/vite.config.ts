@@ -12,11 +12,51 @@ const UPSTREAM_HEADER = 'x-clipsync-upstream';
 const ORIGIN_ONLY = /^https?:\/\/[^\s/?#@]+$/i;
 
 /**
+ * 生产域名（含子域）：dev proxy 绝不允许把本地页面接到生产后端，也绝不为它重写 Origin。
+ * S0：一个 `?api=<生产>` 的链接此前就能让本地页面对生产下真实指令（含退款打款），
+ * 因为 proxy 会把 Origin 改成生产 CORS 白名单认得的部署版管理台源。这里从根上拒绝。
+ */
+const PRODUCTION_HOSTS = ['clipchain.top'];
+
+function hostOf(origin: string): string {
+  try {
+    return new URL(origin).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function normalizeOrigin(origin: string): string {
+  return origin.trim().toLowerCase().replace(/\/+$/, '');
+}
+
+function isProductionOrigin(origin: string): boolean {
+  const h = hostOf(origin);
+  if (!h) return false;
+  return PRODUCTION_HOSTS.some((p) => h === p || h.endsWith(`.${p}`));
+}
+
+/**
+ * 运行时 header 通道（X-ClipSync-Upstream）目标白名单：仅本地/环回联调地址。
+ * 不在名单内一律拒绝——含生产、内网(10./192.168./172.16-31.)、链路本地(169.254. 云元数据)、
+ * 任意公网主机，堵死「dev server(host:true) 被同网段当无鉴权 SSRF 跳板」。
+ * 新增联调环境：设 VITE_PROXY_UPSTREAM_ALLOWLIST（逗号分隔 origin）。生产域名即使登记也拒绝。
+ */
+const DEFAULT_RUNTIME_ALLOWLIST = ['http://127.0.0.1:3001', 'http://localhost:3001'];
+
+/** header 通道仅限本机客户端使用：同网段主机即便猜到 header 也不能借道转发 */
+function isLoopbackClient(req: IncomingMessage): boolean {
+  const addr = req.socket?.remoteAddress || '';
+  return addr === '::1' || addr === '::ffff:127.0.0.1' || addr.startsWith('127.');
+}
+
+/**
  * 后端 CORS 白名单登记的是**前端**源，所以转发时的 Origin 必须是它认得的那一个。
- * 新增联调环境就在下面补一行（生产 api 只认部署版管理台这个源）。
+ * ⚠️ 生产映射已删除：dev 绝不为生产目标重写 Origin（拿不到生产 CORS 放行身份）。
+ * 仅在下面登记**非生产**联调环境（target origin → 该环境认得的前端源）。
  */
 const UPSTREAM_FRONTEND_ORIGIN: Record<string, string> = {
-  'https://api.clipchain.top': 'https://admin.clipchain.top',
+  // 例：'https://staging-api.example.com': 'https://staging-admin.example.com',
 };
 
 /** http-proxy 会把 target 解析成对象，这里统一还原成 origin 字符串再查表 */
@@ -33,11 +73,36 @@ function targetOrigin(target: unknown): string {
 export default defineConfig(({ mode }) => {
   // 默认转发目标；联调时优先用页面上的「联调后端」面板（免改文件、免重启）。
   // 这两个 env 仍保留，作为 CI/无面板场景的兜底：
-  //   VITE_PROXY_TARGET=https://api.clipchain.top
-  //   VITE_PROXY_ORIGIN=https://admin.clipchain.top
+  //   VITE_PROXY_TARGET=http://127.0.0.1:3001
+  //   VITE_PROXY_ORIGIN=（仅非生产联调环境需要）
   const env = loadEnv(mode, process.cwd(), '');
   const proxyTarget = env.VITE_PROXY_TARGET || 'http://127.0.0.1:3001';
   const proxyOrigin = env.VITE_PROXY_ORIGIN || '';
+
+  // 明确拒绝生产域名作为 env 目标：dev 页面绝不允许静默指向生产后端下发真实指令。
+  // 当前工作树若把 VITE_PROXY_TARGET 设成了生产，这里会直接让 `npm run dev` 失败并给出改法。
+  if (isProductionOrigin(proxyTarget)) {
+    throw new Error(
+      `[vite] VITE_PROXY_TARGET 指向生产域名（${proxyTarget}）已被拒绝：本地 dev 管理台不允许对生产后端下发真实指令。\n` +
+        `请改用本地/联调地址（如 http://127.0.0.1:3001），或直接用部署版管理台操作生产。`
+    );
+  }
+  // proxyOrigin 也不得是生产源（否则等于给转发请求盖上生产 CORS 放行身份）
+  const safeProxyOrigin = isProductionOrigin(proxyOrigin) ? '' : proxyOrigin;
+
+  // 运行时 header 通道白名单（默认环回 + env 追加）；生产域名即使被追加也剔除
+  const runtimeAllowlist = new Set(
+    [
+      ...DEFAULT_RUNTIME_ALLOWLIST,
+      ...(env.VITE_PROXY_UPSTREAM_ALLOWLIST || '')
+        .split(',')
+        .map((s) => normalizeOrigin(s))
+        .filter(Boolean),
+    ]
+      .map(normalizeOrigin)
+      .filter((o) => o && !isProductionOrigin(o))
+  );
+
   return {
     plugins: [react(), stripMswWorkerFromBuild()],
     resolve: {
@@ -57,13 +122,28 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           // 请求**必须**继续走同源 /api：浏览器的 Origin 头脚本改不了，直连生产必被 CORS 拒。
           // 所以「换后端」只能在 dev server 上做——页面带 X-ClipSync-Upstream 头，这里按头
-          // 改转发目标，并在 proxyReq 上把 Origin 换成目标后端认得的前端源。
-          // 只有 dev server 有这段逻辑：线上是 nginx 反代，不存在改指向的入口。
-          // 残余风险：server.host=true 时同网段可向本 dev server 发这个头当跳板——
-          // 故地址形态先过 ORIGIN_ONLY，且每次改写都打日志。
+          // 改转发目标。但 header 通道受严格约束（S0 修复）：
+          //   1) 仅本机（环回）客户端可用；2) 目标必须在白名单内；3) 生产/内网/链路本地一律 403 拒绝。
+          // 且绝不为非白名单/生产目标重写 Origin。线上是 nginx 反代，不存在改指向的入口。
           configure(proxy) {
             const send = proxy.web.bind(proxy);
             const announced = new Set<string>();
+            const deny = (res: ServerResponse, upstream: string, reason: string) => {
+              const key = `deny:${reason}:${upstream}`;
+              if (!announced.has(key)) {
+                announced.add(key);
+                console.warn(`[proxy] 拒绝运行时转发到 ${upstream}（${reason}）`);
+              }
+              if (!res.headersSent) {
+                res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(
+                  JSON.stringify({
+                    code: 403,
+                    message: `dev proxy 拒绝转发到该地址（${reason}）：仅允许本机客户端指向白名单内的本地/联调后端`,
+                  })
+                );
+              }
+            };
             proxy.web = (
               req: IncomingMessage,
               res: ServerResponse,
@@ -73,18 +153,27 @@ export default defineConfig(({ mode }) => {
                 ? req.headers[UPSTREAM_HEADER]?.[0]
                 : req.headers[UPSTREAM_HEADER];
               const upstream = raw && ORIGIN_ONLY.test(raw.trim()) ? raw.trim() : '';
+              // 无 header：走 env 默认 target（已在上面拒绝生产）
               if (!upstream) return send(req, res, options);
-              if (!announced.has(upstream)) {
-                announced.add(upstream);
+              // header 通道仅限本机客户端
+              if (!isLoopbackClient(req)) return deny(res, upstream, '非本机客户端');
+              const norm = normalizeOrigin(upstream);
+              // 生产域名硬拒绝；非白名单（含内网/链路本地/公网）硬拒绝
+              if (isProductionOrigin(upstream)) return deny(res, upstream, '生产域名');
+              if (!runtimeAllowlist.has(norm)) return deny(res, upstream, '非白名单地址');
+              if (!announced.has(norm)) {
+                announced.add(norm);
                 console.warn(`[proxy] /api 转发目标改为运行时指定地址：${upstream}`);
               }
               return send(req, res, { ...options, target: upstream });
             };
             proxy.on('proxyReq', (proxyReq, _req, _res, options) => {
-              const origin =
-                UPSTREAM_FRONTEND_ORIGIN[targetOrigin(options?.target)] ?? (proxyOrigin || '');
+              const target = targetOrigin(options?.target);
+              // 绝不为生产目标重写 Origin（本地页面不得获得生产 CORS 放行身份）
+              if (!target || isProductionOrigin(target)) return;
+              const origin = UPSTREAM_FRONTEND_ORIGIN[normalizeOrigin(target)] || safeProxyOrigin || '';
               // 查不到映射的（本地后端等）不重写：它们本来就接受任意源
-              if (origin) proxyReq.setHeader('origin', origin);
+              if (origin && !isProductionOrigin(origin)) proxyReq.setHeader('origin', origin);
             });
           },
         },

@@ -3,7 +3,10 @@
 // 1. 只缓存文本/链接内容，不缓存图片 base64（图片走 blob URL + 服务端，避免 localStorage 和内存爆炸）。
 // 2. 启动时自动清理旧版遗留的大体积图片 base64。
 // 3. 限制总大小，防止单条过长或累计过多撑爆 WebView 内存。
-const CONTENT_CACHE_KEY = 'clipsync-content-cache-v2'
+// 4. 明文剪贴板缓存按 userId 命名空间隔离，防止换号后读到上一个用户的内容。
+import { anonScopedKey, onAnonScopeResolved, removeScopedAndLegacy, scopedKey } from '@/utils/userScope'
+
+const CACHE_BASE = 'content-cache-v2'
 const CONTENT_CACHE_MAX = 100 // 最多缓存条数
 const CONTENT_CACHE_MAX_TOTAL_SIZE = 500 * 1024 // 总大小上限 500KB
 const CONTENT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000 // 7天过期
@@ -15,14 +18,14 @@ interface CacheEntry {
 
 function loadContentCache(): Map<string, CacheEntry> {
   try {
-    const raw = localStorage.getItem(CONTENT_CACHE_KEY)
+    const raw = localStorage.getItem(scopedKey(CACHE_BASE))
     if (!raw) return new Map()
 
     // 旧版迁移：如果缓存整体超过 1MB，说明存了大量图片 base64，直接清空重建，
     // 避免首次启动就把几十 MB 数据读进 WebView 内存。
     if (raw.length > 1024 * 1024) {
       console.warn('[Clipboard] Old content cache too large, clearing:', (raw.length / 1024 / 1024).toFixed(2), 'MB')
-      localStorage.removeItem(CONTENT_CACHE_KEY)
+      localStorage.removeItem(scopedKey(CACHE_BASE))
       return new Map()
     }
 
@@ -63,18 +66,38 @@ function saveContentCache(cache: Map<string, CacheEntry>) {
     entries.shift()
   }
   cache = new Map(entries)
+  const key = scopedKey(CACHE_BASE)
   try {
-    localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify([...cache]))
+    localStorage.setItem(key, JSON.stringify([...cache]))
   } catch (e: any) {
     // localStorage 配额超限 — 淘汰最旧的半数后重试
     const reduced = entries.slice(Math.floor(entries.length / 2))
     try {
-      localStorage.setItem(CONTENT_CACHE_KEY, JSON.stringify(reduced))
+      localStorage.setItem(key, JSON.stringify(reduced))
     } catch {
       /* 彻底放弃 */
     }
   }
 }
+
+// 首登窗口期写入匿名桶的缓存并入该用户桶（缓存是尽力而为的加速层，冲突时以用户桶为准）
+onAnonScopeResolved(() => {
+  try {
+    const anonKey = anonScopedKey(CACHE_BASE)
+    const raw = localStorage.getItem(anonKey)
+    localStorage.removeItem(anonKey)
+    if (!raw) return
+    const anonEntries: [string, CacheEntry][] = JSON.parse(raw)
+    if (!Array.isArray(anonEntries) || anonEntries.length === 0) return
+    const current = loadContentCache()
+    for (const [k, v] of anonEntries) {
+      if (!current.has(k)) current.set(k, v)
+    }
+    saveContentCache(current)
+  } catch {
+    /* 迁移失败按丢弃处理 */
+  }
+})
 
 export function cacheContent(id: string, content: string) {
   if (!content || !id) return
@@ -99,10 +122,10 @@ export function getCachedContent(id: string): string {
   return entry.v
 }
 
-/** 清空本地内容缓存（调试用 / 设置页清理按钮用） */
+/** 清空本地内容缓存（登出 / 调试用 / 设置页清理按钮用）：所有用户分桶一并清除 */
 export function clearContentCache() {
   try {
-    localStorage.removeItem(CONTENT_CACHE_KEY)
+    removeScopedAndLegacy(CACHE_BASE)
   } catch {
     /* ignore */
   }

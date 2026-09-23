@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isValidUUID, validatePagination } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { requireRole } from '../middleware/adminAuth.js';
 import {
   createVersion,
   getVersionHistory,
@@ -151,13 +152,20 @@ router.get('/stats/overview', apiLimiter, async (req, res) => {
   }
 });
 
-// POST /api/versions/cleanup - 手动触发版本清理
-router.post('/cleanup', apiLimiter, async (req, res) => {
+// POST /api/versions/cleanup - 手动触发版本清理（全库运维操作，仅管理员；
+// 桌面端/移动端无任何调用方，普通用户调用它只会删掉全体用户的历史）
+router.post('/cleanup', requireRole(50), apiLimiter, async (req, res) => {
   try {
-    const { retentionDays = 90, maxVersionsPerItem = 50 } = req.body;
+    const { retentionDays, maxVersionsPerItem } = req.body || {};
+    // 服务端下限校验：0/负数/非数值一律拒绝，防止 {retentionDays:0} 清空全库版本
+    const days = Number(retentionDays ?? 90);
+    const maxPerItem = Number(maxVersionsPerItem ?? 50);
+    if (!Number.isFinite(days) || days < 1 || !Number.isFinite(maxPerItem) || maxPerItem < 1) {
+      return res.status(400).json({ error: 'retentionDays and maxVersionsPerItem must be numbers >= 1' });
+    }
 
-    const cleanedByAge = await cleanupOldVersions(retentionDays);
-    const cleanedByCount = await limitVersionsPerItem(maxVersionsPerItem);
+    const cleanedByAge = await cleanupOldVersions(days);
+    const cleanedByCount = await limitVersionsPerItem(maxPerItem);
 
     res.json({
       message: 'Version cleanup completed',

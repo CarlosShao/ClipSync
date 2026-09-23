@@ -68,7 +68,8 @@ class KeepAliveNotificationListener : NotificationListenerService() {
             prune(now)
 
             lastExtractedCode = code
-            Log.i(TAG, "OTP captured from $pkg: $code — pushing to PC")
+            // S1-5：验证码是能直接登录的凭据，绝不进日志（只留位数）
+            Log.i(TAG, "OTP captured from $pkg (${code.length} digits) — pushing to PC")
 
             // 验证码以文本条目推送到服务端 → 广播 → PC 剪贴板自动写入
             NativeClipboardUploader.uploadAsync(applicationContext, code)

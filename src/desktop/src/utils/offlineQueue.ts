@@ -10,6 +10,7 @@
  */
 
 import { api } from '@/api/client'
+import { anonScopedKey, onAnonScopeResolved, removeScopedAndLegacy, scopedKey } from '@/utils/userScope'
 import { logger } from './logger'
 
 export interface OfflineAction {
@@ -20,12 +21,14 @@ export interface OfflineAction {
   synced?: boolean
 }
 
-const QUEUE_KEY = 'clipsync-offline-queue'
+// 离线队列必须按 userId 命名空间隔离，否则跨账号串号：
+// 上个用户断网期间入队的剪贴板条目，会被下个登录用户的首屏 flush 刷进他的账号
+const QUEUE_BASE = 'offline-queue'
 const MAX_QUEUE_SIZE = 200
 
 function loadQueue(): OfflineAction[] {
   try {
-    const raw = localStorage.getItem(QUEUE_KEY)
+    const raw = localStorage.getItem(scopedKey(QUEUE_BASE))
     return raw ? JSON.parse(raw) : []
   } catch {
     return []
@@ -37,18 +40,36 @@ function saveQueue(queue: OfflineAction[]) {
   if (queue.length > MAX_QUEUE_SIZE) {
     queue = queue.slice(queue.length - MAX_QUEUE_SIZE)
   }
+  const key = scopedKey(QUEUE_BASE)
   try {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue))
+    localStorage.setItem(key, JSON.stringify(queue))
   } catch {
     /* quota exceeded — drop oldest entries */
     const half = queue.slice(Math.floor(queue.length / 2))
     try {
-      localStorage.setItem(QUEUE_KEY, JSON.stringify(half))
+      localStorage.setItem(key, JSON.stringify(half))
     } catch (e) {
       console.warn('[OfflineQueue] persist failed after trim:', e)
     }
   }
 }
+
+// 首登窗口期（token 已存但 userId 未解析）入队的条目在匿名桶；
+// userId 就绪后并入该用户桶（此时 scopedKey 已指向新用户），避免永远滞留
+onAnonScopeResolved(() => {
+  try {
+    const anonKey = anonScopedKey(QUEUE_BASE)
+    const raw = localStorage.getItem(anonKey)
+    localStorage.removeItem(anonKey)
+    if (!raw) return
+    const anonItems: OfflineAction[] = JSON.parse(raw)
+    if (!Array.isArray(anonItems) || anonItems.length === 0) return
+    const merged = [...loadQueue(), ...anonItems].sort((a, b) => a.timestamp - b.timestamp)
+    saveQueue(merged)
+  } catch {
+    /* 迁移失败按丢弃处理，绝不允许匿名桶数据串进后续用户 */
+  }
+})
 
 let flushing = false
 
@@ -156,9 +177,9 @@ export function getQueueSize(): number {
   return loadQueue().filter((a) => !a.synced).length
 }
 
-/** Clear the entire queue (used on logout). */
+/** Clear the entire queue (used on logout). 清掉所有用户分桶与旧无命名空间键 */
 export function clearQueue() {
-  localStorage.removeItem(QUEUE_KEY)
+  removeScopedAndLegacy(QUEUE_BASE)
 }
 
 /** Watch for online status changes and auto-flush. */

@@ -83,6 +83,16 @@ class ClipboardCaptureService {
     if (deviceIdProvider != null) _deviceIdProvider = deviceIdProvider;
   }
 
+  /// 登出清理（P0-B S0-1）：去重哈希环 / 冷却表 / E2E 收件人缓存均属
+  /// 当前账号会话态，换账号必须清零（绑定关系保留）
+  void resetLocalState() {
+    _lastCapturedHash = null;
+    _knownServerHashes.clear();
+    _failedHashCooldown.clear();
+    _recipientsCache = null;
+    _recipientsCachedAt = null;
+  }
+
   /// MethodChannel 入口：Kotlin 前台服务回传的系统剪贴板文本
   void handleCapturedText(String text) {
     final trimmed = text.trim();
@@ -574,6 +584,41 @@ class ClipboardCaptureService {
       return const E2eImageOutcome(handled: true, aborted: true);
     } catch (e) {
       debugPrint('[ClipboardCapture] e2e image upload failed: $e '
+          '(fail-closed, no plaintext fallback)');
+      return const E2eImageOutcome(handled: true, aborted: true);
+    }
+  }
+
+  /// 文本条目 E2E 上传（S1-4 补线：系统分享面板文本），三态语义与
+  /// [uploadImageMaybeE2e] 相同：
+  /// - 双闸门关 / 无收件人公钥（协议 §5 可用性降级）→ handled:false，调用方回退明文链路
+  /// - 加密原语失败 / 密文上传失败 → handled:true + aborted:true（fail-closed，绝不回退明文）
+  /// - 成功 → handled:true + response 非空
+  Future<E2eImageOutcome> uploadTextMaybeE2e({required String text}) async {
+    if (text.isEmpty || !await _isE2eEnabled()) {
+      return const E2eImageOutcome(handled: false);
+    }
+    final token = await TokenStore.getAccessToken();
+    if (token == null || token.isEmpty) {
+      return const E2eImageOutcome(handled: false);
+    }
+    final _E2eSealed? sealed;
+    try {
+      sealed = await _encryptText(text);
+    } on E2eCryptoException catch (err) {
+      debugPrint('[ClipboardCapture] e2e share-text encrypt failed, abort '
+          '(fail-closed, no plaintext fallback): $err');
+      return const E2eImageOutcome(handled: true, aborted: true);
+    }
+    if (sealed == null) {
+      return const E2eImageOutcome(handled: false);
+    }
+    try {
+      await _upload(text, idempotencyKey: _generateIdempotencyKey(), e2e: sealed);
+      _remember(_hashOf(sealed.ciphertextB64));
+      return const E2eImageOutcome(handled: true, response: <String, dynamic>{});
+    } catch (e) {
+      debugPrint('[ClipboardCapture] e2e share-text upload failed: $e '
           '(fail-closed, no plaintext fallback)');
       return const E2eImageOutcome(handled: true, aborted: true);
     }

@@ -23,17 +23,41 @@ export const upstreamEditable = import.meta.env.DEV;
 /** 只接受纯源地址（协议+主机+端口）：带路径/查询/凭据的一律拒——转发目标只能是 origin */
 const ORIGIN_ONLY = /^https?:\/\/[^\s/?#@]+$/i;
 
+/**
+ * 生产域名（含子域）：本地 dev 页面绝不允许被静默指向生产后端（S0）。
+ * 与 vite.config.ts 的 PRODUCTION_HOSTS 同源；两处都要改。
+ */
+const PRODUCTION_HOSTS = ['clipchain.top'];
+
+export function isProductionOrigin(origin: string): boolean {
+  try {
+    const h = new URL(origin).hostname.toLowerCase();
+    return PRODUCTION_HOSTS.some((p) => h === p || h.endsWith(`.${p}`));
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeUpstream(raw: string): string {
   const value = raw.trim().replace(/\/+$/, '');
   if (!ORIGIN_ONLY.test(value)) {
     throw new Error('请填写 http(s)://主机[:端口] 形式的后端地址，不要带路径');
+  }
+  if (isProductionOrigin(value)) {
+    throw new Error('已拒绝：本地 dev 页面不允许指向生产后端，请用部署版管理台操作生产');
   }
   return value;
 }
 
 export function getUpstream(): string {
   if (!upstreamEditable || typeof localStorage === 'undefined') return '';
-  return (localStorage.getItem(STORAGE_KEY) || '').trim();
+  const value = (localStorage.getItem(STORAGE_KEY) || '').trim();
+  // 历史遗留：本修复之前落盘的生产地址直接作废，防止旧 localStorage 继续把请求指向生产
+  if (value && isProductionOrigin(value)) {
+    localStorage.removeItem(STORAGE_KEY);
+    return '';
+  }
+  return value;
 }
 
 /** 保存后由调用方触发整页重载：鉴权态、react-query 缓存都属于上一个后端 */
@@ -65,22 +89,26 @@ export function mockInterceptsApi(): boolean {
 
 /**
  * 接收桌面端随链接带进来的 `?api=`（桌面端「服务器地址」是跨项目的唯一入口）。
- * 读完即从地址栏抹掉参数，避免刷新重复覆盖用户之后在面板里改的值。
+ * 先校验再接管：生产/非法地址一律拒绝且**保留地址栏参数**，让运营者看得见
+ * 「这条链接想把控制台指到哪里」——此前的静默接管+抹参数正是 S0 的入口。
+ * 合法地址读完即从地址栏抹掉，避免刷新重复覆盖用户之后在面板里改的值。
  */
 export function adoptUpstreamFromQuery(): void {
   if (!upstreamEditable || typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   const raw = url.searchParams.get('api');
   if (!raw) return;
+  let next: string;
+  try {
+    next = normalizeUpstream(raw);
+  } catch {
+    console.warn('[upstream] 已拒绝 ?api= 指向的地址（生产或非法）：', raw);
+    return;
+  }
   url.searchParams.delete('api');
   window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-  try {
-    const previous = getUpstream();
-    const next = normalizeUpstream(raw);
-    localStorage.setItem(STORAGE_KEY, next);
-    // 换了后端必须整页重载：登录态与 react-query 缓存都是上一个后端的
-    if (next !== previous) window.location.reload();
-  } catch {
-    /* 非法地址：忽略，沿用本地已存值 */
-  }
+  const previous = getUpstream();
+  localStorage.setItem(STORAGE_KEY, next);
+  // 换了后端必须整页重载：登录态与 react-query 缓存都是上一个后端的
+  if (next !== previous) window.location.reload();
 }

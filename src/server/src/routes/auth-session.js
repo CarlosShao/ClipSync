@@ -3,8 +3,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/pool.js';
 import config from '../config.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { getRedisClient } from '../middleware/rateLimiter.js';
-import { blacklistJti } from '../utils/redis-client.js';
+import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -51,10 +50,12 @@ router.delete('/sessions/:sessionId', authenticateToken, async (req, res) => {
       [sessionId]
     );
 
-    // TODO: 将 token 加入 Redis 黑名单
+    // JWT 签发时 jti === sessionId（见 auth.js createSessionAndGenerateToken），
+    // 用共享的 blacklistJti 写 bl:{jti}（此前手写 blacklist:{sessionId}，
+    // 而 middleware/auth.js 与 ws/server.js 只读 bl: 前缀，吊销静默失效）
     try {
-      const redisClient = await getRedisClient();
-      await redisClient.set(`blacklist:${sessionId}`, 'true', { EX: 86400 }); // 24小时过期
+      const ttl = parseDurationToSeconds(config.jwt.expiresIn);
+      await blacklistJti(sessionId, ttl > 0 ? ttl : 3600);
     } catch (redisErr) {
       logger.warn('Redis blacklist failed:', { error: redisErr.message });
     }

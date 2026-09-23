@@ -206,7 +206,7 @@ E2E 加密的密码学实现本身是正确且跨端一致的（Rust/Dart 对同
 
 ### [S2] 17. `ENCRYPTION_KEY` 生产校验可被示例值原文通过
 
-- 证据：`utils/encryption.js:19` `DEFAULT_KEYS = ['default_master_key_32b','default_iv_12b','dev_encryption_key_32chars_min!!']`；`.env.production.example:25` `ENCRYPTION_KEY=CHANGE_ME_ENCRYPTION_KEY_32_CHARS!!`（33 字符，不在黑名单）。
+- 证据：`utils/encryption.js:19` `DEFAULT_KEYS = ['default_master_key_32b','default_iv_12b','<REDACTED:ENCRYPTION_KEY>']`；`.env.production.example:25` `ENCRYPTION_KEY=CHANGE_ME_ENCRYPTION_KEY_32_CHARS!!`（33 字符，不在黑名单）。
 - 失败场景：运维直接 `cp .env.production.example .env.production` 忘改 → 生产通过全部启动校验（:25-39），shared_links 正文与 AI API key 全部用仓库公开的示例密钥加密 → 拖库即解密。
 - 影响：安全（公开密钥加密生产数据）。
 - 修法：生产启动强制拒绝包含 `CHANGE_ME` 前缀的值；或要求密钥为 64 位 hex/base64 随机格式。

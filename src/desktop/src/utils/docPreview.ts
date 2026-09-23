@@ -1,6 +1,7 @@
 // === 文档预览纯函数辅助（Markdown/代码高亮/文件类型检测/TOC 提取）===
 import { marked } from 'marked'
 import hljs from 'highlight.js'
+import { sanitizeHtml } from './html'
 
 // Configure marked once for the preview pipeline
 marked.setOptions({
@@ -34,7 +35,9 @@ export function renderMarkdown(text: string): string {
       seenIds.add(id)
       return `<h${depth} id="${id}">${text}</h${depth}>`
     }
-    return marked.parse(text, { renderer }) as string
+    // marked 默认直通内嵌原始 HTML（无 sanitize 选项），内容可能来自其它同步设备，
+    // 必须先过 DOMPurify 再交给 v-html，否则构成存储型 XSS
+    return sanitizeHtml(marked.parse(text, { renderer }) as string)
   } catch (e) {
     console.error('[Preview] marked.parse error:', e)
     return text.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')

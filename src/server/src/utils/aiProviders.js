@@ -12,6 +12,10 @@
 
 import { logger } from './logger.js'
 import dns from 'node:dns'
+import net from 'node:net'
+import http from 'node:http'
+import https from 'node:https'
+import { Readable } from 'node:stream'
 import { convertMessagesForAnthropic } from './messageConverter.js'
 // AN-03：ai_max_tokens 全链路统一钳制点（system_configs 5s TTL 缓存，fail-open 默认 4096）
 import { clampMaxTokens } from './aiRuntimeConfig.js'
@@ -29,31 +33,118 @@ import { clampMaxTokens } from './aiRuntimeConfig.js'
 // 供 chat / models / test / ocr 复用：URL 解析 + 协议/主机校验防内网 SSRF +
 // 禁跟随重定向 + 超时。避免各调用点各自裸 fetch 造成"忘了校验"的漂移。
 
-/** 是否为私网 / 保留网段 IP（IPv4 与常见 IPv6 链路本地/唯一本地地址） */
-export function isPrivateIp(ip) {
-  if (!ip) return false
-  const v = String(ip).toLowerCase()
-  if (v === '::1' || v === '::' || v === '0.0.0.0') return true
-  // IPv6 link-local / 唯一本地地址
-  if (v.startsWith('fe80') || v.startsWith('fc') || v.startsWith('fd')) return true
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v)
-  if (m) {
-    const p = m.slice(1).map(Number)
-    if (p[0] === 10) return true // 10/8
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true // 172.16/12
-    if (p[0] === 192 && p[1] === 168) return true // 192.168/16
-    if (p[0] === 169 && p[1] === 254) return true // 169.254/16 link-local
-    if (p[0] === 127) return true // loopback
-    if (p[0] === 0) return true
-    if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true // 100.64/10 CGNAT
+function parseIpv4(s) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s)
+  if (!m) return null
+  const p = m.slice(1).map(Number)
+  if (p.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null
+  return p
+}
+
+function isPrivateIpv4(p) {
+  const [a, b] = p
+  if (a === 0) return true // 0.0.0.0/8
+  if (a === 10) return true // 10/8
+  if (a === 100 && b >= 64 && b <= 127) return true // 100.64/10 CGNAT
+  if (a === 127) return true // 127/8 loopback
+  if (a === 169 && b === 254) return true // 169.254/16 link-local（含云元数据 169.254.169.254）
+  if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12
+  if (a === 192 && b === 168) return true // 192.168/16
+  if (a === 192 && p[1] === 0 && p[2] === 2) return true // 192.0.2/24 TEST-NET-1
+  if (a === 198 && b === 51 && p[2] === 100) return true // 198.51.100/24 TEST-NET-2
+  if (a === 203 && b === 0 && p[2] === 113) return true // 203.0.113/24 TEST-NET-3
+  if (a >= 224) return true // 224/4 组播 + 240/4 保留 + 255.255.255.255 广播
+  return false
+}
+
+/** 展开 IPv6 字面量为 8 个 16-bit 组；支持 :: 缩写与内嵌 IPv4（::ffff:a.b.c.d）。非法返回 null。 */
+function parseIpv6(input) {
+  let s = input
+  const lastColon = s.lastIndexOf(':')
+  if (lastColon !== -1 && s.slice(lastColon + 1).includes('.')) {
+    const p = parseIpv4(s.slice(lastColon + 1))
+    if (!p) return null
+    const hi = ((p[0] << 8) | p[1]).toString(16)
+    const lo = ((p[2] << 8) | p[3]).toString(16)
+    s = s.slice(0, lastColon + 1) + hi + ':' + lo
+  }
+  const halves = s.split('::')
+  if (halves.length > 2) return null
+  let parts
+  if (halves.length === 2) {
+    const l = halves[0] === '' ? [] : halves[0].split(':')
+    const r = halves[1] === '' ? [] : halves[1].split(':')
+    const missing = 8 - l.length - r.length
+    if (missing < 0) return null
+    parts = [...l, ...Array(missing).fill('0'), ...r]
+  } else {
+    parts = s.split(':')
+  }
+  if (parts.length !== 8) return null
+  const groups = []
+  for (const g of parts) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null
+    groups.push(parseInt(g, 16))
+  }
+  return groups
+}
+
+function v4FromGroups(g6, g7) {
+  return [(g6 >> 8) & 0xff, g6 & 0xff, (g7 >> 8) & 0xff, g7 & 0xff]
+}
+
+function isPrivateIpv6(g) {
+  if (g.every((x) => x === 0)) return true // ::
+  if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true // ::1
+  if (g.slice(0, 5).every((x) => x === 0)) {
+    if (g[5] === 0xffff) return isPrivateIpv4(v4FromGroups(g[6], g[7])) // ::ffff:a.b.c.d IPv4-mapped
+    if (g[5] === 0) return true // ::/96 IPv4-compatible（已废弃、不可路由）一律拒绝
+  }
+  if ((g[0] & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
+  if ((g[0] & 0xfe00) === 0xfc00) return true // fc00::/7 唯一本地
+  if ((g[0] & 0xff00) === 0xff00) return true // ff00::/8 组播
+  if (g[0] === 0x100 && g.slice(1, 5).every((x) => x === 0)) return true // 100::/64 discard-only
+  if (g[0] === 0x2001 && g[1] === 0xdb8) return true // 2001:db8::/32 文档段
+  if (g[0] === 0x2002) return isPrivateIpv4(v4FromGroups(g[1], g[2])) // 6to4 内嵌 IPv4
+  if (g[0] === 0x2001 && g[1] === 0) {
+    // Teredo：groups[2..3] 内嵌服务器 IPv4，groups[6..7] 内嵌客户端 IPv4（按位取反）
+    if (isPrivateIpv4(v4FromGroups(g[2], g[3]))) return true
+    const c = v4FromGroups(g[6], g[7]).map((x) => (~x) & 0xff)
+    return isPrivateIpv4(c)
   }
   return false
+}
+
+/**
+ * 是否为私网/保留网段 IP（fail-closed：无法解析为合法 IP 字面量时一律返回 true 视为被禁）。
+ * 接受带方括号（[::1]）、带 zone（fe80::1%eth0）、IPv4-mapped/兼容 IPv6、:: 缩写等形态。
+ */
+export function isPrivateIp(ip) {
+  if (ip === null || ip === undefined) return true
+  let v = String(ip).trim().toLowerCase()
+  if (v.startsWith('[') && v.endsWith(']')) v = v.slice(1, -1)
+  const zone = v.indexOf('%')
+  if (zone !== -1) v = v.slice(0, zone)
+  const kind = net.isIP(v)
+  if (kind === 4) {
+    const p = parseIpv4(v)
+    return p ? isPrivateIpv4(p) : true
+  }
+  if (kind === 6) {
+    const g = parseIpv6(v)
+    return g ? isPrivateIpv6(g) : true
+  }
+  return true
 }
 
 /** 明文禁用的上游主机名（本机回环别名 / 云元数据端点） */
 export const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata']
 
-/** 校验上游 URL：协议必须 http/https，且主机不得指向内网/保留网段。非法时抛错。 */
+function stripBrackets(host) {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+}
+
+/** 校验上游 URL：协议必须 http/https，且主机不得指向内网/保留网段。非法时抛错（fail-closed）。 */
 export async function assertSafeUpstreamUrl(input) {
   let parsed
   try {
@@ -68,35 +159,117 @@ export async function assertSafeUpstreamUrl(input) {
   if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
     throw new Error('Upstream URL host is not allowed')
   }
-  if (/^[\d.]+$/.test(host) || host.includes(':')) {
-    if (isPrivateIp(host)) throw new Error('Upstream URL resolves to a blocked internal address')
+  const bare = stripBrackets(host)
+  if (net.isIP(bare)) {
+    if (isPrivateIp(bare)) throw new Error('Upstream URL resolves to a blocked internal address')
     return
   }
-  // 主机名：解析后再校验一次，防 DNS rebinding 指向内网
+  // 主机名：解析出全部地址逐个校验；解析失败/为空一律拒绝（fail-closed，不能把
+  // DNS 失败与"内网判定抛错"混在同一个 catch 里吞掉）
+  let addresses
   try {
-    const { address } = await dns.promises.lookup(host)
-    if (isPrivateIp(address)) throw new Error('Upstream URL resolves to a blocked internal address')
+    addresses = await dns.promises.lookup(host, { all: true, verbatim: true })
   } catch {
-    // 解析失败交给 fetch 自行报错
+    throw new Error('Upstream URL host cannot be resolved')
   }
+  if (!addresses || addresses.length === 0) {
+    throw new Error('Upstream URL host cannot be resolved')
+  }
+  for (const a of addresses) {
+    if (isPrivateIp(a.address)) throw new Error('Upstream URL resolves to a blocked internal address')
+  }
+}
+
+/** 连接期兜底：对 socket 实际要连接的每个解析结果再判一次，消除校验与建连之间的 DNS rebinding 窗口 */
+function guardedLookup(hostname, options, callback) {
+  dns.lookup(hostname, options, (err, address, family) => {
+    if (err) return callback(err, address, family)
+    const list = Array.isArray(address) ? address.map((x) => (typeof x === 'string' ? x : x.address)) : [address]
+    for (const ip of list) {
+      if (isPrivateIp(ip)) {
+        return callback(new Error('Upstream URL resolves to a blocked internal address'), address, family)
+      }
+    }
+    callback(null, address, family)
+  })
+}
+
+/** 把 node:http(s) IncomingMessage 适配成调用方使用的 fetch Response 子集 */
+function wrapResponse(res) {
+  const headers = new Headers()
+  for (const [k, v] of Object.entries(res.headers)) {
+    if (v === undefined) continue
+    headers.append(k, Array.isArray(v) ? v.join(', ') : String(v))
+  }
+  let webBody = null
+  const resp = {
+    ok: res.statusCode >= 200 && res.statusCode < 300,
+    status: res.statusCode,
+    statusText: res.statusMessage || '',
+    headers,
+    get body() {
+      if (!webBody) webBody = Readable.toWeb(res)
+      return webBody
+    },
+    async arrayBuffer() {
+      const reader = resp.body.getReader()
+      const chunks = []
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        chunks.push(Buffer.from(value))
+      }
+      const buf = Buffer.concat(chunks)
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+    },
+    async text() {
+      const ab = await resp.arrayBuffer()
+      return Buffer.from(ab).toString('utf8')
+    },
+    async json() {
+      return JSON.parse(await resp.text())
+    },
+  }
+  return resp
 }
 
 /**
  * 安全的上游 fetch：URL 校验（协议 + 防内网 SSRF）+ 禁跟随重定向 + 超时。
  * 供 chat / models / test / ocr 统一复用，避免各调用点裸 fetch 遗漏校验。
  *
+ * 底层用 node:http(s)（而非全局 fetch）以便挂 lookup 钩子：连接建立时对
+ * socket 实际使用的 IP 再判一次内网，DNS rebinding 的 TOCTOU 窗口因此被消除。
+ *
  * @param {string} url 上游请求地址
- * @param {RequestInit} [options] fetch 选项（method/headers/body/signal…）
+ * @param {object} [options] { method, headers, body, signal }（与 fetch 常用子集一致）
  * @param {object} [opts]
  * @param {number} [opts.timeoutMs] 默认超时，默认 10000ms；options.signal 存在时优先用信号量
- * @returns {Promise<Response>}
+ * @returns {Promise<object>} fetch Response 子集（ok/status/statusText/headers/body/text/json/arrayBuffer）
  */
 export async function safeUpstreamFetch(url, options = {}, { timeoutMs = 10000 } = {}) {
   await assertSafeUpstreamUrl(url)
-  return fetch(url, {
-    ...options,
-    redirect: 'manual',
-    signal: options.signal || AbortSignal.timeout(timeoutMs),
+  const parsed = new URL(url)
+  const transport = parsed.protocol === 'https:' ? https : http
+  const headers = { ...(options.headers || {}) }
+  // 本实现不做内容解压，显式要求 identity，防止上游返回 gzip 后调用方拿到二进制
+  if (!Object.keys(headers).some((k) => k.toLowerCase() === 'accept-encoding')) {
+    headers['accept-encoding'] = 'identity'
+  }
+  const signal = options.signal || AbortSignal.timeout(timeoutMs)
+  return await new Promise((resolve, reject) => {
+    const req = transport.request(
+      parsed,
+      {
+        method: options.method || 'GET',
+        headers,
+        signal,
+        lookup: guardedLookup,
+      },
+      (res) => resolve(wrapResponse(res)),
+    )
+    req.on('error', reject)
+    if (options.body !== undefined && options.body !== null) req.write(options.body)
+    req.end()
   })
 }
 

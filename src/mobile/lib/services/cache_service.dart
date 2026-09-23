@@ -72,6 +72,21 @@ class CacheService {
   int _maxMemoryCacheSize = 100; // 最大内存缓存项数
   int _maxDiskCacheSize = 50 * 1024 * 1024; // 50MB
   Duration _defaultTTL = const Duration(hours: 1); // 默认过期时间
+
+  /// 用户命名空间（P0-B S0-1）：缓存键按 userId 隔离，防止换账号后
+  /// 下个用户读到上个用户的列表/资料缓存。空值按 anonymous 处理。
+  String _userScope = '';
+
+  /// 登录后由 SessionCleanup.onUserSignedIn 调用；切换用户即丢弃全部内存缓存
+  void setUserScope(String? userId) {
+    final scope = (userId == null || userId.isEmpty) ? '' : userId;
+    if (scope == _userScope) return;
+    _userScope = scope;
+    _memoryCache.clear();
+  }
+
+  String _scopedKey(String key) =>
+      _userScope.isEmpty ? 'anonymous:$key' : 'u_$_userScope:$key';
   
   /// 初始化缓存服务
   Future<void> initialize({
@@ -93,7 +108,26 @@ class CacheService {
     // 清理过期缓存
     await _cleanupExpiredCache();
     
+    // 清理旧版无命名空间缓存文件（键名不含 ':'）：归属用户不可判定，一律丢弃
+    await _cleanupUnscopedCache();
+    
     debugPrint('CacheService initialized with memory limit: $maxMemoryCacheSize, disk limit: ${maxDiskCacheSize ~/ 1024}KB');
+  }
+  
+  Future<void> _cleanupUnscopedCache() async {
+    if (_cacheDir == null) return;
+    try {
+      final files = await _cacheDir!.list().toList();
+      for (final file in files) {
+        if (file is File &&
+            file.path.endsWith('.cache') &&
+            !file.uri.pathSegments.last.contains(':')) {
+          await file.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('CacheService unscoped cleanup failed: $e');
+    }
   }
   
   /// 获取缓存

@@ -90,9 +90,19 @@ async function consumeVerificationCodeById(id, code) {
   return result.rows[0] || null;
 }
 
-// 哈希盐（固定值，用于 phone_hash / email_hash 计算）
-// 修改此值后需重新计算所有用户的哈希值
-const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT_2026';
+// 哈希盐（用于 phone_hash / email_hash 计算，已参与存量数据派生，不可静默变更）。
+// 生产环境缺失 ENCRYPTION_KEY 即 fail-fast（config.js 已有同口径校验，此处双保险），
+// 绝不静默落回仓库公开可知的兜底盐；非生产保留兜底以免既有 dev 数据全部校验失败。
+const HASH_SALT = (() => {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ENCRYPTION_KEY is required in production (phone/email hash salt); refusing to start');
+    }
+    return 'CLIPSYNC_SALT_2026';
+  }
+  return key.substring(0, 16);
+})();
 
 /**
  * 计算字段值的 SHA-256 哈希（用于 O(1) 查询）

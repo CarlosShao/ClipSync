@@ -188,6 +188,7 @@ class SyncService {
     required String? deviceId,
     required bool autoSyncScreenshots,
     bool autoSaveImagesToAlbum = true,
+    bool e2eActive = false,
   }) async {
     if (!Platform.isAndroid) return;
     try {
@@ -197,6 +198,8 @@ class SyncService {
         'deviceId': deviceId,
         'autoSyncScreenshots': autoSyncScreenshots,
         'autoSaveImagesToAlbum': autoSaveImagesToAlbum,
+        // E2E 双闸门计算结果下发原生：原生采集不得明文直传，回写不得写密文
+        'e2eActive': e2eActive,
       });
     } catch (e) {
       debugPrint('[SyncService] updateSyncConfig failed: $e');

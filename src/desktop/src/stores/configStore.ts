@@ -3,8 +3,8 @@ import { ref, computed } from 'vue'
 import type { AppConfig } from '@/types'
 import * as tauri from '@/lib/tauri'
 import { api, storeRefreshToken } from '@/api/client'
-import { useClipboard } from '@/composables/useClipboard'
-import { clearQueue } from '@/utils/offlineQueue'
+import { clearAllUserState } from '@/utils/userDataCleanup'
+import { setUserScope } from '@/utils/userScope'
 
 const isDev = import.meta.env.DEV
 // A1：服务器地址默认值。只在"拿不到配置"时生效，绝不覆盖用户已保存的值
@@ -126,6 +126,8 @@ export const useConfigStore = defineStore('config', () => {
   async function completeLogin(authToken: string, userId: string, refreshToken?: string | null) {
     config.value.token = authToken
     config.value.user_id = userId
+    // 本地持久化用户数据按 userId 命名空间隔离（防跨账号串号的防御层）
+    setUserScope(userId)
     localStorage.setItem('clipsync-token', authToken)
     storeRefreshToken(refreshToken || null)
     await save({ token: authToken, user_id: userId })
@@ -145,30 +147,12 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   function logout() {
-    localStorage.removeItem('clipsync-token')
-    // 清除 refresh token / csrf / 墓碑同步游标，避免下个账号继承旧凭证与同步点
-    storeRefreshToken(null)
-    localStorage.removeItem('clipsync-csrf')
-    localStorage.removeItem('clipsync-last-sync-at')
-    // 清除剪贴板内容缓存与 tab 状态，避免切换账号后旧数据/图片残留内存和磁盘
-    localStorage.removeItem('clipsync-content-cache-v2')
-    localStorage.removeItem('clipsync-clipboard-filter')
-    // 登出时清理离线队列，避免上一个账号的离线操作被下一个登录账号刷出（跨用户清理）
-    clearQueue()
+    // 与 forceLogout 共用同一清理出口：本地用户数据 + 内存单例 + Rust 侧认证态
+    clearAllUserState()
     user.value = { name: '', email: '', phone: '', plan: 'Free' }
     config.value.token = null
     config.value.user_id = null
     config.value.device_id = null
-    // 释放剪贴板图片的 blob URL，防止旧账号图片常驻 WebView 内存（泄漏修复）
-    try {
-      useClipboard().resetImages()
-    } catch {
-      /* composable 尚未初始化则忽略 */
-    }
-    // 清除 Rust 端持久化的认证态（clear_auth 命令只清 token/device_id/user_id，
-    // 不会动 server_url/快捷键）。不再用 save({token:null})，避免 update_config
-    // 整体覆盖语义误伤其它字段。
-    tauri.clearAuth().catch(() => {})
   }
 
   // 保存用户偏好到 localStorage（跨会话持久化）
@@ -303,6 +287,12 @@ export const useConfigStore = defineStore('config', () => {
       const res = await api('GET', '/api/auth/me')
       if (!res.ok || !res.data) return
       const data = res.data as any
+      // AuthPage 手工登录路径不经过 completeLogin，user_id 可能一直为空；
+      // /auth/me 是所有登录路径都会走到的收敛点，在这里补齐用户命名空间
+      if (data.id) {
+        setUserScope(String(data.id))
+        if (!config.value.user_id) config.value.user_id = String(data.id)
+      }
       user.value.name = data.nickname || user.value.name
       user.value.email = data.email || user.value.email
       user.value.phone = data.phone || user.value.phone

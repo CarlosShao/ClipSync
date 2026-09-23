@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+import { sanitizeHtml } from '@/utils/html'
 
 const { tf } = useI18n()
 // Excel 表格预览：xlsx 库 sheet_to_html 输出的多 sheet 表格，按 sheet 标签切换。
@@ -20,6 +21,8 @@ const emit = defineEmits<{
   'update:active-idx': [idx: number]
 }>()
 
+// xlsx sheet_to_html 对超链接 href 不做转义（cell.l.Target 直接拼进 <a href>），
+// 恶意表格可携带 javascript: 链接 → v-html 前必须消毒
 function ensureThead(html: string): string {
   try {
     const doc = new DOMParser().parseFromString(`<div id="root">${html}</div>`, 'text/html')
@@ -31,9 +34,9 @@ function ensureThead(html: string): string {
       tb.insertBefore(thead, firstRow)
       thead.appendChild(firstRow)
     })
-    return doc.getElementById('root')?.innerHTML ?? html
+    return sanitizeHtml(doc.getElementById('root')?.innerHTML ?? html)
   } catch {
-    return html
+    return sanitizeHtml(html)
   }
 }
 

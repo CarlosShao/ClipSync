@@ -160,3 +160,23 @@ export function clearSelection() {
     i.selected = false
   })
 }
+
+/** 登出/换号：清空列表与分页/筛选/去重等全部模块级剪贴板状态，防止跨用户残留 */
+export function resetClipboardState() {
+  items.value = []
+  searchQuery.value = ''
+  activeFilter.value = 'all'
+  batchMode.value = false
+  loading.value = false
+  loadingMore.value = false
+  currentPage.value = 1
+  totalItems.value = 0
+  mainTotalItems.value = 0
+  currentView.value = 'all'
+  clipViewSeg.value = 'timeline'
+  loadError.value = null
+  advancedFilters.value = { deviceId: '', dateFrom: '', dateTo: '' }
+  recentUploadHashes.clear()
+  setSkipPollUntil(0)
+  setInitialLoadDone(false)
+}

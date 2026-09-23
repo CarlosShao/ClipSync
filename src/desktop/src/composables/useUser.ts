@@ -42,6 +42,13 @@ export function useUser() {
     loaded.value = true
   }
 
+  /** 登出/换号：清空用户态并把 loaded 复位，确保下次登录后 fetchUser() 会真正重取 RBAC */
+  function resetUser() {
+    user.value = null
+    loading.value = false
+    loaded.value = false
+  }
+
   return {
     user,
     loading,
@@ -54,5 +61,6 @@ export function useUser() {
     hasPermission,
     fetchUser,
     setUser,
+    resetUser,
   }
 }

@@ -18,6 +18,9 @@ mod clipboard_monitor;
 // B5: 端到端加密密钥库与加解密命令（协议契约见 docs/plans/e2e-protocol.md）
 mod e2e_crypto;
 
+// IPC 文件路径统一校验 + 剪贴板捕获路径登记表
+mod file_guard;
+
 // ============================================================================
 // AppConfig persistence (A1)
 // ============================================================================
@@ -182,18 +185,23 @@ fn clear_auth(app: tauri::AppHandle, state: tauri::State<AppState>) {
     debug!("[Auth] Cleared token/device_id/user_id on logout");
 }
 
-/// Copy local files to clipboard (CF_HDROP) — checks if files exist first.
-/// For files that were originally copied on this same machine.
+/// Copy local files to clipboard (CF_HDROP) — only paths this device captured
+/// (or app-managed dirs) pass; missing/rejected files are reported by NAME only
+/// (no full-path echo — the list can come from remote-synced entries).
 #[tauri::command]
 fn copy_local_files(paths: Vec<String>) -> Result<String, String> {
-    use std::path::Path;
     let mut existing = Vec::new();
-    let mut missing = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
     for p in &paths {
-        if Path::new(p).exists() {
-            existing.push(p.clone());
-        } else {
-            missing.push(p.clone());
+        // CF_HDROP 消费方需要原样路径（含大小写/非 verbatim 形式），校验用 canonical 副本
+        match file_guard::validate_path(p) {
+            Ok(_) => existing.push(p.clone()),
+            Err(_) => missing.push(
+                std::path::Path::new(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "<invalid>".to_string()),
+            ),
         }
     }
     if existing.is_empty() {
@@ -215,25 +223,127 @@ fn copy_local_files(paths: Vec<String>) -> Result<String, String> {
     }
 }
 
+/// 校验 open_url 的目标并归一化为可安全交给 OS 的字符串。
+/// 只放行：① http/https URL（经 WHATWG 归一化，引号/空格等被百分号编码，
+/// 无法逃逸浏览器命令行模板的引号边界）② 本机已登记的**目录**（"打开所在
+/// 文件夹"回退用；文件一律拒绝，防止借 open 执行任意程序；UNC 拒绝，防
+/// Explorer 自动连接外部 SMB 泄露 NTLM 凭据）。其余协议（file:/javascript:
+/// 及一切自定义 scheme）直接报错。前端调用点仅 http(s) 链接与目录回退两类。
+fn validate_open_target(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("empty URL".to_string());
+    }
+    if let Ok(parsed) = url::Url::parse(trimmed) {
+        // 单字母 scheme（如 "c:/dir"）是 Windows 盘符路径，不是 URL
+        let is_drive_letter = parsed.scheme().len() == 1
+            && parsed.scheme().chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false);
+        if !is_drive_letter {
+            return match parsed.scheme() {
+                "http" | "https" => Ok(parsed.as_str().to_string()),
+                s => Err(format!("URL scheme not allowed: {}", s)),
+            };
+        }
+    }
+    let canonical = file_guard::validate_path(trimmed).map_err(|e| e.message().to_string())?;
+    if !canonical.is_dir() {
+        return Err("Not a directory or allowed URL".to_string());
+    }
+    Ok(file_guard::to_display_path(&canonical).to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "windows")]
+mod shell_execute {
+    // 与 open crate 5.x 的 shellexecute-on-windows 实现同源（docs.rs/windows-sys 布局）。
+    // 不走 cmd.exe：ShellExecuteExW 以宽字符串接收目标，无二次 shell 解析，无命令注入面。
+    const SEE_MASK_NOASYNC: u32 = 0x0000_0100;
+    const SEE_MASK_FLAG_NO_UI: u32 = 0x0000_0400;
+    const SW_SHOWNORMAL: i32 = 1;
+
+    #[cfg_attr(not(target_arch = "x86"), repr(C))]
+    #[cfg_attr(target_arch = "x86", repr(C, packed(1)))]
+    #[allow(non_snake_case)]
+    pub struct SHELLEXECUTEINFOW {
+        pub cbSize: u32,
+        pub fMask: u32,
+        pub hwnd: isize,
+        pub lpVerb: *const u16,
+        pub lpFile: *const u16,
+        pub lpParameters: *const u16,
+        pub lpDirectory: *const u16,
+        pub nShow: i32,
+        pub hInstApp: isize,
+        pub lpIDList: *mut core::ffi::c_void,
+        pub lpClass: *const u16,
+        pub hkeyClass: isize,
+        pub dwHotKey: u32,
+        pub hIcon: isize,
+        pub hProcess: isize,
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        #[allow(non_snake_case)]
+        pub fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> i32;
+    }
+
+    pub fn open(target: &str) -> Result<(), String> {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = |s: &str| -> Vec<u16> {
+            std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        };
+        let file = wide(target);
+        let verb = wide("open");
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI,
+            hwnd: 0,
+            lpVerb: verb.as_ptr(),
+            lpFile: file.as_ptr(),
+            lpParameters: std::ptr::null(),
+            lpDirectory: std::ptr::null(),
+            nShow: SW_SHOWNORMAL,
+            hInstApp: 0,
+            lpIDList: std::ptr::null_mut(),
+            lpClass: std::ptr::null(),
+            hkeyClass: 0,
+            dwHotKey: 0,
+            hIcon: 0,
+            hProcess: 0,
+        };
+        // BOOL 返回：非 0 成功；失败原因经 GetLastError
+        if unsafe { ShellExecuteExW(&mut info) } != 0 {
+            Ok(())
+        } else {
+            Err(format!("ShellExecute failed: {}", std::io::Error::last_os_error()))
+        }
+    }
+}
+
 /// Open URL in system default browser
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
+    let target = validate_open_target(&url)?;
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn()
-            .map_err(|e| format!("failed to open URL: {}", e))?;
+        shell_execute::open(&target)
     }
     #[cfg(not(target_os = "windows"))]
     {
-        opener::open(&url).map_err(|e| format!("failed to open URL: {}", e))?;
+        // argv 直传（无 shell 解析）。原 opener::open 引用的是未声明依赖（Cargo.toml 无
+        // opener，非 Windows 目标在 HEAD 即无法编译），故改为平台原生命令。
+        let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+        std::process::Command::new(program)
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("failed to open URL: {}", e))?;
+        Ok(())
     }
-    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
 fn reveal_in_folder(path: String) -> Result<(), String> {
+    file_guard::validate_path(&path).map_err(|e| e.message().to_string())?;
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer.exe")
@@ -244,7 +354,23 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        opener::reveal(&path).map_err(|e| format!("failed to reveal: {}", e))
+        if cfg!(target_os = "macos") {
+            std::process::Command::new("open")
+                .args(["-R", &path])
+                .spawn()
+                .map_err(|e| format!("failed to reveal: {}", e))?;
+            Ok(())
+        } else {
+            let parent = std::path::Path::new(&path)
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from(&path));
+            std::process::Command::new("xdg-open")
+                .arg(&parent)
+                .spawn()
+                .map_err(|e| format!("failed to reveal: {}", e))?;
+            Ok(())
+        }
     }
 }
 
@@ -254,6 +380,11 @@ fn get_clipboard_content() -> Result<String, String> {
     match raw::open() {
         Ok(()) => {
             let _guard = RawClipGuard;
+            // 密码管理器等标记为"勿监听"的内容按空剪贴板处理：不进同步链路、不落库、不打日志
+            if clipboard_monitor::clipboard_is_marked_excluded() {
+                debug!("[get_clipboard_content] clipboard marked transient/excluded, skipping");
+                return Ok(String::new());
+            }
             let mut buf = Vec::<u8>::new();
             match raw::get_string(&mut buf) {
                 Ok(n) if n > 0 => String::from_utf8(buf).map_err(|e| format!("utf8: {}", e)),
@@ -299,9 +430,18 @@ fn set_clipboard_content(content: String) -> Result<(), String> {
 #[tauri::command]
 fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
     use clipboard_win::raw;
+    // 只允许本机捕获登记过（或应用自有目录下）的路径进入剪贴板
+    let allowed: Vec<String> = paths
+        .iter()
+        .filter(|p| file_guard::validate_path(p).is_ok())
+        .cloned()
+        .collect();
+    if allowed.is_empty() {
+        return Err("No accessible paths".to_string());
+    }
     raw::open().map_err(|e| format!("open failed: {}", e))?;
     let _ = raw::empty();
-    let result = raw::set_file_list(&paths);
+    let result = raw::set_file_list(&allowed);
     let _ = raw::close();
     result.map_err(|e| format!("set_file_list failed: {}", e))
 }
@@ -395,16 +535,13 @@ fn set_clipboard_image(data: String) -> Result<(), String> {
 #[tauri::command]
 fn read_file_content(path: String) -> Result<String, String> {
     use std::fs;
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
-        return Err(format!("File not found: {}", path));
-    }
+    let p = file_guard::validate_path(&path).map_err(|e| e.message().to_string())?;
     // Safety limit: 5MB for text preview
-    let metadata = fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    let metadata = fs::metadata(&p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
     if metadata.len() > 5 * 1024 * 1024 {
         return Err(format!("File too large for preview: {} bytes", metadata.len()));
     }
-    fs::read_to_string(p).map_err(|e| format!("Cannot read file: {}", e))
+    fs::read_to_string(&p).map_err(|e| format!("Cannot read file: {}", e))
 }
 
 /// Read a binary file and return its content as base64. Used for image file preview.
@@ -412,16 +549,13 @@ fn read_file_content(path: String) -> Result<String, String> {
 fn read_file_content_base64(path: String) -> Result<String, String> {
     use std::fs;
     use base64::Engine;
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
-        return Err(format!("File not found: {}", path));
-    }
+    let p = file_guard::validate_path(&path).map_err(|e| e.message().to_string())?;
     // Safety limit: 10MB for image preview
-    let metadata = fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+    let metadata = fs::metadata(&p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
     if metadata.len() > 10 * 1024 * 1024 {
         return Err(format!("File too large for preview: {} bytes", metadata.len()));
     }
-    let bytes = fs::read(p).map_err(|e| format!("Cannot read file: {}", e))?;
+    let bytes = fs::read(&p).map_err(|e| format!("Cannot read file: {}", e))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
@@ -429,12 +563,9 @@ fn read_file_content_base64(path: String) -> Result<String, String> {
 /// plan-limit check BEFORE reading large captured files into memory.
 #[tauri::command]
 fn get_file_size(path: String) -> Result<u64, String> {
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
-        return Err(format!("File not found: {}", path));
-    }
+    let p = file_guard::validate_path(&path).map_err(|e| e.message().to_string())?;
     let metadata =
-        std::fs::metadata(p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
+        std::fs::metadata(&p).map_err(|e| format!("Cannot read file metadata: {}", e))?;
     Ok(metadata.len())
 }
 
@@ -451,11 +582,8 @@ fn read_file_range_base64(path: String, start: u64, len: u64) -> Result<String, 
     if len == 0 || len > MAX_SLICE {
         return Err(format!("Invalid slice length: {}", len));
     }
-    let p = std::path::Path::new(&path);
-    if !p.exists() {
-        return Err(format!("File not found: {}", path));
-    }
-    let mut f = fs::File::open(p).map_err(|e| format!("Cannot open file: {}", e))?;
+    let p = file_guard::validate_path(&path).map_err(|e| e.message().to_string())?;
+    let mut f = fs::File::open(&p).map_err(|e| format!("Cannot open file: {}", e))?;
     let file_len = f
         .metadata()
         .map_err(|e| format!("Cannot read file metadata: {}", e))?
@@ -479,10 +607,18 @@ fn read_file_range_base64(path: String, start: u64, len: u64) -> Result<String, 
 fn save_and_copy_file(base64_data: String, filename: String) -> Result<String, String> {
     use std::fs;
     use base64::Engine;
+    // 解码后字节上限 128MB：对齐服务端 Pro 档单文件上限，防构造超大 base64 写满磁盘
+    const MAX_DECODED_BYTES: usize = 128 * 1024 * 1024;
+    if base64_data.len() > MAX_DECODED_BYTES / 3 * 4 + 4096 {
+        return Err("File too large to save".to_string());
+    }
     // 1. Decode base64（A9：base64::decode 已在 0.22 废弃，改用 Engine API）
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&base64_data)
         .map_err(|e| format!("base64 decode failed: {}", e))?;
+    if bytes.len() > MAX_DECODED_BYTES {
+        return Err("File too large to save".to_string());
+    }
 
     // 2. Save to temp dir
     let temp_dir = std::env::temp_dir().join("clipsync");
@@ -519,6 +655,11 @@ fn get_clipboard_files() -> Vec<String> {
     let mut files = Vec::new();
     match clipboard_win::raw::open() {
         Ok(()) => {
+            if clipboard_monitor::clipboard_is_marked_excluded() {
+                debug!("[get_clipboard_files] clipboard marked transient/excluded, skipping");
+                let _ = clipboard_win::raw::close();
+                return Vec::new();
+            }
             if clipboard_win::raw::is_format_avail(15) {
                 match clipboard_win::raw::get_file_list(&mut files) {
                     Ok(_) => {
@@ -534,6 +675,11 @@ fn get_clipboard_files() -> Vec<String> {
         Err(e) => {
             error!("[get_clipboard_files] clipboard open failed: {}", e);
         }
+    }
+    // 轮询兜底通道与 monitor 的 FILES 事件同源：这里捕获到的路径同样是
+    // 用户在本机复制的，登记后 read/upload 命令才可访问
+    if !files.is_empty() {
+        file_guard::register_paths(files.iter().map(|s| s.as_str()));
     }
     files
 }
@@ -557,6 +703,11 @@ fn check_clipboard_image_info() -> serde_json::Value {
     const MAX_RAW_BYTES: usize = 50 * 1024 * 1024;
     match raw::open() {
         Ok(()) => {
+            if clipboard_monitor::clipboard_is_marked_excluded() {
+                debug!("[check_clipboard_image_info] clipboard marked transient/excluded, skipping");
+                let _ = raw::close();
+                return serde_json::json!({ "available": false, "size": 0 });
+            }
             let png_avail = raw::register_format("PNG")
                 .map(|f| raw::is_format_avail(f.get()))
                 .unwrap_or(false);
@@ -640,6 +791,12 @@ pub fn read_clipboard_image_raw() -> Option<(Vec<u8>, &'static str)> {
     use clipboard_win::raw;
 
     if raw::open().is_err() {
+        return None;
+    }
+
+    if clipboard_monitor::clipboard_is_marked_excluded() {
+        debug!("[read_clipboard_image_raw] clipboard marked transient/excluded, skipping");
+        let _ = raw::close();
         return None;
     }
 
@@ -2018,6 +2175,9 @@ pub fn run() {
         ])
         .setup(|app| {
             info!("[Setup] ClipSync starting up");
+
+            // 路径闸口必须先于任何 IPC 命令/剪贴板监听初始化（fail closed）
+            file_guard::init(app.handle());
 
             // A1：先把持久化的配置读回来（缺失/损坏 → 自动回落默认值），
             // 后面注册快捷键才能用上用户保存的键位。

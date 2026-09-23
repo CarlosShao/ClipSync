@@ -749,11 +749,7 @@ function showConfirm(msg: string, cb: () => void) {
   showModalType.value = 'confirm'
 }
 function handleLogout() {
-  notif.reset()
-  ann.reset()
-  // 订阅/套餐快照随登出清空：否则换号后首屏仍按上一个账号的档位渲染升级入口
-  invalidatePlanLimits()
-  invalidateCurrentSubscription()
+  // notif/ann/套餐/订阅等用户态清理已收敛进 configStore.logout() → clearAllUserState()
   // 先摘掉 WS handler 再断开：否则重新登录后新旧 handler 叠加，一条推送触发多次刷新
   detachWsHandler()
   configStore.logout()

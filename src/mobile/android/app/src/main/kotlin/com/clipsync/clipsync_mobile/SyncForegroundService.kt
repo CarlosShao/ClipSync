@@ -171,7 +171,8 @@ class SyncForegroundService : Service() {
             token: String?,
             deviceId: String?,
             autoSyncScreenshots: Boolean,
-            autoSaveImagesToAlbum: Boolean = true
+            autoSaveImagesToAlbum: Boolean = true,
+            e2eActive: Boolean = false
         ) {
             val sp = context.getSharedPreferences("clipsync_sync_config", Context.MODE_PRIVATE)
             sp.edit()
@@ -180,8 +181,10 @@ class SyncForegroundService : Service() {
                 .putString("deviceId", deviceId)
                 .putBoolean("autoSyncScreenshots", autoSyncScreenshots)
                 .putBoolean("autoSaveImagesToAlbum", autoSaveImagesToAlbum)
+                // S1-4：E2E 双闸门计算结果（Dart 侧下发）——原生采集不得明文直传
+                .putBoolean("e2eActive", e2eActive)
                 .apply()
-            Log.i(TAG, "Sync config saved: baseUrl=$baseUrl, deviceId=$deviceId, autoSync=$autoSyncScreenshots, autoSaveAlbum=$autoSaveImagesToAlbum")
+            Log.i(TAG, "Sync config saved: baseUrl=$baseUrl, deviceId=$deviceId, autoSync=$autoSyncScreenshots, autoSaveAlbum=$autoSaveImagesToAlbum, e2eActive=$e2eActive, tokenPresent=${!token.isNullOrEmpty()}")
         }
 
         /** 启动前台服务（由 Dart 经 MainActivity 通道调用；应用前台场景无 FGS 启动限制） */
@@ -830,6 +833,14 @@ class SyncForegroundService : Service() {
                 if (sourceId.isEmpty() || sourceId == myDeviceId) continue
                 val itemId = item.optString("id")
                 if (itemId.isEmpty()) continue
+
+                // S1-4：E2E 条目（metadata.e2e 信封存在）原生不可解密——私钥只在
+                // Dart 侧 flutter_secure_storage。跳过回写/入册（否则会把 base64
+                // 密文写进系统剪贴板），由 Dart WS 路径在引擎存活时解密处理。
+                if (item.optJSONObject("metadata")?.has("e2e") == true) {
+                    Log.i(TAG, "[RemotePull] skip E2E item $itemId (native cannot decrypt; Dart WS path handles it)")
+                    continue
+                }
 
                 when (item.optString("contentType")) {
                     "image" -> {

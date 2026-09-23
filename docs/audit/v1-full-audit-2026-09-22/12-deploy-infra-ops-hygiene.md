@@ -64,7 +64,7 @@
 - 证据：
   - 生产备份 = compose 内 hourly 循环 `pg_dump -Fc -f /backups/clipsync_*.dump`，落在宿主机 `/opt/clipsync/backups`（`docker-compose.prod.yml:146-180`、runbook `:58`）——**同机同盘，无异地**；dump 失败只 `echo FAILED`，无告警（`:176`）。
   - 全仓无任何对 `uploads/`（用户图片/文件，宿主机 bind mount `docker-compose.prod.yml:126`）的备份逻辑；prod compose 无 `STORAGE_TYPE`/S3 变量，即生产用本地盘存储。
-  - `scripts/verify-backup.sh:35` 只找 `clipsync_*.sql.gz*`，`:130` 用 `gzip -t` 验完整性——**生产产物是 `.dump`（pg_dump -Fc 自定义格式），该脚本对生产备份完全失效**；且它 `docker exec clipsync-postgres`（`:175`），生产容器名是 `clipsync-postgres-prod`。
+  - `scripts/verify-backup.sh:35` 只找 `clipsync_*.sql.gz*`，`:130` 用 `gzip -t` 验完整性——**生产产物是 `.dump`（pg_dump -Fc 自定义格式），该脚本对生产备份完全失效**；且它 `docker exec clipsync-postgres`（`:175`），生产容器名是 `clipsync-<REDACTED:DB_HOST>`。
   - `docs/deploy/disaster-recovery.md:54-58` 宣称「每日 cron 02:00、本地+异地（推荐S3/OSS）、每周自动运行 verify-backup.sh」——三项均无对应实现；`docs/production-roadmap/phases-01-04.md:172` 把灾备标记为「✅ 已完成」。
 - 失败场景：服务器磁盘损坏/云主机释放 → DB 备份与用户上传的媒体文件**同时**消失，用户付费同步的图片、文件全丢，DB 只能恢复到「从没验证过能否 restore」的最近一次 hourly dump（若 dump 一直在静默失败，则一无所有）。RPO 承诺 <1 小时仅对 DB 且仅在 dump 成功时成立。
 - 影响：数据（用户资产）+ 钱（付费用户索赔/退订）+ 合规。
@@ -74,7 +74,7 @@
 
 - 证据：
   - 生产为单 API 容器（runbook `:52-58`），发版命令 `build api-prod` + `up -d`（runbook `:209-215`）→ 容器重建期间 API/WS 全断，无蓝绿/无 second instance；`docker-compose.prod.yml` 只有一个 `api-prod`。
-  - `scripts/rollback.sh` 引用的现实全不存在：`deploy/current-version`（`:25`，仓库无 `deploy/` 目录）、`backups/*.version`（`:39`，无任何代码生成它）、`docker-compose down` 后 `restart`/`up` 的服务名 `api`/`postgres`（生产是 `api-prod`/`postgres-prod`）、`docker exec clipsync-postgres`（`:127`，生产容器名 `clipsync-postgres-prod`）、健康检查 `localhost:3000`（`:62`，生产宿主端口是 3002，runbook `:55`）。它还会把 `backups/docker-compose-<ver>.yml` 覆盖到 `docker-compose.yml`（`:84`）——没有任何流程产生该备份文件。
+  - `scripts/rollback.sh` 引用的现实全不存在：`deploy/current-version`（`:25`，仓库无 `deploy/` 目录）、`backups/*.version`（`:39`，无任何代码生成它）、`docker-compose down` 后 `restart`/`up` 的服务名 `api`/`postgres`（生产是 `api-prod`/`<REDACTED:DB_HOST>`）、`docker exec clipsync-postgres`（`:127`，生产容器名 `clipsync-<REDACTED:DB_HOST>`）、健康检查 `localhost:3000`（`:62`，生产宿主端口是 3002，runbook `:55`）。它还会把 `backups/docker-compose-<ver>.yml` 覆盖到 `docker-compose.yml`（`:84`）——没有任何流程产生该备份文件。
   - 迁移在启动时自动跑（`src/server/src/index.js:619`），失败 `process.exit(1)`——不会「代码新、库旧」，这点好；但 `src/server/src/db/migrations/`（72 个 SQL）**只有 up 没有 down**（`grep -n "down\|rollback" migrate.js migrate-manager.js` 为空），DB 层面无法回退。
 - 失败场景：v1 发布后 30 分钟发现严重 bug——回滚路径是什么？`rollback.sh` 会在第一步 `No current-version file found` 后继续空转然后对着不存在的容器报错；实际可行的是「git checkout 旧 tag → 重新 build → up -d」，但**没有任何文档写过这条路**，且若新版已跑过 forward-only 迁移，旧代码可能不兼容新 schema。每次发版都有分钟级全站中断 + WS 集体掉线（同步中的客户端全部重连）。
 - 影响：可用性 + 发版安全。上线后第一次热修就会踩到。
@@ -162,7 +162,7 @@
 
 ### [S3-2] `scripts/` 运维脚本群与现实环境脱节，属误导性死代码
 
-- 证据：`scripts/backup-db.sh:24` `docker exec clipsync-postgres pg_dump -U clipsync clipsync`（生产容器 `clipsync-postgres-prod`、库名/用户来自 env）；`scripts/dr-drill.sh:68,107` 操作服务名 `api`/`postgres`（不存在）且用 `docker-compose`（v1 命令）；`scripts/verify-backup.sh` 见 S1-2；`rollback.sh` 见 S1-3。四个脚本没有任何一个能在生产环境按原样跑通。`scripts/migrations/` 5 个 SQL（003/004/005/010/011）**零引用**，且编号与真实的 `src/server/src/db/migrations/`（000-074）冲突撞号。
+- 证据：`scripts/backup-db.sh:24` `docker exec clipsync-postgres pg_dump -U clipsync clipsync`（生产容器 `clipsync-<REDACTED:DB_HOST>`、库名/用户来自 env）；`scripts/dr-drill.sh:68,107` 操作服务名 `api`/`postgres`（不存在）且用 `docker-compose`（v1 命令）；`scripts/verify-backup.sh` 见 S1-2；`rollback.sh` 见 S1-3。四个脚本没有任何一个能在生产环境按原样跑通。`scripts/migrations/` 5 个 SQL（003/004/005/010/011）**零引用**，且编号与真实的 `src/server/src/db/migrations/`（000-074）冲突撞号。
 - 失败场景：出事时运维照文档跑脚本，在最脆弱的时刻收获一堆「No such container」。
 - 修法：脚本参数化（容器名/库名走 env）并在 staging 实测一次，或删除；`scripts/migrations/` 直接删。
 
@@ -297,7 +297,7 @@
 | 1 | `disaster-recovery.md:54-58`：每日 02:00 cron 备份、异地 S3/OSS、每周自动 verify | hourly compose 备份、同机、verify 脚本对生产格式无效、无 cron 证据 | S1（伴随 S1-2） |
 | 2 | `phases-01-04.md:172`：灾备「✅ 已完成（dr-drill.sh 3级演练）」 | dr-drill.sh 服务名/容器名全不对，无一次演练留痕 | S2 |
 | 3 | `disaster-recovery.md:45`：`scripts/backup-db.sh restore` 可恢复数据 | backup-db.sh 无 restore 分支，传 `restore` 会当作备份类型再 dump 一次 | S2 |
-| 4 | `disaster-recovery.md:160`、`deployment.md` 恢复命令：`docker exec -i clipsync-postgres psql -U clipsync` | 生产容器名 `clipsync-postgres-prod`，用户/库名来自 env | S2 |
+| 4 | `disaster-recovery.md:160`、`deployment.md` 恢复命令：`docker exec -i clipsync-postgres psql -U clipsync` | 生产容器名 `clipsync-<REDACTED:DB_HOST>`，用户/库名来自 env | S2 |
 | 5 | `deployment.md:5`：「部署方式: Kubernetes (推荐)」+ 全文 K8s 教程 | 生产是单机 docker compose；K8s 集群不存在 | S2（runbook 已声明以己为准，但该文档仍以「生产部署指南」名义存在） |
 | 6 | `desktop-release-process.md`：打 tag → GitHub Actions 构建签名 → GitHub Releases 托管 | 无桌面 CI workflow；runbook §3.1 明确本地构建 + 自有域名托管、「不走 GitHub Releases」；打 tag 反而触发死的 deploy.yml | S2（两文档直接互斥） |
 | 7 | `github-secrets.md:11-19`：DEPLOY_HOST/USER/SSH_KEY 供自动部署 | 对应 deploy job 重启不存在的服务、不重建镜像，等于不可用 | S2 |

@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js'
 import { logAuditEvent } from '../utils/audit.js'
 import { TOOLS, approveToolRequest, respondAskUserRequest, cancelPendingForUser } from './aiTools.js'
 import { runChatLoop } from './aiChatCore.js'
+import { isValidUUID } from '../validation/validator.js'
 // AN-03：providerId 缺省兜底路由（ai_default_provider）+ 禁用供应商统一过滤
 import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
 import { runOrchestration } from './aiOrchestrator.js'
@@ -29,6 +30,20 @@ router.post('/chat', apiLimiter, async (req, res) => {
     const conversationId = options?.conversationId
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages is required' })
+    }
+
+    // 归属校验：conversationId 必须属于当前用户；不存在/不属于一律 404（不泄漏资源是否存在）
+    if (conversationId !== undefined && conversationId !== null) {
+      if (!isValidUUID(conversationId)) {
+        return res.status(404).json({ error: 'Conversation not found' })
+      }
+      const own = await pool.query(
+        'SELECT 1 FROM ai_conversations WHERE id = $1 AND user_id = $2',
+        [conversationId, req.userId],
+      )
+      if (own.rowCount === 0) {
+        return res.status(404).json({ error: 'Conversation not found' })
+      }
     }
 
     // AN-03：providerId 缺省时兜底路由（用户 is_default → 全局 ai_default_provider 供应商族）；

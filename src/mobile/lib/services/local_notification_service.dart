@@ -110,6 +110,16 @@ class LocalNotificationService {
     await _createChannels();
   }
 
+  /// 撤销全部本地通知（登出清理）：通知正文可能含剪贴板内容预览，
+  /// 不得留给下一个账号 / 锁屏旁观者
+  Future<void> cancelAll() async {
+    try {
+      await _plugin.cancelAll();
+    } catch (e) {
+      debugPrint('[LocalNotification] cancelAll failed: $e');
+    }
+  }
+
   /// 创建/更新 Android 双渠道（幂等；重复创建即更新名称与描述）。
   Future<void> _createChannels() async {
     final texts = _texts;

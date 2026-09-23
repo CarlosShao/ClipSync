@@ -106,11 +106,23 @@ function clearSearch() {
   if (searchTimer) clearTimeout(searchTimer)
 }
 
+// snippet 来自会话消息（可能回显剪贴板/跨设备内容），进 v-html 前必须先 HTML 转义，
+// 再对「同样转义过的关键词」做高亮，保证匹配与展示同源，杜绝存储型 XSS。
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function highlightSnippet(snippet: string, keyword: string): string {
+  const esc = escapeHtml(snippet)
   const k = keyword.trim()
-  if (!k) return snippet
-  const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return snippet.replace(new RegExp(`(${esc})`, 'gi'), '\u0001$1\u0002')
+  if (!k) return esc
+  const re = escapeHtml(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return esc.replace(new RegExp(`(${re})`, 'gi'), '\u0001$1\u0002')
 }
 
 // === 重命名（迁自 AiConversationList）===
@@ -241,7 +253,7 @@ function onDockFromFloat() {
                     }}
                   </span>
                 </div>
-                <!-- eslint-disable-next-line vue/no-v-html (高亮关键词，输入已转义正则) -->
+                <!-- eslint-disable-next-line vue/no-v-html (highlightSnippet 已对 snippet 做 HTML 转义，仅注入 <mark> 标签) -->
                 <span
                   class="ai-nav-hit-snippet"
                   v-html="

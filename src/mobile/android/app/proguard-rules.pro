@@ -59,15 +59,15 @@
     native <methods>;
 }
 
-# 移除日志代码（可选）
-# -assumenosideffects class android.util.Log {
-#     public static boolean isLoggable(java.lang.String, int);
-#     public static int v(...);
-#     public static int i(...);
-#     public static int w(...);
-#     public static int d(...);
-#     public static int e(...);
-# }
+# 移除冗余日志（S1-5：release logcat 不得泄漏凭据/验证码）。
+# 只剥离 v/d/i；保留 w/e 以便崩溃与异常路径仍可诊断。
+# 注：旧注释块拼写为 assumenosideffects（少一个 e），即便取消注释也不会生效。
+# ⚠️ 本规则未经 release 构建实测验证（见 docs/audit fix-p0b-mobile.md）
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+}
 
 # Flutter 混淆规则（必须保留）
 # 参考: https://flutter.dev/docs/deployment/obfuscate

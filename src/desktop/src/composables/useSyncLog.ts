@@ -46,6 +46,16 @@ function push(entry: SyncLogEntry) {
   persist()
 }
 
+/** 登出/换号：同步日志记录了上个账号剪贴板条目的类型/大小/来源，必须随会话清空 */
+export function resetSyncLog() {
+  events.value = []
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
 function kindLabel(type: string | undefined): string {
   switch (type) {
     case 'text':

@@ -135,8 +135,14 @@ class _ShareReceiveScreenState extends State<ShareReceiveScreen> {
     Navigator.of(context).pop();
   }
 
-  /// 文本入库：POST /api/clipboard
+  /// 文本入库：E2E 开启走端到端加密通道（S1-4 补线，三态，handled 时绝不
+  /// 回退明文），否则 POST /api/clipboard 明文
   Future<bool> _uploadText(String token, String deviceId, String text) async {
+    final e2eText =
+        await ClipboardCaptureService.instance.uploadTextMaybeE2e(text: text);
+    if (e2eText.handled) {
+      return e2eText.response != null;
+    }
     final isLink = RegExp(r'^https?://\S+$', caseSensitive: false).hasMatch(text.trim());
     final response = await http
         .post(

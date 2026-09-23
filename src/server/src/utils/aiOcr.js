@@ -3,6 +3,7 @@ import { decrypt } from './encryption.js'
 import { buildUpstreamChat, safeUpstreamFetch } from './aiProviders.js'
 import { logger } from './logger.js'
 import { isE2eItem } from './imageHash.js'
+import { isSafeStoredFilename } from '../services/fileRetentionCleanup.js'
 import fs from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -123,7 +124,9 @@ export async function resolveImageDataUrl(contentEncrypted) {
     return `data:image/png;base64,${contentEncrypted}`
   }
   // 磁盘文件名（case B）：在 uploads 目录树里定位
+  // content_encrypted 可被客户端投毒（POST /api/clipboard 直传），先按安全文件名口径校验防穿越读取
   const name = contentEncrypted
+  if (!isSafeStoredFilename(name)) return null
   const dirs = [path.join(UPLOAD_BASE, 'images'), path.join(UPLOAD_BASE, 'files'), UPLOAD_BASE]
   for (const d of dirs) {
     const p = path.join(d, name)

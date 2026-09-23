@@ -24,6 +24,7 @@ import { getVersionHistory, restoreVersion } from '../utils/versionManager.js'
 import { getSlowQueries, getPoolStatus } from '../utils/query-monitor.js'
 import { safeUpstreamFetch } from '../utils/aiProviders.js'
 import { searchWeb } from '../utils/searchProviders.js'
+import { removeSharedLinkFiles } from './sharedLinks.js'
 
 const router = Router()
 
@@ -47,8 +48,17 @@ async function locateStoredFile(relName, dirs) {
 }
 
 // ============ RBAC 管理工具辅助（feature/ai-rbac-backend）============
-// 哈希盐与 auth.js 保持一致（phone_hash / email_hash 计算）
-const HASH_SALT = process.env.ENCRYPTION_KEY?.substring(0, 16) || 'CLIPSYNC_SALT_2026'
+// 哈希盐与 auth.js 保持一致（phone_hash / email_hash 计算）；生产缺 ENCRYPTION_KEY 即 fail-fast
+const HASH_SALT = (() => {
+  const key = process.env.ENCRYPTION_KEY
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ENCRYPTION_KEY is required in production (phone/email hash salt); refusing to start')
+    }
+    return 'CLIPSYNC_SALT_2026'
+  }
+  return key.substring(0, 16)
+})()
 
 function computeFieldHash(value) {
   if (!value) return null
@@ -2110,11 +2120,12 @@ async function executeToolInner(toolName, args, userId, role) {
         const limit = Math.min(Math.max(1, parseInt(args.limit, 10) || 100), 200)
 
         let query = `
-          SELECT c.id, c.type, c.content, c.content_preview, c.created_at, c.is_favorite
+          SELECT c.id, c.content_type AS type, c.content_encrypted AS content, c.content_preview, c.created_at, c.is_favorite
           FROM clipboard_items c
         `
         const params = [userId]
-        let whereClauses = ['c.user_id = $1', 'c.is_archived = FALSE', "COALESCE(c.protection_level, 'none') = 'none'"]
+        // clipboard_items 无归档列（归档语义在 favorites/archive 表），不得引用 c.is_archived
+        let whereClauses = ['c.user_id = $1', "COALESCE(c.protection_level, 'none') = 'none'"]
 
         if (collectionId) {
           params.push(collectionId)
@@ -2123,7 +2134,7 @@ async function executeToolInner(toolName, args, userId, role) {
 
         if (type) {
           params.push(type)
-          whereClauses.push(`c.type = $${params.length}`)
+          whereClauses.push(`c.content_type = $${params.length}`)
         }
 
         query += ` WHERE ${whereClauses.join(' AND ')} ORDER BY c.created_at DESC LIMIT ${limit}`
@@ -2136,7 +2147,10 @@ async function executeToolInner(toolName, args, userId, role) {
           if (row.content) {
             try {
               plainText = decrypt(row.content) || plainText
-            } catch { /* ignore decrypt error */ }
+            } catch {
+              // E2E 关闭时 content_encrypted 实为明文（审计 E1），解密失败按原文使用
+              plainText = String(row.content)
+            }
           }
           const normalized = plainText.trim()
           if (!normalized) continue
@@ -2246,11 +2260,12 @@ async function executeToolInner(toolName, args, userId, role) {
         const limit = Math.min(Math.max(1, parseInt(args.limit, 10) || 50), 100)
 
         let query = `
-          SELECT c.id, c.type, c.content, c.content_preview, c.created_at, c.is_favorite, c.metadata
+          SELECT c.id, c.content_type AS type, c.content_encrypted AS content, c.content_preview, c.created_at, c.is_favorite, c.metadata
           FROM clipboard_items c
         `
         const params = [userId]
-        let whereClauses = ['c.user_id = $1', 'c.is_archived = FALSE', "COALESCE(c.protection_level, 'none') = 'none'"]
+        // clipboard_items 无归档列，不得引用 c.is_archived
+        let whereClauses = ['c.user_id = $1', "COALESCE(c.protection_level, 'none') = 'none'"]
 
         if (collectionId) {
           params.push(collectionId)
@@ -2258,7 +2273,7 @@ async function executeToolInner(toolName, args, userId, role) {
         }
         if (type) {
           params.push(type)
-          whereClauses.push(`c.type = $${params.length}`)
+          whereClauses.push(`c.content_type = $${params.length}`)
         }
 
         query += ` WHERE ${whereClauses.join(' AND ')} ORDER BY c.created_at DESC LIMIT ${limit}`
@@ -2269,7 +2284,10 @@ async function executeToolInner(toolName, args, userId, role) {
           if (row.content) {
             try {
               text = decrypt(row.content) || text
-            } catch { /* ignore */ }
+            } catch {
+              // E2E 关闭时 content_encrypted 实为明文（审计 E1），解密失败按原文导出（仅本人数据）
+              text = String(row.content)
+            }
           }
           return {
             index: idx + 1,
@@ -4227,15 +4245,11 @@ async function executeToolInner(toolName, args, userId, role) {
           return { error: 'INVALID_SHARED_LINK', code: 'INVALID_SHARED_LINK', message: 'shared_link_id 必填且为合法 UUID' }
         }
         const found = await pool.query(
-          'SELECT file_path FROM shared_links WHERE id = $1 AND user_id = $2',
+          'SELECT file_path, file_key FROM shared_links WHERE id = $1 AND user_id = $2',
           [shared_link_id, userId]
         )
         if (found.rows.length === 0) return { error: 'SHARED_LINK_NOT_FOUND', code: 'SHARED_LINK_NOT_FOUND' }
-        for (const r of found.rows) {
-          if (r.file_path) {
-            try { await fs.rm(path.dirname(r.file_path), { recursive: true, force: true }) } catch { /* 忽略文件删除失败 */ }
-          }
-        }
+        await removeSharedLinkFiles(found.rows)
         await pool.query('DELETE FROM shared_links WHERE id = $1 AND user_id = $2', [shared_link_id, userId])
         return { success: true, shared_link_id, note: '共享链接已删除，关联共享文件已一并移除。' }
       }

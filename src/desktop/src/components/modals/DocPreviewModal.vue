@@ -22,7 +22,7 @@ import PptxPreview from '@/components/doc-preview/PptxPreview.vue'
 import PdfPreview from '@/components/doc-preview/PdfPreview.vue'
 import ImagePreview from '@/components/doc-preview/ImagePreview.vue'
 import TextPreview from '@/components/doc-preview/TextPreview.vue'
-import { isHtmlContent } from '@/utils/html'
+import { isHtmlContent, sanitizeHtml } from '@/utils/html'
 import { parseTable } from '@/utils/table'
 import { detectFileType, extractToc, extractHtmlToc, ensureHeadingIds, type TocItem } from '@/utils/docPreview'
 import './modal-shared.css'
@@ -246,7 +246,8 @@ async function renderDocx(arrayBuffer: ArrayBuffer) {
     const result = await mammoth.convertToHtml({ arrayBuffer })
     const html = result.value || '<p style="color:var(--text-tertiary)">Document is empty</p>'
     // mammoth 默认不在 h1-h6 上输出 id，toc 锚点跳转需要先注入 id
-    const htmlWithIds = ensureHeadingIds(html)
+    // docx 来自其它设备/外部来源，mammoth 不做安全过滤 → 消毒后才允许进 v-html
+    const htmlWithIds = sanitizeHtml(ensureHeadingIds(html))
     docxHtml.value = htmlWithIds
     docxToc.value = extractHtmlToc(htmlWithIds)
     if (result.messages.length > 0) {
@@ -543,6 +544,7 @@ async function loadFileContent(item: any) {
   try {
     if (fileType === 'image') {
       // Image files: read via Tauri as base64, convert to data URL
+      let imageLoaded = false
       try {
         // Get file path from API contentEncrypted (path array or direct path)
         const res = await api('GET', `/api/clipboard/${item.id}`)
@@ -574,10 +576,26 @@ async function loadFileContent(item: any) {
               tiff: 'image/tiff',
             }
             previewImageDataUrl.value = `data:${mimeMap[ext] || 'image/png'};base64,${base64}`
+            imageLoaded = true
           }
         }
       } catch (e) {
         console.error('[Preview] Image file load error:', e)
+      }
+      // 本机读不到（含 file_guard 拒绝远端同步条目的路径）必须回退服务端下载，否则图片白屏无提示
+      if (!imageLoaded) {
+        const blobRes = await apiBlob('GET', `/api/media/${item.id}/download`)
+        if (blobRes && blobRes.ok) {
+          const blob = await blobRes.blob()
+          previewImageDataUrl.value = await new Promise<string>((resolve, reject) => {
+            const fr = new FileReader()
+            fr.onload = () => resolve(String(fr.result))
+            fr.onerror = () => reject(fr.error)
+            fr.readAsDataURL(blob)
+          })
+        } else {
+          previewContent.value = t('preview_unable')
+        }
       }
     } else if (fileType === 'docx' || fileType === 'excel' || fileType === 'pptx' || fileType === 'pdf') {
       // Binary files: try download endpoint first, fallback to Tauri for path-based content

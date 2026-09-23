@@ -25,6 +25,11 @@ COPY . .
 # Production stage
 FROM node:22-alpine
 
+# 安全默认值不依赖编排层：镜像被 docker run / K8s / CI 脱离 compose 运行时，
+# NODE_ENV 缺省会让全部 `=== 'production'` 判定失效（含验证码固定码只在非生产生效）。
+# 注意只设在生产 stage：builder 目标被 docker-compose.dev.yml 直接使用，不能是 production。
+ENV NODE_ENV=production
+
 # Install wget for healthcheck + postgresql-client (AN-06: pg_dump for trigger_backup)
 # + font-wqy-zenhei（发票 PDF 中文字体，理由见 builder stage 注释）。
 #   生产 stage 漏装的后果：/api/invoices/:id/download 生成 PDF 时抛「未找到中文字体」→ 500。

@@ -1,11 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'server_config.dart';
 import 'token_store.dart';
+
+/// WS 调试日志统一出口：release 构建一律不输出（S1-5），
+/// 且任何调用点都不得拼入 token / csrf 值
+void _wsLog(String message) {
+  if (kDebugMode) {
+    debugPrint('[WsDebug] $message');
+  }
+}
 
 class WsService {
   WebSocketChannel? _channel;
@@ -118,14 +127,14 @@ class WsService {
 
     // 使旧的 in-flight 连接流程作废
     final epoch = ++_connectEpoch;
-    print('[WsDebug] _connect deviceId=$_deviceId tokenPresent=${token != null}');
+    _wsLog('_connect deviceId=$_deviceId');
 
     final csrf = await _fetchWsCsrf();
     _connecting = false;
     if (epoch != _connectEpoch) return; // 已被新一轮 connect/disconnect 取代
     if (csrf.isEmpty) {
       // csrf 获取失败：本轮不建裸连接（服务端会拒绝），走退避重连下一轮重取
-      print('[WsDebug] csrf unavailable — schedule reconnect');
+      _wsLog('csrf unavailable — schedule reconnect');
       _scheduleReconnect();
       return;
     }
@@ -137,7 +146,8 @@ class WsService {
 
     final channel = WebSocketChannel.connect(uri);
     _channel = channel;
-    print('[WsDebug] channel opened uri=${uri.toString()}');
+    // S1-5：绝不打印握手 URI（query 携带 token/csrf），只留 host/path
+    _wsLog('channel opened ${uri.scheme}://${uri.host}:${uri.port}${uri.path}');
 
     // 连接成功（首帧消息到达）后重置重连计数，让后续断线拥有完整的
     // 指数退避序列；否则失败 10 次后将永久放弃重连
@@ -161,7 +171,7 @@ class WsService {
       },
       onError: (error) {
         if (epoch != _connectEpoch) return;
-        print('[WsDebug] onError: $error');
+        _wsLog('onError: $error');
         _isConnected = false;
         _connecting = false;
         _heartbeatTimer?.cancel();
@@ -175,10 +185,10 @@ class WsService {
     _registerTimer?.cancel();
     _registerTimer = Timer(const Duration(milliseconds: 500), () {
       if (_deviceId != null) {
-        print('[WsDebug] >> register deviceId=$_deviceId');
+        _wsLog('>> register deviceId=$_deviceId');
         send({'type': 'register', 'deviceId': _deviceId});
       } else {
-        print('[WsDebug] register skipped: _deviceId is null');
+        _wsLog('register skipped: _deviceId is null');
       }
     });
 
@@ -192,7 +202,7 @@ class WsService {
       final lastPong = _lastPongAt;
       if (lastPong != null &&
           DateTime.now().difference(lastPong) > _pongTimeout) {
-        print('[WsDebug] pong timeout (>35s) — half-open connection, forcing reconnect');
+        _wsLog('pong timeout (>35s) — half-open connection, forcing reconnect');
         _forceReconnect();
         return;
       }
@@ -250,7 +260,7 @@ class WsService {
         _isConnected = false;
         break;
       case 'error':
-        print('[WsDebug] server error: ${msg['message']}');
+        _wsLog('server error: ${msg['message']}');
         break;
     }
   }
@@ -288,7 +298,7 @@ class WsService {
     // AF-41：被管理台远程下线后禁止自动重连（否则设备立刻"复活"继续同步）；
     // 用户重新登录时 connect() 会被重新调用，届时重置标记。
     if (_forceLoggedOut) {
-      print('[WsDebug] force logged out — reconnect suppressed');
+      _wsLog('force logged out — reconnect suppressed');
       return;
     }
     if (_reconnectAttempts >= _maxReconnectAttempts) return;

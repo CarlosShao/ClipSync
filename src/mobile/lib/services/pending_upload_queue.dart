@@ -121,7 +121,16 @@ class PendingUploadQueue {
 
   static final PendingUploadQueue instance = PendingUploadQueue._();
 
-  static const String _storageKey = 'pending_upload_queue_v1';
+  /// 旧版无命名空间键：内容归属不可判定，一律丢弃（见 [bindUser]）
+  static const String _legacyStorageKey = 'pending_upload_queue_v1';
+
+  /// 队列必须按 userId 命名空间隔离，否则换账号时上个用户的剪贴板明文
+  /// 会被重放进下个用户的账号（跨用户数据泄漏）
+  String? _boundUserId;
+
+  String get _storageKey => _boundUserId == null
+      ? '$_legacyStorageKey:anonymous'
+      : '$_legacyStorageKey:u_$_boundUserId';
 
   /// 队列容量上限，超出丢最旧
   static const int _maxEntries = 200;
@@ -144,6 +153,43 @@ class PendingUploadQueue {
 
   void bindUploader(PendingUploadUploader uploader) {
     _uploader = uploader;
+  }
+
+  /// 登录后绑定队列归属用户（SessionCleanup.onUserSignedIn 调用）：
+  /// 切换命名空间键并丢弃旧版无命名空间数据——旧键无法判定属于哪个用户，
+  /// 保留会有跨用户重放风险，宁可丢弃。
+  Future<void> bindUser(String? userId) {
+    return _run(() async {
+      if (_boundUserId == userId && _loaded) return;
+      _boundUserId = userId;
+      _entries = <PendingUploadEntry>[];
+      _loaded = false;
+      await _ensureLoaded();
+    });
+  }
+
+  /// 登出清理（SessionCleanup.purgeAll 调用）：清空内存与当前命名空间的
+  /// 持久化数据，并顺带删除旧版无命名空间键。
+  Future<void> clear() {
+    return _run(() async {
+      _entries = <PendingUploadEntry>[];
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_storageKey);
+        await prefs.remove(_legacyStorageKey);
+      } catch (e) {
+        debugPrint('[PendingUploadQueue] clear failed: $e');
+      }
+      _loaded = true;
+    });
+  }
+
+  /// 当前队列条数（含跳过条目；测试与诊断用）
+  Future<int> length() {
+    return _run(() async {
+      await _ensureLoaded();
+      return _entries.length;
+    });
   }
 
   /// 是否存在待重放条目（跳过条目不计）
@@ -293,6 +339,9 @@ class PendingUploadQueue {
     if (_loaded) return;
     try {
       final prefs = await SharedPreferences.getInstance();
+      // 旧版无命名空间键一律删除不读：内容归属不可判定，保留只会带来
+      // 换账号串数据的风险
+      await prefs.remove(_legacyStorageKey);
       final raw = prefs.getString(_storageKey);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw);

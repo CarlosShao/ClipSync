@@ -53,6 +53,14 @@ export function cleanupCopiedContent() {
   }
 }
 
+/** 登出/换号：copiedItems 内存有剪贴板明文，必须随会话清空，防止跨用户残留 */
+export function resetCopiedMemory() {
+  copiedFilePaths.clear()
+  copiedTexts.clear()
+  copiedItems.clear()
+  copiedImageHashes.clear()
+}
+
 /**
  * 登记一次图片回写：传入 data URL 的哈希（simpleHash，与 lastImageHash 同族）。
  * copyItem 写回图片后会同时登记「写入内容」与「读回内容」两把哈希 —— 后者才是

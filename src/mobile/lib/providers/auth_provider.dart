@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../services/api_service.dart';
 import '../services/app_exception.dart';
 import '../services/e2e_crypto.dart';
+import '../services/session_cleanup.dart';
 import '../services/token_store.dart';
 
 /// login() 的结果：区分「成功」「需要两步验证」「失败」
@@ -94,12 +95,22 @@ class AuthProvider extends ChangeNotifier {
 
       if (profile != null) {
         _user = profile;
+        // 冷启动恢复登录：把离线队列/缓存切入该用户的命名空间（S0-1 隔离）
+        await SessionCleanup.onUserSignedIn(_userIdOf(profile));
       } else {
-        // 凭证彻底失效：清空（secure storage + 本地设备 id）
+        // 凭证彻底失效：清空（secure storage + 本地设备 id），
+        // 并按登出同规格清理本地用户数据（防止残留串进下个账号）
         _isAuthenticated = false;
         _token = null;
         _refreshToken = null;
+        _deviceId = null;
         await TokenStore.clear();
+        try {
+          await _storage.delete(key: _keyDeviceId);
+        } catch (_) {
+          // 设备 id 删除失败不阻断（purgeAll 仍会清用户数据）
+        }
+        await SessionCleanup.purgeAll();
       }
     }
 
@@ -220,12 +231,19 @@ class AuthProvider extends ChangeNotifier {
       refreshToken: _refreshToken,
     );
 
+    // 登录收尾即绑定用户命名空间（S0-1）：离线队列/缓存从此归属该用户，
+    // 换账号后不会读到上个用户的数据
+    await SessionCleanup.onUserSignedIn(_userIdOf(_user));
+
     notifyListeners();
 
     // 设备注册不阻塞登录收尾；home_screen 连接 WS 前会 await ensureDeviceId()
     unawaited(_registerDeviceIfNeeded());
   }
 
+  /// 全部登出路径（主动登出 / 会话吊销 / 管理台远程下线）收敛于此：
+  /// 清凭据 + 经 [SessionCleanup.purgeAll] 清全部本地用户数据（离线队列、
+  /// 缓存、内存 Provider 态、原生侧配置）。
   Future<void> logout() async {
     _token = null;
     _refreshToken = null;
@@ -241,8 +259,15 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[AuthProvider] clear device id failed: $e');
     }
+    await SessionCleanup.purgeAll();
 
     notifyListeners();
+  }
+
+  /// 从用户资料/登录响应中取 userId（命名空间键；缺失返回 null 走 anonymous）
+  static String? _userIdOf(Map<String, dynamic>? user) {
+    final id = user?['id'];
+    return (id is String && id.isNotEmpty) ? id : null;
   }
 
   // ---------------------------------------------------------------------------

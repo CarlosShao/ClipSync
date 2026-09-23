@@ -802,8 +802,15 @@ router.get('/:id/download', apiLimiter, async (req, res) => {
           return res.send(buffer);
         }
       }
+      // content_encrypted 是客户端可写的落盘名（POST /api/clipboard 直传），必须按安全文件名口径校验
+      if (!isSafeStoredFilename(filename)) {
+        return res.status(404).json({ error: 'File not found on disk' });
+      }
       filePath = path.join(IMAGE_DIR, filename);
     } else if (item.content_type === 'file') {
+      if (!isSafeStoredFilename(filename)) {
+        return res.status(404).json({ error: 'File not found on disk' });
+      }
       filePath = path.join(FILE_DIR, filename);
     } else {
       return res.status(400).json({ error: 'This content type does not support download' });
@@ -1025,6 +1032,9 @@ router.get('/:id/text-preview', apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'This file type does not support text preview', ext });
     }
 
+    if (!isSafeStoredFilename(storedName)) {
+      return res.status(404).json({ error: 'File not found on disk' });
+    }
     const filePath = path.join(FILE_DIR, storedName);
     try {
       await fs.access(filePath);
@@ -1117,8 +1127,10 @@ router.delete('/:id', apiLimiter, async (req, res) => {
 
     // Delete physical file
     if (item.content_type === 'image') {
-      const imgPath = path.join(IMAGE_DIR, item.content_encrypted);
-      await fs.unlink(imgPath).catch(() => {});
+      // content_encrypted 可被客户端投毒（如 ../../../x），按安全文件名口径校验后再删
+      if (isSafeStoredFilename(item.content_encrypted)) {
+        await fs.unlink(path.join(IMAGE_DIR, item.content_encrypted)).catch(() => {});
+      }
       // F1.3 加固：缩略图名经安全文件名校验后再删（空值 / 含路径注入时跳过，防误删目录外文件）
       if (isSafeStoredFilename(metadata?.thumbnail || '')) {
         await fs.unlink(path.join(IMAGE_DIR, 'thumbnails', metadata.thumbnail)).catch(() => {});

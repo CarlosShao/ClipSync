@@ -17,6 +17,14 @@ class DeviceProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   Object? get error => _error;
 
+  /// 登出清理（P0-B S0-1）：设备列表属账号数据，不得跨账号残留
+  void clear() {
+    _devices = [];
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
+
   Future<void> loadDevices(String token, {bool forceRefresh = false}) async {
     _isLoading = true;
     _error = null;

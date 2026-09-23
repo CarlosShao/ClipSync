@@ -828,8 +828,14 @@ function openLink(item: ClipItem) {
 function revealFileFolder(item: ClipItem) {
   try {
     const m = JSON.parse(item.content)
-    if (m.paths && m.paths[0])
-      import('@tauri-apps/plugin-shell').then((mod) => mod.open(m.paths[0].replace(/[/\\][^/\\]+$/, '')))
+    if (m.paths && m.paths[0]) {
+      const dir = m.paths[0].replace(/[/\\][^/\\]+$/, '')
+      // plugin-shell 的 open() 只接受 URL，传裸目录会被其 scope 正则拒掉（此前静默失效）；
+      // open_url 已对「本机登记过的目录」放行，走它才有回退余地
+      import('@/lib/tauri')
+        .then(({ openUrl }) => openUrl(dir))
+        .catch((e) => console.error('[Favorites] reveal in folder failed:', e))
+    }
   } catch {
     /* */
   }

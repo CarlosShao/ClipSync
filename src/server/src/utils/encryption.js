@@ -16,7 +16,8 @@ import { logger } from './logger.js';
  */
 
 // Production security check: reject default keys
-const DEFAULT_KEYS = ['default_master_key_32b', 'default_iv_12b', 'dev_encryption_key_32chars_min!!'];
+// （第 4 项为 .env.test 模板里的 ENCRYPTION_KEY，与 config.js INSECURE_ENCRYPTION_KEYS 同口径，公开仓库可读）
+const DEFAULT_KEYS = ['default_master_key_32b', 'default_iv_12b', 'dev_encryption_key_32chars_min!!', 'dev_encryption_key_32_bytes_long_1234567890'];
 
 function validateEncryptionConfig() {
   const masterKey = process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_MASTER_KEY;

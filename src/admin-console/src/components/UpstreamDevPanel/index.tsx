@@ -9,9 +9,12 @@ import {
 } from '@/api/upstream';
 import styles from './UpstreamDevPanel.module.css';
 
-/** 常用联调目标。生产环境的 Origin 重写表在 vite.config.ts，新增环境要同步那张表 */
+/**
+ * 常用联调目标。生产域名已被 normalizeUpstream 与 vite proxy 双层拒绝（S0 修复），
+ * 不再提供「生产」预设；新增非生产联调环境要同步 vite.config.ts 的运行时白名单
+ *（或 VITE_PROXY_UPSTREAM_ALLOWLIST），否则 proxy 会 403。
+ */
 const PRESETS: { label: string; value: string }[] = [
-  { label: '生产', value: 'https://api.clipchain.top' },
   { label: '本地后端', value: 'http://127.0.0.1:3001' },
 ];
 
@@ -68,7 +71,7 @@ export function UpstreamDevPanel() {
             <Input
               size="small"
               value={draft}
-              placeholder="https://api.clipchain.top"
+              placeholder="http://127.0.0.1:3001"
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
               onPressEnter={() => apply(draft)}
@@ -88,8 +91,8 @@ export function UpstreamDevPanel() {
               ))}
             </div>
             <div className={styles.hint}>
-              与桌面端「设置 → 服务器地址」同源：从桌面端点开管理台会自动带上，不必再填。 留空则回到
-              vite 默认目标。
+              与桌面端「设置 → 服务器地址」同源：从桌面端点开管理台会自动带上，不必再填。
+              留空则回到 vite 默认目标。生产域名会被拒绝（本地页面不得对生产下真实指令）。
             </div>
             <div className={styles.actions}>
               <Button
