@@ -23,6 +23,7 @@ import {
   patchConfig,
   patchFlag,
   sendAnnouncement,
+  testSms,
 } from '@/api/configs';
 // AN-16：邮件通道管理（多 SMTP 账号 + 按用途路由 + failover，替代原「邮件 (SMTP)」参数卡）
 import {
@@ -193,6 +194,9 @@ export default function SettingsPage() {
   const [deleteChannelTarget, setDeleteChannelTarget] = useState<EmailChannel | null>(null);
   const [channelForm] = Form.useForm<EmailChannelPayload>();
   const [testEmailForm] = Form.useForm<{ to?: string }>();
+  // A4：短信测试（服务端始终走真实下发，不受 NODE_ENV 限制，配置后即可自测）
+  const [smsTestOpen, setSmsTestOpen] = useState(false);
+  const [smsTestForm] = Form.useForm<{ phone: string }>();
 
   // RB-07：设置页对 admin.configs.view 只读可见，写操作按 admin.configs.manage 裁剪
   const canManageConfigs = hasPerm('admin.configs.manage');
@@ -330,6 +334,15 @@ export default function SettingsPage() {
     onSuccess: () => {
       void message.success('测试邮件已发送');
       setTestChannel(null);
+    },
+  });
+
+  // A4：短信测试下发（真实发送一条验证码短信，用于配置后自测）
+  const smsTestMutation = useMutation({
+    mutationFn: (phone: string) => testSms(phone),
+    onSuccess: (data) => {
+      void message.success(`测试短信已发送（${data.provider ?? '未知通道'}）`);
+      setSmsTestOpen(false);
     },
   });
 
@@ -927,6 +940,23 @@ export default function SettingsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {/* CO-30/AN-16：SMTP 单卡测试邮件入口已废弃——smtp_* 键退出系统参数目录，
                         测试邮件统一走「邮件通道」卡（openChannelTestModal，按通道发送） */}
+                    {/* A4：短信验证码卡提供「发送测试短信」——服务端始终真实下发，配置后即可自测 */}
+                    {group.title === '短信验证码' ? (
+                      <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
+                        <span>
+                          <Button
+                            size="small"
+                            disabled={!canManageConfigs}
+                            onClick={() => {
+                              smsTestForm.resetFields();
+                              setSmsTestOpen(true);
+                            }}
+                          >
+                            发送测试短信
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
                       <span>
                         <Button
@@ -1125,6 +1155,34 @@ export default function SettingsPage() {
             rules={[{ type: 'email', message: '请输入合法的邮箱地址' }]}
           >
             <Input placeholder="留空则使用通道用户名" autoComplete="off" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* A4：短信测试（服务端真实下发一条验证码短信，不受 NODE_ENV 限制，配置后即可自测） */}
+      <Modal
+        title="发送测试短信"
+        open={smsTestOpen}
+        okText="发送"
+        cancelText="取消"
+        confirmLoading={smsTestMutation.isPending}
+        onCancel={() => setSmsTestOpen(false)}
+        onOk={() => smsTestForm.submit()}
+      >
+        <Form
+          form={smsTestForm}
+          layout="vertical"
+          onFinish={(values) => smsTestMutation.mutate(values.phone.trim())}
+        >
+          <Form.Item
+            name="phone"
+            label="接收手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1[3-9]\d{9}$/, message: '请输入合法的中国大陆手机号' },
+            ]}
+          >
+            <Input placeholder="例如 13800138000" autoComplete="off" />
           </Form.Item>
         </Form>
       </Modal>

@@ -43,3 +43,13 @@ export function getAnnouncements(): Promise<Announcement[]> {
 export function testSmtp(to?: string): Promise<{ messageId: string }> {
   return apiPost<{ messageId: string }>('/admin/configs/smtp/test', { to });
 }
+
+/** A4：发送短信测试验证码（未配置短信返回 4090 错误壳；phone 必填，服务端始终走真实下发） */
+export function testSms(
+  phone: string
+): Promise<{ phone: string; provider: string | null; requestId: string | null }> {
+  return apiPost<{ phone: string; provider: string | null; requestId: string | null }>(
+    '/admin/configs/sms/test',
+    { phone }
+  );
+}

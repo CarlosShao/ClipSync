@@ -52,8 +52,11 @@ import { sendTestMail } from '../../utils/email.js';
 import { invalidateAiRuntimeConfigCache } from '../../utils/aiRuntimeConfig.js';
 // GH-01：release_download_base_url 写库后失效下载地址解析缓存
 import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js';
-// A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）
-import { invalidateSmsConfigCache } from '../../utils/sms.js';
+// A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）；
+// 另引入发送能力，供「发送测试短信」接口真实下发（不受 NODE_ENV 限制）
+import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode } from '../../utils/sms.js';
+// A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
+import { isValidPhone } from '../../validation/validator.js';
 
 const router = Router();
 
@@ -569,6 +572,66 @@ router.post('/smtp/test', requirePerm('admin.configs.manage'), async (req, res) 
   } catch (err) {
     logger.error('[admin/configs] smtp test failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '发送测试邮件失败' });
+  }
+});
+
+// ───────────────────────── 短信测试（A4） ─────────────────────────
+
+/**
+ * POST /api/admin/configs/sms/test  body { phone: string }
+ * 发送短信测试验证码（requirePerm('admin.configs.manage')，与配置写路径权限一致）：
+ *  - phone 必填且需通过 isValidPhone；缺失/非法 → 400 { code: 40002 }
+ *  - 未配置短信（provider=console 或凭据不全）→ 409 { code: 4090 }
+ *  - 成功/失败均写审计 admin.config.sms_test（与 smtp_test 风格对齐）
+ * 说明：本接口始终走真实下发，不受 NODE_ENV 影响——配置后即可自测；
+ * 而 /api/auth/send-code 仅在 production 才真实发短信（非生产用固定码）。
+ */
+router.post('/sms/test', requirePerm('admin.configs.manage'), async (req, res) => {
+  try {
+    const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+    if (!phone || !isValidPhone(phone)) {
+      return res.status(400).json({ code: 40002, message: '手机号格式无效' });
+    }
+
+    const code = generateCode();
+    const result = await sendVerificationCodeSms(phone, code);
+
+    if (result.reason === 'not_configured') {
+      return res.status(409).json({ code: 4090, message: '未配置短信服务，请先填写服务商与凭据' });
+    }
+
+    // 成功/失败均写审计（失败时 reason 进入 details 便于排查）
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.config.sms_test',
+      resourceType: 'system_config',
+      resourceId: 'sms_test',
+      details: {
+        phone,
+        success: result.ok,
+        reason: result.reason || undefined,
+        provider: result.provider || undefined,
+        requestId: result.requestId || undefined,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    if (!result.ok) {
+      return res
+        .status(500)
+        .json({ code: 5000, message: `测试短信发送失败：${result.reason || '未知错误'}` });
+    }
+
+    logger.info('[admin/configs] sms test sent', { phone, operator: req.user?.userId });
+    return res.json({
+      code: 0,
+      data: { phone, provider: result.provider || null, requestId: result.requestId || null },
+      message: '测试短信已发送',
+    });
+  } catch (err) {
+    logger.error('[admin/configs] sms test failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '发送测试短信失败' });
   }
 });
 

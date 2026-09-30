@@ -622,6 +622,34 @@ describe('POST /api/admin/configs/smtp/test（CO-30 SMTP 测试邮件）', () =>
   });
 });
 
+describe('POST /api/admin/configs/sms/test（A4 测试短信）', () => {
+  test('未配置短信返回 409/4090 错误壳', async () => {
+    const resp = await post<{ phone: string }>('/api/admin/configs/sms/test', {
+      phone: '13800138000',
+    });
+    expect(resp.status).toBe(409);
+    expect(expectFail(resp).code).toBe(4090);
+  });
+
+  test('配置 provider=aliyun + AccessKeySecret 后发送成功返回 provider', async () => {
+    await patch('/api/admin/configs/sms_provider', { value: 'aliyun' });
+    await patch('/api/admin/configs/sms_access_key_secret', { value: 'mock-secret' });
+    const resp = await post<{ phone: string; provider: string }>('/api/admin/configs/sms/test', {
+      phone: '13800138000',
+    });
+    expect(resp.status).toBe(200);
+    expect(expectOk(resp).data.provider).toBe('aliyun');
+  });
+
+  test('发送失败（手机号含 fail）返回 5xx 错误壳', async () => {
+    const resp = await post<{ phone: string }>('/api/admin/configs/sms/test', {
+      phone: '13800138000fail',
+    });
+    expect(resp.status).toBe(500);
+    expect(expectFail(resp).code).toBe(5000);
+  });
+});
+
 describe('角色权限写路径（T-A6）', () => {
   test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 31 项目录（RB-06/RB-11 扩充 + 065/AN-04 release 键）', async () => {
     const roles = expectOk(await get<Role[]>('/api/admin/roles')).data;

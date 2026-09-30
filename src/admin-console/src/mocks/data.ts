@@ -1152,6 +1152,47 @@ export const mockConfigs: SystemConfig[] = [
     consumer: 'src/server/src/utils/email.js（SMTP_KEYS 配置读取）',
     updatedAt: '2026-08-12 10:20',
   },
+  // —— 短信验证码（068/A4：sms_access_key_secret 加密存储，脱敏回显「已配置/未配置」）——
+  {
+    key: 'sms_provider',
+    name: '短信服务商',
+    value: 'console',
+    description: 'aliyun / tencent；console 表示未开通（生产环境将拒绝发送验证码）',
+    consumer: 'src/server/src/utils/sms.js（getSmsConfig 读取）',
+    updatedAt: '2026-09-15 10:00',
+  },
+  {
+    key: 'sms_access_key_id',
+    name: '短信 AccessKeyId',
+    value: '',
+    description: '阿里云 AccessKeyId 或腾讯云 SecretId',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+    updatedAt: '2026-09-15 10:00',
+  },
+  {
+    key: 'sms_access_key_secret',
+    name: '短信 AccessKeySecret',
+    value: '未配置',
+    description: '加密存储；阿里云 AccessKeySecret 或腾讯云 SecretKey',
+    consumer: 'src/server/src/utils/sms.js（发送前 decryptField 解密）',
+    updatedAt: '2026-09-15 10:00',
+  },
+  {
+    key: 'sms_sign_name',
+    name: '短信签名',
+    value: '',
+    description: '需服务商审核通过（如 ClipSync）；未审核通过只能发测试签名',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+    updatedAt: '2026-09-15 10:00',
+  },
+  {
+    key: 'sms_template_code',
+    name: '短信模板 CODE',
+    value: '',
+    description: '验证码模板 ID（阿里云 SMS_xxxx / 腾讯云模板 ID），模板变量为 code',
+    consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
+    updatedAt: '2026-09-15 10:00',
+  },
   // —— 069（D1）：对象存储控制台地址 ——
   {
     key: 'minio_console_url',

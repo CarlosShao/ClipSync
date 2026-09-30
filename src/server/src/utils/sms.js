@@ -159,8 +159,12 @@ export async function sendVerificationCodeSms(phone, code) {
  * SDK 动态 import —— 未开通短信时不加载，避免可选依赖拖累启动。
  */
 async function sendViaAliyun(config, phone, code) {
-  const Dysmsapi = await import('@alicloud/dysmsapi20170525');
-  const { default: Client } = Dysmsapi;
+  const mod = await import('@alicloud/dysmsapi20170525');
+  // CJS 互操作：该包 main=dist/client.js 为 CJS，ESM import 后命名空间的
+  // .default 是 module.exports，真正的 Client 构造器在 .default.default；
+  // SendSmsRequest 则是顶层命名导出。用 ?? 兜底以兼容打包形态变化。
+  const Client = mod.default?.default ?? mod.default;
+  const SendSmsRequest = mod.SendSmsRequest ?? mod.default?.SendSmsRequest;
 
   // AccessKeySecret 加密落库，发送前解密（与 email_channels.password 同口径）
   const secret = toTrimmedString(decryptField(config.sms_access_key_secret));
@@ -171,7 +175,6 @@ async function sendViaAliyun(config, phone, code) {
     endpoint: 'dysmsapi.aliyuncs.com',
   });
 
-  const { SendSmsRequest } = await import('@alicloud/dysmsapi20170525');
   const req = new SendSmsRequest({
     phoneNumbers: phone,
     signName: config.sms_sign_name,

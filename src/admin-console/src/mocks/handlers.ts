@@ -636,12 +636,13 @@ const configHandlers = [
     if (key === 'log_level' && !['debug', 'info', 'warn', 'error'].includes(body.value)) {
       return fail(400, 40002, 'log_level 仅允许 debug / info / warn / error');
     }
-    // smtp_pass 写入加密存储，读取路径只回显配置状态（与 mapConfigRow 契约一致）
-    config.value = key === 'smtp_pass' ? '已配置' : body.value;
+    // smtp_pass / sms_access_key_secret 写入加密存储，读取路径只回显配置状态（与 mapConfigRow 契约一致）
+    const masked = key === 'smtp_pass' || key === 'sms_access_key_secret';
+    config.value = masked ? '已配置' : body.value;
     config.updatedAt = '2026-09-05 20:47';
     const details = body.reason?.trim()
-      ? `value="${key === 'smtp_pass' ? '***' : body.value}", reason="${body.reason.trim()}"`
-      : `value="${key === 'smtp_pass' ? '***' : body.value}"`;
+      ? `value="${masked ? '***' : body.value}", reason="${body.reason.trim()}"`
+      : `value="${masked ? '***' : body.value}"`;
     pushAudit('admin.config.update', 'system_config', key, details);
     return ok(config, key === 'maintenance_mode' ? '维护模式已更新' : '配置已更新并写入审计');
   }),
@@ -711,6 +712,25 @@ const configHandlers = [
     }
     const to = body.to?.trim() || 'admin@clipchain.top';
     return ok({ messageId: `<${Date.now()}@clipchain.top>` }, `测试邮件已发送至 ${to}`);
+  }),
+
+  // A4：短信测试验证码。未配置短信（provider=console 或 AccessKeySecret 未配置）→ 409 错误壳 code=4090；
+  // 手机号含 "fail" 模拟发送失败（5xx）；成功返回 provider + requestId（与真实接口契约对齐）
+  http.post('/api/admin/configs/sms/test', async ({ request }) => {
+    await delay(400);
+    const body = (await request.json()) as { phone?: string };
+    const provider = mockConfigs.find((c) => c.key === 'sms_provider')?.value ?? 'console';
+    const secret = mockConfigs.find((c) => c.key === 'sms_access_key_secret')?.value ?? '未配置';
+    if (provider === 'console' || secret === '未配置') {
+      return fail(409, 4090, '未配置短信服务，请先填写服务商与凭据');
+    }
+    if (body.phone?.includes('fail')) {
+      return fail(500, 5000, '测试短信发送失败：send_failed');
+    }
+    return ok(
+      { phone: body.phone ?? '', provider, requestId: `mock-${Date.now()}` },
+      '测试短信已发送'
+    );
   }),
 ];
 
