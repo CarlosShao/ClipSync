@@ -4,6 +4,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useResizablePanel } from '@/composables/useResizablePanel'
 import Button from '@/components/ui/button/Button.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import type { AiConversation, ConversationSearchHit } from '@/api/ai'
 import { searchConversationHistory } from '@/api/ai'
 import { highlightSearchSnippet } from '@/utils/htmlText'
@@ -258,9 +259,15 @@ function onDockFromFloat() {
             {{ t('ai_no_history', '暂无历史对话') }}
           </div>
           <div v-else class="ai-nav-scroll">
+            <!-- 滑动选中胶囊：选中态从「瞬间跳过去」变成「180ms 滑过去」。
+                 fill 是半透明洗色、压在行上面，所以对 DOM 顺序与行的定位都无要求；
+                 原来 .ai-nav-conv.active 的静态 accent-bg 已撤掉，指示只留这一个。
+                 本容器只装会话行，搜索命中行在另一支、不挂 key。 -->
+            <FxSelectionRing :active="currentId" variant="fill" :revision="conversations.length" />
             <div
               v-for="conv in conversations"
               :key="conv.id"
+              :data-ring-key="conv.id"
               class="ai-nav-conv"
               :class="{ active: conv.id === currentId }"
               role="button"
@@ -594,6 +601,9 @@ function onDockFromFloat() {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 4px 6px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素，随列表一起滚动；
+     同时让 .ai-nav-conv 的 offsetTop 以本元素为原点 */
+  position: relative;
 }
 .ai-nav-empty {
   padding: 20px 12px;
@@ -683,9 +693,8 @@ function onDockFromFloat() {
 .ai-nav-conv:hover {
   background: var(--bg-hover);
 }
-.ai-nav-conv.active {
-  background: var(--accent-bg);
-}
+/* 选中态：原来的 accent-bg 静态底已撤掉，改由 fx/FxSelectionRing 的滑动 fill 胶囊承担
+   （静态底 + 滑动胶囊 = 两个指示器打架）。文字/图标变色（见下方 .active 规则）保留为状态。 */
 .ai-nav-conv-icon {
   color: var(--text-secondary);
   flex-shrink: 0;

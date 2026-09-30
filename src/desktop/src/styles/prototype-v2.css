@@ -349,7 +349,7 @@
   box-shadow: var(--shadow-elevated);
   transform: translateY(-1px);
 }
-/* 焦点高亮已交给 ClipboardView 里的 .clip-focus-ring（绝对定位的 accent 环，会从旧行滑到新行）。
+/* 焦点高亮已交给 fx/FxSelectionRing（绝对定位的 accent 环，会从旧行滑到新行）。
    这里刻意不再给 .focused 上 accent 边框：否则"环还在半路、静态边框已经跳到位"会出现两个
    指示器打架，正是上一版被否的观感。.focused 现在只承担「内容展开 + 动作列常显」的职责。 */
 .clip-item.selected {

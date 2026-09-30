@@ -18,11 +18,25 @@
 | `FxGlitchText.vue`    | `src/content/TextAnimations/GlitchText/GlitchText.vue`       | ① 去掉写死外观（text-white / font-black / clamp 字号 / cursor-pointer / `bg-[#0b0b0b]`），字号字色跟随宿主，伪元素底色由 `glitchBg` 传入 ② Tailwind 任意值类 + 全局 `animate-glitch` 关键帧换成 scoped 原生 CSS（关键帧改名 `fx-glitch-clip` 防撞）③ 偏离量与红/青阴影色参数化（上游 ±10px 只适合超大标题）④ 接 `useReducedMotion`：命中时 `is-static` 直接不生成两片伪元素 |
 | `FxLatticeLoader.vue` | `src/content/Micro/LatticeLoader/LatticeLoader.vue`          | ① 接 `useReducedMotion`：命中时晶格静止为「全亮」字形、且不再启动计时器 —— 不能只靠 `html.reduce-motion *` 兜底，那条会把 animation-duration 压成 0.01ms 从而停在 idle 关键帧（全暗、看不出在加载）② 关键帧与类名 `ll-*`/`lattice-*` → `fxl-*`，避免全局注入撞名 ③ 上游 `prefers-reduced-motion` 块保留                                                                     |
 | `FxGradualBlur.vue`   | `src/content/Animations/GradualBlur/GradualBlur.vue`         | ① 接 `useReducedMotion`：命中时强制 `animated=false` 且不建立 IntersectionObserver ② 注入样式 id 改名 `fx-gradual-blur-styles` ③ 默认 `zIndex` 1000 → 12（上游 1000 是落地页全屏遮罩用，应用内会盖住抽屉/弹层）                                                                                                                                                             |
+| `FxSelectionRing.vue` | **新增（本项目，非 vendor）**                                | 通用「滑动选中环」：把列表选中态从「跳过去」变成「180ms 滑过去」。放进任意 `position: relative` 的列表容器做子元素，传入选中 key 即可；也支持 hover 驱动（`active` 传 hovered key）。两轮迭代的产物，见下方「焦点环三代」                                                                                                                                                   |
 | `useReducedMotion.ts` | 新增（本项目）                                               | fx 统一动效开关：`prefers-reduced-motion`（系统）∨ `html.reduce-motion`（设置页开关），任一命中即 true。模块级单例监听，随应用生命周期存活                                                                                                                                                                                                                                  |
 
 > 曾 vendor `Animations/ClickSpark`（整页点击粒子），实测在效率工具里属于「为用组件而用组件」，
 > 视觉验收被否，已连同其 `useThemeColor` 桥一起删除。**教训**：环境类/装饰类动效必须先问
 > 「它替用户解决了什么问题」，答不上来就不接。
+
+## 焦点环三代（两次被否的教训，别再走回头路）
+
+| 代  | 做法                                                                                                                                                                                       | 结果                                                                                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1  | 3×20px accent 小胶囊 + **只有键盘导航才播滑动**（鼠标移入瞬间吸附）                                                                                                                        | ❌ 被否：「还是之前的效果，只是多了个小蓝色凸起」。小胶囊看不出"选中态在移动"；而最自然的验收方式是拿鼠标上下扫，一扫就命中吸附分支 = 等于没做动效 |
+| v2  | 换成整行大小的 accent 环，**键盘鼠标都播**；撤掉行自身的静态 accent 边框（避免双指示器打架）；expo-out 曲线；`transitionend` 补测行高变化                                                  | ✅ 确认「有那味儿了」                                                                                                                              |
+| v3  | 提炼成通用组件铺到全站列表：加 `variant`（`ring` 空心 / `fill` 实心胶囊）与 `bar`（左侧 accent 竖条随胶囊一起滑）；测量改用 `ResizeObserver`（容器 + 目标各一个）替代 `transitionend` 补丁 | 本轮                                                                                                                                               |
+
+**两条硬规则**：
+
+1. **绝不做「只有键盘才播/鼠标才播」的模态分支**——验收的人大概率用鼠标，分支会让效果直接消失。要削手感就削时长，不要削触发条件。
+2. **一个列表只能有一个选中指示器**。接环之前先看该行/该项有没有静态的高亮（背景、边框、左侧竖条）；有就撤掉，把配色/字重这类"状态"变化留下。静态底 + 滑动环同时存在就是两个指示器打架。
 
 ## 以后往 fx/ 加组件的硬性清单
 
@@ -50,12 +64,13 @@
 
 ## 剪切板模块的接入位置（本批）
 
-| 位置                                        | 组件              | 说明                                                     |
-| ------------------------------------------- | ----------------- | -------------------------------------------------------- |
-| 统计卡 × 4                                  | `FxSpotlightCard` | 光标聚光（`.clip-stat` 直接挂在组件根上，卡片外观不变）  |
-| 工具栏主 CTA「新建剪贴」 / 抽屉底部「复制」 | `StarBorder`      | accent 绕边流光，与登录页同一套配方                      |
-| 列表滚动容器底沿                            | `FxGradualBlur`   | 磨砂渐隐；只在「下面还有内容」时渲染，滚到底自动撤掉     |
-| 空态标题                                    | `DecryptedText`   | 解密揭示（`useOriginalCharsOnly`：中文只在原字形间打乱） |
-| 空态主 CTA                                  | `FxMagnet`        | 磁吸跟随（只在空态这种稀疏区域用，列表里一律不上）       |
-| 加载失败标题                                | `FxGlitchText`    | 故障抖动，`enableOnHover` 默认静态                       |
-| 首屏骨架 / 页内 AI 等待态                   | `FxLatticeLoader` | 晶格加载                                                 |
+| 位置                                                                         | 组件              | 说明                                                            |
+| ---------------------------------------------------------------------------- | ----------------- | --------------------------------------------------------------- |
+| 统计卡 × 4                                                                   | `FxSpotlightCard` | 光标聚光（`.clip-stat` 直接挂在组件根上，卡片外观不变）         |
+| 工具栏主 CTA「新建剪贴」 / 抽屉底部「复制」                                  | `StarBorder`      | accent 绕边流光，与登录页同一套配方                             |
+| 列表滚动容器底沿                                                             | `FxGradualBlur`   | 磨砂渐隐；只在「下面还有内容」时渲染，滚到底自动撤掉            |
+| 空态标题                                                                     | `DecryptedText`   | 解密揭示（`useOriginalCharsOnly`：中文只在原字形间打乱）        |
+| 空态主 CTA                                                                   | `FxMagnet`        | 磁吸跟随（只在空态这种稀疏区域用，列表里一律不上）              |
+| 加载失败标题                                                                 | `FxGlitchText`    | 故障抖动，`enableOnHover` 默认静态                              |
+| 首屏骨架 / 页内 AI 等待态                                                    | `FxLatticeLoader` | 晶格加载                                                        |
+| 剪贴板列表 / 左侧边栏 / 收藏条目 / 收藏夹树 / 模板库 / 设备 / 通知 / AI 会话 | `FxSelectionRing` | 滑动选中环；`active` 传选中 key，无选中语义的列表传 hovered key |

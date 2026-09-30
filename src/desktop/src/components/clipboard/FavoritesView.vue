@@ -19,6 +19,7 @@ import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
 import { TAG_PRESET_COLORS, getTagDisplayColor, tagColorStyle } from '@/utils/favorites/tagColors'
 import { COLLECTION_ICON_MAP, renderCollectionIcon } from '@/utils/favorites/collectionIcons'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 // A2：页内内联 AI（总结卡 + 整理流程卡），结果直接在收藏页展示，不再跳侧栏
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
@@ -50,6 +51,9 @@ const sortBy = ref<'time' | 'type'>('time')
 const sortAsc = ref(false)
 const batchMode = ref(false)
 const selectedIds = ref<Set<string>>(new Set())
+// 收藏条目列表没有「选中项」概念（只有 hover），滑动环由 hover 驱动：
+// 记住当前悬停行的 id，容器 mouseleave 时清空（null 就不显示环）。
+const hoveredFavKey = ref<string | null>(null)
 const viewMode = ref<'grid' | 'list'>('list')
 const collapsedGroups = ref<Set<string>>(new Set())
 
@@ -1416,6 +1420,17 @@ function cancelEditTags() {
       </div>
       <!-- Tree nodes (flat visible list from composable) -->
       <div class="fav-tree-list">
+        <!-- 滑动选中胶囊：原来 .fav-tree-node:has(.fav-tree-name.active) 的 accent-light 底 +
+             左侧 accent 竖条已撤掉，改由这个会滑动的 fill 胶囊承担（竖条是胶囊的一部分，一起滑）。
+             revision 除可见节点数外还带内联新建行的显隐：它插在节点之前会整体推移后续节点，
+             而容器是 flex:1 + overflow，自身尺寸不变，ResizeObserver 不会回调。 -->
+        <FxSelectionRing
+          :active="collections.activeNodeId.value"
+          variant="fill"
+          bar
+          radius="var(--radius-sm)"
+          :revision="`${collections.visibleNodes.value.length}/${showNewCollectionInput}`"
+        />
         <!-- Inline new collection row -->
         <div v-if="showNewCollectionInput" class="fav-tree-node fav-tree-node--new">
           <span class="fav-tree-icon">
@@ -1449,6 +1464,7 @@ function cancelEditTags() {
           v-for="node in collections.visibleNodes.value"
           :key="node.id"
           class="fav-tree-node"
+          :data-ring-key="node.id"
           :style="{ paddingLeft: Math.max(0, (node.depth - 2) * 16) + 8 + 'px' }"
           :class="{
             'fav-tree-node--drag-over-inside':
@@ -1797,10 +1813,14 @@ function cancelEditTags() {
 
         <!-- LIST VIEW (grouped) -->
         <!-- 原型 favorites.html：单列 .clip-item 行（扁平、无分组头），保留标签编辑/拖拽/批量能力 -->
-        <div v-else-if="viewMode === 'list'" class="fav-clip-list">
+        <div v-else-if="viewMode === 'list'" class="fav-clip-list" @mouseleave="hoveredFavKey = null">
+          <!-- 滑动 hover 环：本列表无选中态，环跟着鼠标走（空心环压在行上面，DOM 顺序无所谓）。
+               容器同时是环的 parentElement，行元素的 offsetParent 必须是它 —— 见 favorites-view.css -->
+          <FxSelectionRing :active="hoveredFavKey" :revision="favoriteItems.length" />
           <div
             v-for="item in favoriteItems"
             :key="item.id"
+            :data-ring-key="item.id"
             class="clip-item fav-clip-item"
             :class="{
               'fav-item--editing-tags': editingTagsItemId === item.id,
@@ -1809,6 +1829,7 @@ function cancelEditTags() {
             }"
             :draggable="!batchMode"
             @click="onFavRowClick(item)"
+            @mouseenter="hoveredFavKey = item.id"
             @dragstart="onDragStart($event, item)"
             @dragover="onDragOver"
             @drop="onDrop($event, item)"

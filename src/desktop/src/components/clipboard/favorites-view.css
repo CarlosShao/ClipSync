@@ -162,6 +162,10 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素，
+     同时让 .fav-tree-node 的 offsetTop 以本元素为原点 -- 容器必须定位，
+     否则 offsetParent 会跑到更外层（.fav-col-panel），环静默错位 */
+  position: relative;
 }
 .fav-tree-node {
   display: flex;
@@ -187,19 +191,10 @@
   color: var(--accent);
   font-weight: 600;
 }
-.fav-tree-node:has(.fav-tree-name.active) {
-  background: var(--accent-light);
-}
-.fav-tree-node:has(.fav-tree-name.active)::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 2.5px;
-  border-radius: 9999px;
-  background: var(--accent);
-}
+/* Clearline 选中态:只保留文字/图标转 accent（这是"状态"，瞬间切换）。
+   accent-soft 底与左侧 accent 竖条已交给 fx/FxSelectionRing 的 fill 胶囊承担——
+   胶囊会从旧节点滑到新节点，竖条是胶囊的一部分跟着一起滑。
+   这里保留 = 会变成"静态底 + 滑动胶囊"两个指示器打架（剪贴板焦点环那轮踩过的坑）。 */
 .fav-tree-expand {
   width: 16px;
   height: 16px;
@@ -1577,6 +1572,9 @@
 }
 .fav-clip-list {
   min-width: 0;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素，
+     .fav-clip-item 自身是 position:relative，容器不定位的话 offsetParent 会跑到更外层 */
+  position: relative;
 }
 .fav-clip-item .clip-meta {
   flex-wrap: wrap;

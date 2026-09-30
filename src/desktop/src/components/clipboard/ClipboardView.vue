@@ -46,6 +46,7 @@ import FxGradualBlur from '@/components/fx/FxGradualBlur.vue'
 import FxGlitchText from '@/components/fx/FxGlitchText.vue'
 import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
 import FxMagnet from '@/components/fx/FxMagnet.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import DecryptedText from '@/components/fx/DecryptedText.vue'
 import { useReducedMotion } from '@/components/fx/useReducedMotion'
 
@@ -271,77 +272,10 @@ watch(
 const showListFade = computed(() => !reduced.value && filteredItems.value.length > 0 && !atListBottom.value)
 
 // === 焦点环：选中态「滑」过去而不是「跳」过去 ===
-// 上一版这里放的是 3×20px 的小胶囊，且只有键盘导航才播滑动 —— 实测被否：
-// ① 胶囊太小，看不出"选中态在移动"；② 用鼠标测时走的是"瞬间吸附"分支，等于没有动效。
-// 现在改成「整行大小的 accent 环」+「键盘鼠标都滑」：
-//   · 环的尺寸/位置都量焦点行，180ms 从旧行形态过渡到新行形态（高度也跟着变 → 液态感）；
-//   · 焦点行自己的 border-color 高亮已从 prototype-v2.css 撤掉，唯一焦点指示就是这个环，
-//     所以不会出现"环还在半路、静态高亮已经跳到位"的双指示器打架。
-// 两个仍然保留的技术取舍：
-//   · 用 offsetTop / offsetHeight 而非 getBoundingClientRect：前者是布局值，不受滚动与行
-//     hover 的 translateY(-1px) 影响，滚列表时无需重算。
-//   · 焦点行长高（.clip-text 2 行→8 行，220ms）后要再量一次，否则环会停在旧高度；
-//     靠列表容器上冒泡的 transitionend(max-height) 触发，不写死时长。
-const RING_MIN_H = 24
-const ringY = ref(0)
-const ringH = ref(RING_MIN_H)
-const ringVisible = ref(false)
-
-function syncFocusRing() {
-  const listEl = listScrollEl.value?.querySelector('.clip-list') ?? null
-  const item = filteredItems.value[focusedIndex.value]
-  if (!listEl || !item) {
-    ringVisible.value = false
-    return
-  }
-  const rowEl = listEl.querySelector<HTMLElement>(`[data-clip-id="${CSS.escape(item.id)}"]`)
-  if (!rowEl) {
-    ringVisible.value = false
-    return
-  }
-  // 自检：offsetTop 只有在 offsetParent 正好是 .clip-list 时才等于「相对列表的位置」。
-  // 将来若有人在 .clip-list 与行之间插入带 position 的包裹层，环会静默错位——
-  // 与其默默错，不如在 dev 下喊一声（生产不打日志）。
-  if (import.meta.env.DEV && rowEl.offsetParent !== listEl) {
-    console.warn('[clipboard] 焦点环定位基准被破坏：行的 offsetParent 不是 .clip-list', rowEl.offsetParent)
-  }
-  ringY.value = rowEl.offsetTop
-  ringH.value = Math.max(RING_MIN_H, rowEl.offsetHeight)
-  ringVisible.value = true
-}
-
-watch(focusedIndex, () => nextTick(syncFocusRing))
-// 行数变化（新增/删除/翻页）会让焦点行整体位移；窗口宽度变化会让上方行重新折行、
-// 高度随之改变，同样会顶动焦点行的 offsetTop —— 两处都要重算。
-// 刻意不 watch filteredItems 本体：items 有原地 unshift 的更新路径，watch 比不到引用变化。
-watch(
-  () => filteredItems.value.length,
-  () => nextTick(syncFocusRing),
-)
-let ringRaf: number | null = null
-function requestRingSync() {
-  if (ringRaf !== null) return
-  ringRaf = requestAnimationFrame(() => {
-    ringRaf = null
-    syncFocusRing()
-  })
-}
-// 焦点行从 2 行撑到 8 行是 max-height 过渡（220ms），过渡结束再量一次收口；
-// transitionend 会冒泡，所以挂在滚动容器上收一次即可，不写死时长。
-function onListTransitionEnd(e: TransitionEvent) {
-  if (e.propertyName === 'max-height') requestRingSync()
-}
-window.addEventListener('resize', requestRingSync)
-onMounted(() => {
-  listScrollEl.value?.addEventListener('transitionend', onListTransitionEnd)
-  nextTick(syncFocusRing)
-})
-onUnmounted(() => {
-  listScrollEl.value?.removeEventListener('transitionend', onListTransitionEnd)
-  window.removeEventListener('resize', requestRingSync)
-  if (ringRaf !== null) cancelAnimationFrame(ringRaf)
-  ringRaf = null
-})
+// 测量/过渡逻辑已提炼成通用组件 fx/FxSelectionRing（全站 7 个列表共用），这里只负责
+// 回答「谁是当前焦点项」——焦点由键盘 ↑↓ 与鼠标 hover 共同驱动（见 useClipboardKeyboard）。
+// 行的 key 复用它已有的 data-clip-id，不再多挂一个属性。
+const activeClipId = computed(() => filteredItems.value[focusedIndex.value]?.id ?? null)
 
 function reload() {
   if (viewSeg.value === 'fav') {
@@ -780,12 +714,7 @@ onUnmounted(() => {
           <div class="clip-list" role="list" :aria-label="t('nav_clipboard')">
             <!-- 焦点环：整行大小的 accent 环，焦点一变就 180ms 从旧行形态滑到新行形态。
                  它是唯一的焦点指示（行自身的 .focused 边框高亮已撤掉），对读屏与指针透明 -->
-            <span
-              v-if="ringVisible"
-              class="clip-focus-ring"
-              :style="{ transform: `translateY(${ringY}px)`, height: `${ringH}px` }"
-              aria-hidden="true"
-            />
+            <FxSelectionRing :active="activeClipId" key-attr="data-clip-id" :revision="filteredItems.length" />
             <template v-for="sec in timelineSections" :key="sec.label || 'flat'">
               <!-- 原型 v1 分节头：置顶 / 今天 / 昨天 / 更早 -->
               <div v-if="sec.label" class="clip-group">
@@ -1004,35 +933,11 @@ onUnmounted(() => {
 .clip-list {
   display: block;
   /* 焦点环的定位基准：环是 .clip-list 的绝对定位子元素，随列表一起滚动；
-     同时让行元素的 offsetTop 以本元素为原点，syncFocusRing() 才能直接拿来做 translateY */
+     同时让行元素的 offsetTop 以本元素为原点，FxSelectionRing 才能直接拿来做 translateY */
   position: relative;
 }
-/* 焦点环：选中态「滑」过去而不是「跳」过去。
-   - 整行大小（宽撑满列表、高 = 焦点行高），从旧行形态 180ms 过渡到新行形态；
-     高度一起过渡 → 在长短行之间移动时是"液态变形"，不是硬切；
-   - 用 expo-out 曲线（cubic-bezier(0.22,1,0.36,1)）而不是全站 --ease：
-     位移类的收尾要更快更稳，否则长距离滑动末尾会有"蹭"的感觉；
-   - 键盘与鼠标都播（上一版只有键盘播，实测被否）；reduce-motion 双通道都压掉：
-     html.reduce-motion 由 globals.css 全局压，prefers-reduced-motion 在此单独兜。 */
-.clip-focus-ring {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  border: 1.5px solid var(--accent);
-  border-radius: var(--radius-md);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
-  pointer-events: none;
-  z-index: 5;
-  transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .clip-focus-ring {
-    transition: none;
-  }
-}
+/* 焦点环本身的样式在 fx/FxSelectionRing.vue 里（非 scoped 全局类 .fx-selection-ring），
+   全站列表共用一份；这里只保留它必需的定位基准。 */
 /* A1 内联 AI 结果卡：与工具栏留出间距。
    注意：通用规则 .clipboard-view > * 的 28px 内边距会被卡片自带背景画出
    （与批量条当年同坑），这里用双类名提权覆盖为 1024 可视宽度，与列表卡片对齐 */

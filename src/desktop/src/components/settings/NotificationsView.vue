@@ -6,6 +6,7 @@ import { useSonner } from '@/composables/useSonner'
 import { Bell, Gift, Download, Smartphone, ShieldAlert, CheckCheck } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -31,6 +32,8 @@ const activeFilter = computed<{ value: string; labelKey: string }[]>(() => [
 ])
 import { ref } from 'vue'
 const currentFilter = ref<string>('all')
+// 通知列表没有「选中项」语义，只有 hover：用被 hover 行的 id 驱动滑动焦点环（离开列表清空）
+const hoveredNotifKey = ref<string | null>(null)
 
 onMounted(() => {
   loadHistory()
@@ -111,8 +114,19 @@ function translateNotif(title: string, body: string): { title: string; body: str
 
     <!-- List -->
     <div class="notif-list">
-      <div v-if="filtered.length > 0" class="notif-items">
-        <div v-for="n in filtered" :key="n.id" class="notif-item" :class="{ unread: !n.read }" @click="markRead(n.id)">
+      <div v-if="filtered.length > 0" class="notif-items" @mouseleave="hoveredNotifKey = null">
+        <!-- 滑动焦点环：本列表只有 hover 没有选中态，由 mouseenter 喂 key 驱动、离开列表收起。
+             variant=ring（默认）压在行上面；筛选/分类会改变列表结构，用 length 触发重测。 -->
+        <FxSelectionRing :active="hoveredNotifKey" :revision="filtered.length" />
+        <div
+          v-for="n in filtered"
+          :key="n.id"
+          :data-ring-key="n.id"
+          class="notif-item"
+          :class="{ unread: !n.read }"
+          @mouseenter="hoveredNotifKey = n.id"
+          @click="markRead(n.id)"
+        >
           <div class="notif-icon" :style="{ color: catOf(n).color, background: catOf(n).color + '1f' }">
             <component :is="catOf(n).icon" :size="18" />
           </div>
@@ -228,6 +242,9 @@ function translateNotif(title: string, body: string): { title: string; body: str
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素；
+     .notif-item 自身是 position:relative，offsetParent 就是本元素 */
+  position: relative;
 }
 
 .notif-item {

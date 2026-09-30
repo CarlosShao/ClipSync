@@ -7,6 +7,7 @@ import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus, AlertTriangle, Refres
 import Button from '@/components/ui/button/Button.vue'
 import { useSyncLog } from '@/composables/useSyncLog'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { e2ePublicKey } from '@/utils/e2eCrypto'
 import { publicKeyFingerprint } from '@/composables/useDevice'
@@ -20,6 +21,8 @@ const deviceList = computed(() => device.devices.value)
 const isLoading = computed(() => device.loading.value)
 const loadError = computed(() => device.error.value)
 const onlineCount = computed(() => deviceList.value.filter((d) => d.online).length)
+// 设备列表没有「选中项」语义，只有 hover：用被 hover 行的 id 驱动滑动焦点环（离开列表清空）
+const hoveredDeviceKey = ref<string | null>(null)
 const syncLog = useSyncLog()
 function logAgo(ts: number): string {
   const diff = Date.now() - ts
@@ -179,7 +182,10 @@ async function handleDelete(id: string, name: string) {
           <span class="panel-title">{{ t('dev_paired', '已配对设备') }}</span>
           <span class="dev-count-hint">{{ deviceList.length }} {{ t('dev_count_unit', '台') }}</span>
         </div>
-        <div class="panel-body dev-list-body">
+        <div class="panel-body dev-list-body" @mouseleave="hoveredDeviceKey = null">
+          <!-- 滑动焦点环：本列表只有 hover 没有选中态，由 mouseenter 喂 key 驱动、离开列表收起。
+               variant=ring（默认）压在行上面，所以放哪都行；骨架行不挂 key、不参与。 -->
+          <FxSelectionRing :active="hoveredDeviceKey" :revision="deviceList.length" />
           <!-- Skeleton Loading -->
           <template v-if="isLoading && deviceList.length === 0">
             <div v-for="n in 3" :key="'sk-' + n" class="clip-item dev-row dev-row-skeleton">
@@ -210,7 +216,13 @@ async function handleDelete(id: string, name: string) {
             </Button>
           </div>
           <template v-else>
-            <div v-for="d in deviceList" :key="d.id" class="clip-item dev-row">
+            <div
+              v-for="d in deviceList"
+              :key="d.id"
+              :data-ring-key="d.id"
+              class="clip-item dev-row"
+              @mouseenter="hoveredDeviceKey = d.id"
+            >
               <div class="type-tile t-text">
                 <component :is="getDeviceIcon(d.type)" :size="16" />
               </div>
@@ -299,6 +311,9 @@ async function handleDelete(id: string, name: string) {
 }
 .dev-list-body {
   padding: 10px 12px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素；
+     .clip-item 自身是 position:relative，offsetParent 就是本元素 */
+  position: relative;
 }
 .dev-row {
   cursor: default;

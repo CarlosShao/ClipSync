@@ -12,6 +12,7 @@ import TemplateGenerateDialog from './TemplateGenerateDialog.vue'
 import VariableFillDialog from './VariableFillDialog.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import Button from '@/components/ui/button/Button.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 
 const { t, tf } = useI18n()
 const store = useTemplateStore()
@@ -163,9 +164,15 @@ async function confirmDelete() {
       <!-- v1 原型排版：左列表 + 右详情 -->
       <div v-if="filtered.length" class="tpl-split">
         <div class="tpl-side">
+          <!-- 滑动选中环：选中态从「瞬间跳过去」变成「180ms 滑过去」。
+               用 ring（空心环）而不是 fill：.tpl-side-item 是自带不透明底 + 1px 边框的卡片，
+               与剪贴板列表同类；原来 .tpl-side-item.active 的静态 accent 边框/外发光已撤掉，
+               选中指示只留这一个（两个指示器会打架）。 -->
+          <FxSelectionRing :active="selectedId" :revision="filtered.length" />
           <div
             v-for="tpl in filtered"
             :key="tpl.id"
+            :data-ring-key="tpl.id"
             :class="['tpl-side-item', { active: selectedId === tpl.id }]"
             @click="selectedId = tpl.id"
           >
@@ -303,6 +310,9 @@ async function confirmDelete() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素，随列表一起滚动；
+     同时让 .tpl-side-item 的 offsetTop/offsetLeft 以本元素为原点 */
+  position: relative;
 }
 .tpl-side-item {
   padding: 12px 14px;
@@ -318,10 +328,9 @@ async function confirmDelete() {
 .tpl-side-item:hover {
   border-color: var(--border-strong, #cbd0d8);
 }
-.tpl-side-item.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
+/* 选中态：原来的 border-color + box-shadow(accent 外发光) 静态高亮已撤掉——
+   静态底/边框 + 滑动环 = 两个指示器打架（剪贴板焦点环那轮被否的观感）。
+   选中指示由 fx/FxSelectionRing 的 ring 空心环独自承担（行自身无文字变色）。 */
 .tpl-side-name {
   font-size: 13px;
   font-weight: 600;

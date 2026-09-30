@@ -16,6 +16,7 @@ import {
   Megaphone,
 } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useNotifications } from '@/composables/useNotifications'
 import { useMenuAccess } from '@/composables/useMenuAccess'
@@ -117,6 +118,12 @@ const mainNavItems = computed(() => [
   { key: 'devices', label: t('nav_devices'), badge: '', kbd: 'Ctrl 4' },
 ])
 
+// 滑动选中胶囊的选中 key：只有当前页属于主导航组时才给值，
+// 否则环要跑到 /settings 上会先滑到组底部再消失（跨组本就不该滑，两组各有自己的环）。
+const mainNavActiveKey = computed(() =>
+  mainNavItems.value.some((i) => i.key === props.currentSub) ? props.currentSub : null,
+)
+
 // MA-06：管理控制台外链地址。
 // 优先取本地覆盖键 clipsync-admin-url（localStorage）；否则由当前服务器地址派生
 // 同主机 + 5273 端口（管理台约定端口）；地址为空/非法时回落 http://localhost:5273。
@@ -189,9 +196,19 @@ async function openAdminConsole() {
 
     <!-- ===== Main Navigation ===== -->
     <nav class="sb-nav" :aria-label="t('nav_main')">
+      <!-- 滑动选中胶囊：原来 .active 的 accent-light 底 + 左侧 accent 竖条已从本组件样式里撤掉，
+           改由这个会滑动的 fill 胶囊统一承担（竖条是胶囊的一部分，一起滑）。 -->
+      <FxSelectionRing
+        :active="mainNavActiveKey"
+        variant="fill"
+        bar
+        radius="var(--radius-sm)"
+        :revision="mainNavItems.length"
+      />
       <template v-for="item in mainNavItems" :key="item.key">
         <button
           :class="['sb-item', { active: currentSub === item.key }]"
+          :data-ring-key="item.key"
           :title="isCollapsed ? item.label : undefined"
           :aria-current="currentSub === item.key ? 'page' : undefined"
           @click="emit('navigate', item.key)"
@@ -210,9 +227,16 @@ async function openAdminConsole() {
     <!-- ===== System ===== -->
     <nav class="sb-nav sb-nav--system">
       <div v-if="!isCollapsed" class="sb-sect-label">{{ t('nav_section_system', '系统') }}</div>
+      <FxSelectionRing
+        :active="currentSub === 'settings' ? 'settings' : null"
+        variant="fill"
+        bar
+        radius="var(--radius-sm)"
+      />
       <button
         class="sb-item"
         :class="{ active: currentSub === 'settings' }"
+        data-ring-key="settings"
         :title="isCollapsed ? t('nav_settings') : undefined"
         :aria-current="currentSub === 'settings' ? 'page' : undefined"
         @click="emit('navigate', 'settings')"
@@ -439,6 +463,10 @@ async function openAdminConsole() {
   flex-direction: column;
   padding: 6px 10px;
   gap: 2px;
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素，
+     同时让 .sb-item 的 offsetTop 以本元素为原点（.sb-item 自身是 position:relative，
+     所以不必额外处理，但容器必须定位，否则 offsetParent 会跑到 .sidebar 上去） */
+  position: relative;
 }
 .sidebar--collapsed .sb-nav {
   padding: 6px 0;
@@ -505,38 +533,24 @@ async function openAdminConsole() {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+/* 选中项 hover 时保持透明：与改动前一致（原来 .active 的 accent-light 底也压过 hover 底），
+   选中项是"已经选中"的状态，不需要额外的 hover 反馈。 */
+.sb-item.active:hover {
+  background: transparent;
+  color: var(--accent);
+}
 .sb-item:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
 
-/* Active: accent-soft pill + left accent bar (Clearline 选中语言) */
+/* Active：文字/图标转 accent（这是"状态"，瞬间切换）；
+   accent-soft 底与左侧 accent 竖条已交给 fx/FxSelectionRing 的 fill 胶囊承担——
+   胶囊会从旧项滑到新项，竖条是胶囊的一部分跟着一起滑。
+   这里保留 = 会变成"静态底 + 滑动胶囊"两个指示器打架（剪贴板焦点环那轮踩过的坑）。 */
 .sb-item.active {
-  background: var(--accent-light);
   color: var(--accent);
   font-weight: 600;
-}
-/* Left 2px accent bar on active item (expanded only) */
-.sidebar:not(.sidebar--collapsed) .sb-item.active::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 2.5px;
-  border-radius: 9999px;
-  background: var(--accent);
-}
-/* Collapsed active indicator: left accent bar */
-.sidebar--collapsed .sb-item.active::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--accent);
 }
 
 .sb-label {
