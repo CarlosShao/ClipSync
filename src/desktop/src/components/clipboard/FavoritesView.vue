@@ -1877,15 +1877,15 @@ function cancelEditTags() {
             @drop="onDrop($event, item)"
             @dragend="onDragEnd"
           >
-            <div v-if="batchMode" class="fav-list-check">
-              <input
-                type="checkbox"
-                class="cbx"
-                :checked="selectedIds.has(item.id)"
-                :aria-label="t('select_item', '选择此条')"
-                @change="toggleSelect(item.id)"
-              />
-            </div>
+            <input
+              v-if="batchMode"
+              type="checkbox"
+              class="cbx"
+              :checked="selectedIds.has(item.id)"
+              :aria-label="t('select_item', '选择此条')"
+              @click.stop
+              @change="toggleSelect(item.id)"
+            />
 
             <div class="type-tile" :class="favTileClass(item)">
               <ImageIcon v-if="item.type === 'image'" :size="16" />
@@ -2040,17 +2040,17 @@ function cancelEditTags() {
                 @drop="onDrop($event, item)"
                 @dragend="onDragEnd"
               >
-                <div v-if="batchMode" class="fav-card-check">
+                <!-- 卡头：类型 tile + 来源 + 时间（悬浮操作条盖在右上） -->
+                <div class="fav-card-head">
                   <input
+                    v-if="batchMode"
                     type="checkbox"
                     class="cbx"
                     :checked="selectedIds.has(item.id)"
                     :aria-label="t('select_item', '选择此条')"
+                    @click.stop
                     @change="toggleSelect(item.id)"
                   />
-                </div>
-                <!-- 卡头：类型 tile + 来源 + 时间（悬浮操作条盖在右上） -->
-                <div class="fav-card-head">
                   <div class="fav-card-tile" :class="favTileClass(item)">
                     <component :is="favTileIcon(item)" :size="13" />
                   </div>

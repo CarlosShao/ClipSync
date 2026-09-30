@@ -672,13 +672,11 @@
 .fav-card.fav-item--editing-tags {
   z-index: 30;
 }
-.fav-card-check,
-.fav-list-check {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 3;
-}
+/* 批量勾选框：不再用绝对定位覆盖层。
+   原来 .fav-list-check / .fav-card-check 是 position:absolute + top/left:8px，
+   会压在 type-tile / 卡头内容上（用户反馈"和条目内容冗余在一起、相互挤在一起"）。
+   现在与剪贴板 ClipboardTableRow 完全一致：.cbx 直接作为行的第一个 flex 子项（在流内），
+   内容自然右移，不需要任何专属样式 —— 因此这两条规则被删除。 */
 /* ---- 卡片排版（v2 重设计）：扁平两段式 = 卡头(类型tile+来源+时间) + 内容区 ---- */
 .fav-card-head {
   display: flex;
