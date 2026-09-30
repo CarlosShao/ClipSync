@@ -32,7 +32,7 @@
     class="fx-selection-ring"
     :class="[
       `fx-selection-ring--${variant}`,
-      { 'is-on': visible, 'is-instant': !ready, 'fx-selection-ring--bar': bar },
+      { 'is-on': visible, 'is-instant': !ready || instantOnce, 'fx-selection-ring--bar': bar },
     ]"
     :style="ringStyle"
     aria-hidden="true"
@@ -74,7 +74,11 @@ const props = withDefaults(defineProps<Props>(), {
 
 const ringRef = useTemplateRef<HTMLSpanElement>('ringRef')
 const visible = ref(false)
+// 过渡能力是否已就绪：首次落位后置 true，之后**永不回退**（回退会让下一次落位变成瞬移）
 const ready = ref(false)
+// 一次性抑制：从隐藏恢复落位时不播过渡，避免从陈旧位置滑进来。用完立刻收回，
+// 所以它只影响"恢复"的那一帧，不会像 ready 那样把后续移动一起打成瞬移。
+const instantOnce = ref(false)
 const top = ref(0)
 const height = ref(0)
 const left = ref(0)
@@ -103,6 +107,8 @@ let roContainer: ResizeObserver | null = null
 let roTarget: ResizeObserver | null = null
 // 定位基准自检的去重表（见 sync()）：逐帧重建的告警没有诊断价值，只会淹掉真问题
 const warned = new WeakSet<HTMLElement>()
+// 「找不到选中项」告警的去重表（按容器去重：一个容器只喊一次）
+const warnedMissing = new WeakSet<HTMLElement>()
 
 function sync() {
   const box = container()
@@ -113,6 +119,15 @@ function sync() {
   }
   const target = box.querySelector<HTMLElement>(sel)
   if (!target) {
+    // 静默失败点：active 有值但容器里没有任何元素带这个 key（键名写错 / 属性没挂上 /
+    // 该行还没渲染）。不报的话表现为"这个列表的动效没生效"，很难查。
+    if (import.meta.env.DEV && !warnedMissing.has(box)) {
+      warnedMissing.add(box)
+      console.warn(
+        `[FxSelectionRing] 容器内找不到选中项 ${sel}：环会保持隐藏。` +
+          `请检查行元素是否挂了 ${props.keyAttr}，以及 active 的取值是否与它一致。`,
+      )
+    }
     hide()
     return
   }
@@ -149,12 +164,21 @@ function sync() {
   height.value = nextHeight
   left.value = nextLeft
   width.value = nextWidth
+
+  const wasHidden = !visible.value
   visible.value = true
 
   if (!ready.value) {
-    // 首帧：先以 is-instant 落位（无过渡），下一帧恢复过渡能力
+    // 首帧：以 is-instant 落位（无过渡），下一帧恢复过渡能力
     nextTick(() => {
       ready.value = true
+    })
+  } else if (wasHidden) {
+    // 从隐藏恢复：这一帧不播过渡（否则会从陈旧位置滑过来），下一帧立刻收回抑制。
+    // 注意这里**不能**动 ready —— 那会把接下来的正常移动也一起打成瞬移。
+    instantOnce.value = true
+    nextTick(() => {
+      instantOnce.value = false
     })
   }
 }
@@ -175,14 +199,14 @@ function detachTarget() {
 }
 
 /**
- * 隐藏环，并把 ready 打回 false。
- * ready 回退很关键：否则「选中项离开这个列表 → 又回到这个列表」时，环会带着上一次的
- * 陈旧位置瞬间显形、再从那儿滑到新位置（表现为"先在别处闪一下再滑过来"）。
- * 回退后下一次落位走 is-instant，直接出现在正确位置。
+ * 隐藏环（选中项不在本容器里 / key 传空）。
+ * 刻意**不**回退 ready：ready 表示"过渡能力已就绪"，一旦就绪就永久有效；
+ * 回退它会让下一次落位退化成瞬移 —— 对 active 来自路由 prop 的宿主（侧边栏、AI 侧栏），
+ * 导航过程中很容易经过一次空值，那就会变成"每次都瞬移、看着像没做动效"。
+ * 从隐藏恢复时避免"从陈旧位置滑进来"的诉求，交给一次性的 instantOnce（见 sync）。
  */
 function hide() {
   visible.value = false
-  ready.value = false
   detachTarget()
 }
 
@@ -272,10 +296,16 @@ onUnmounted(() => {
    曾经想画在行下面（z-index 0 + DOM 排前面）以保持"底色在文字之下"，但那样太脆：
    行只要有不透明底色就永远看不见 —— 而这不罕见（--bg-surface / hover 的 --bg-hover 都是不透明的，
    模板库 .tpl-side-item 就自带 --bg-surface）。
-   改成压在上面用低透明度着色：--accent-light 全站都是 alpha ≤ 0.14 的 rgba，
-   盖在文字上的色偏肉眼不可见，但任何底色都盖不掉它。 */
+   改成压在上面用低透明度着色。
+
+   着色的强度是踩过坑才定下来的：一开始用主题的 --accent-light（5-14%，部分主题低到 5%），
+   在侧边栏 / AI 侧栏这类"扁平大色块面板"上几乎看不出有东西在动，被用户判为"没效果"；
+   而同时接入的 ring 变体（1.5px 100% 实色边框）一眼就能看出在滑。两者视觉权重差太远。
+   现在用 accent 16% 实色 + 1px accent 34% 边框把这个"会滑的胶囊"勾出轮廓，
+   位移才读得出来；边框在 border-box 内，不改变量出来的尺寸。 */
 .fx-selection-ring--fill {
-  background: var(--accent-light, color-mix(in srgb, var(--accent) 10%, transparent));
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
   border-radius: var(--radius-sm);
   z-index: 5;
 }

@@ -671,8 +671,11 @@
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+/* 选中态：只保留文字/图标转 accent（"状态"瞬间切换）。
+   accent-soft 底与左侧 accent 竖条已交给 fx/FxSelectionRing 的 fill 胶囊承担——
+   胶囊会从旧分组滑到新分组，竖条是胶囊的一部分跟着一起滑。
+   这里保留 = "静态底 + 滑动胶囊"两个指示器打架（剪贴板焦点环那轮踩过的坑）。 */
 .set-nav a.active {
-  background: var(--accent-light);
   color: var(--accent);
   font-weight: 600;
 }

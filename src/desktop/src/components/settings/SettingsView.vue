@@ -40,6 +40,7 @@ import BillingSubPage from './settings-dialog/sub-pages/BillingSubPage.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { useSettingsSearch } from './useSettingsSearch'
+import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 
 const { t, tf, currentLang } = useI18n()
 const { can } = useMenuAccess()
@@ -414,9 +415,15 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
       <!-- 原型排版：左锚点导航 + 右分组堆叠 -->
       <div v-else class="set-layout">
         <nav class="set-nav" :aria-label="t('sg_title', '设置')">
+          <!-- 滑动选中胶囊：原来 .set-nav a.active 的静态 accent-light 底已从 prototype-v2.css 撤掉，
+               改由这个会滑动的 fill 胶囊承担（文字/图标转 accent 的状态变化保留）。
+               .set-nav 自身是 position: sticky，已经是定位元素，可直接当环的定位基准。
+               activeSection 由滚动监听更新，所以夹在中间的 section 会一个个划过去 → 胶囊也跟着滑。 -->
+          <FxSelectionRing :active="activeSection" variant="fill" bar :revision="sections.length" />
           <a
             v-for="s in sections"
             :key="s.key"
+            :data-ring-key="s.key"
             :class="{ active: activeSection === s.key }"
             @click.prevent="scrollToSection(s.key)"
           >
