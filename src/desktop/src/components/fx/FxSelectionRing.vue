@@ -10,7 +10,7 @@
 
      两种形态都压在行**上面**，所以对 DOM 顺序没有要求，也不怕行自带不透明底色：
        ring —— 空心 accent 边框 + 外发光 + 透明底（用于自带卡片底/边框的行）
-       fill —— 半透明 accent-soft 填充（用于扁平导航/树节点）；alpha≤0.14，盖在文字上肉眼不可见
+       fill —— accent 16% 填充 + 1px accent 34% 边框（用于扁平导航/树节点/分段控件）
 
      容器 = 环的 parentElement（所以 offsetTop/offsetLeft 与环的定位原点天然一致）。
      「谁是选中项」由宿主决定：路由选中、点击选中、或 hover 跟随都行——组件不关心语义。
@@ -20,8 +20,8 @@
          等于自己把自己的定位基准删掉。绝对定位元素不占布局，常驻成本可忽略。
        · 位置/尺寸没变就不写 style：ResizeObserver 在行高过渡期间会逐帧回调，
          每帧都写 style 会让 180ms 过渡被反复重定向，末端出现"蹭"的感觉。
-       · 只有 transform / height 参与过渡（left/width 直改）：多数列表行宽是恒定的，
-         让宽度也参与过渡反而在侧边栏折叠等场景产生奇怪的拉伸。
+       · 过渡属性按 axis 分档（y/x/both），一套属性打天下必然会漏掉另一个维度：
+         横向控件用 y 时 left/width 不参与过渡 → 环"跳"而不是"滑"；网格用 y 同理（同行左右移动会瞬移）。
        · 首次定位用 is-instant 屏蔽过渡：否则环会从上一次的位置一路滑进来（页面加载时
          表现为"从列表顶端滑下"这种没人想要的入场动画）。
        · 减少动画双通道都压掉：html.reduce-motion 由 globals.css 全局压 duration，
@@ -32,6 +32,7 @@
     class="fx-selection-ring"
     :class="[
       `fx-selection-ring--${variant}`,
+      `fx-selection-ring--axis-${axis}`,
       { 'is-on': visible, 'is-instant': !ready || instantOnce, 'fx-selection-ring--bar': bar },
     ]"
     :style="ringStyle"
@@ -54,6 +55,13 @@ interface Props {
   variant?: 'ring' | 'fill'
   /** fill 变体的左侧 accent 竖条（Clearline 选中语言），随胶囊一起滑动 */
   bar?: boolean
+  /**
+   * 位移轴。**必须按宿主的布局维度显式选**，选错会表现为"跳"而不是"滑"：
+   * y（默认）：纵向列表/导航（侧边栏、剪贴板、树、通知…）—— 只过渡 transform + height
+   * x：横向分段控件（视图切换、时间流分段、标签栏）—— 只过渡 left + width
+   * both：二维网格（卡片墙）—— 四个属性都过渡
+   */
+  axis?: 'y' | 'x' | 'both'
   /** 圆角。ring 默认走 --radius-md（对齐卡片），fill 默认走 --radius-sm（对齐导航项） */
   radius?: string
   /** 环相对行的内缩量（px），行高内缩一圈用；默认 0 = 与行等高 */
@@ -67,6 +75,7 @@ const props = withDefaults(defineProps<Props>(), {
   keyAttr: 'data-ring-key',
   variant: 'ring',
   bar: false,
+  axis: 'y',
   radius: '',
   inset: 0,
   revision: undefined,
@@ -266,20 +275,37 @@ onUnmounted(() => {
 <style>
 /* 非 scoped：全站列表共用同一份环样式，避免各写各的导致观感分叉 */
 .fx-selection-ring {
+  --ring-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
   visibility: hidden;
-  /* expo-out：位移类收尾要比全站 --ease 更快更稳，否则长距离滑动末尾会"蹭" */
+}
+/* 位移轴：过渡属性按布局维度分档。全站 --ease 是给短距离 hover 用的，
+   位移类的收尾要更快更稳（expo-out），否则长距离滑动末尾会"蹭"。 */
+.fx-selection-ring--axis-y {
   transition:
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 180ms var(--ring-ease),
+    height 180ms var(--ring-ease);
+}
+.fx-selection-ring--axis-x {
+  transition:
+    left 180ms var(--ring-ease),
+    width 180ms var(--ring-ease);
+}
+.fx-selection-ring--axis-both {
+  transition:
+    transform 180ms var(--ring-ease),
+    height 180ms var(--ring-ease),
+    left 180ms var(--ring-ease),
+    width 180ms var(--ring-ease);
 }
 .fx-selection-ring.is-on {
   visibility: visible;
 }
-/* 首次落位不播过渡：否则会从初始位置滑进来 */
+/* 首次落位不播过渡：否则会从初始位置滑进来。
+   特异性 (0,2,0) 高于上面三条 axis 规则 (0,1,0)，稳赢。 */
 .fx-selection-ring.is-instant {
   transition: none;
 }

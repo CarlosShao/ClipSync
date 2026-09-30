@@ -477,6 +477,9 @@
   padding: 2px;
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
+  /* FxSelectionRing 的定位基准：环是本容器的绝对定位子元素；
+     .fav-view-btn 自身是 static，容器不定位的话 offsetParent 会跑到更外层 */
+  position: relative;
 }
 .fav-view-btn {
   display: inline-flex;
@@ -496,10 +499,11 @@
 .fav-view-btn:hover {
   color: var(--text-primary);
 }
+/* 选中态：只保留图标转 accent（"状态"瞬间切换）。
+   原来的静态白底 + 卡片阴影已撤掉，改由 fx/FxSelectionRing 的横向滑动指示块承担——
+   静态底 + 滑动块 = 两个指示器打架（剪贴板焦点环那轮踩过的坑）。 */
 .fav-view-btn.active {
-  background: var(--bg-surface);
   color: var(--accent);
-  box-shadow: var(--shadow-card);
 }
 
 /* ---- 标签筛选条(v2 chip 语言) ---- */

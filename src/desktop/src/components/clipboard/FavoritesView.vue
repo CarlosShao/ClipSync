@@ -20,6 +20,8 @@ import { TAG_PRESET_COLORS, getTagDisplayColor, tagColorStyle } from '@/utils/fa
 import { COLLECTION_ICON_MAP, renderCollectionIcon } from '@/utils/favorites/collectionIcons'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
+import DecryptedText from '@/components/fx/DecryptedText.vue'
 import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 // A2：页内内联 AI（总结卡 + 整理流程卡），结果直接在收藏页展示，不再跳侧栏
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
@@ -54,6 +56,8 @@ const selectedIds = ref<Set<string>>(new Set())
 // 收藏条目列表没有「选中项」概念（只有 hover），滑动环由 hover 驱动：
 // 记住当前悬停行的 id，容器 mouseleave 时清空（null 就不显示环）。
 const hoveredFavKey = ref<string | null>(null)
+// 统计卡光标聚光色：与剪贴板工具栏同一套配方（DOM 侧可直接用 color-mix，不需要 canvas 那套 rgb 解析）
+const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
 const viewMode = ref<'grid' | 'list'>('list')
 const collapsedGroups = ref<Set<string>>(new Set())
 
@@ -1367,26 +1371,26 @@ function cancelEditTags() {
 
     <!-- 原型 v1 统计卡（真实数据） -->
     <div class="fav-stats">
-      <div class="clip-stat">
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Star :size="12" />{{ tf('fav_stat_total', '收藏总数') }}</span>
         <span class="clip-stat-v">{{ favoriteCount }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_total_sub', '跨 {n} 个合集', { n: collections.flatCollections.value.length }) }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><History :size="12" />{{ tf('fav_stat_month', '本月新增') }}</span>
         <span class="clip-stat-v">{{ monthNewCount }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_month_sub', '按收藏时间统计') }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Tag :size="12" />{{ tf('fav_stat_tags', '标签') }}</span>
         <span class="clip-stat-v">{{ allTags.length }}<em>{{ tf('stats_unit_ge', '个') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_tags_sub', '全局标签体系') }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Wifi :size="12" />{{ tf('stats_devices', '在线设备') }}</span>
         <span class="clip-stat-v">{{ onlineDeviceCount }}<em>{{ tf('stats_unit_tai', '台') }}</em></span>
         <span class="clip-stat-d">{{ tf('stats_dev_sub', '端到端加密 · 实时同步') }}</span>
-      </div>
+      </FxSpotlightCard>
     </div>
 <div class="fav-col-panel" :style="{ width: sidebarWidth + 'px' }">
       <div class="fav-col-panel-header">
@@ -1588,8 +1592,18 @@ function cancelEditTags() {
             </Button>
           </template>
           <div class="fav-view-toggle">
+            <!-- 横向滑动指示块：视图切换是**横向**分段控件，必须显式 axis="x"，
+                 否则 left/width 不参与过渡 → 指示块会"跳"过去而不是"滑"过去。
+                 原来 .fav-view-btn.active 的静态白底已撤掉，改由它承担（图标转 accent 保留）。 -->
+            <FxSelectionRing
+              :active="viewMode"
+              variant="fill"
+              axis="x"
+              radius="calc(var(--radius-sm) - 2px)"
+            />
             <button
               :class="['fav-view-btn', { active: viewMode === 'grid' }]"
+              data-ring-key="grid"
               :title="t('fav_grid_view')"
               @click="viewMode = 'grid'"
             >
@@ -1597,6 +1611,7 @@ function cancelEditTags() {
             </button>
             <button
               :class="['fav-view-btn', { active: viewMode === 'list' }]"
+              data-ring-key="list"
               :title="t('fav_list_view')"
               @click="viewMode = 'list'"
             >
@@ -1792,7 +1807,9 @@ function cancelEditTags() {
         <!-- Load failed: 与真空态区分，提供重试入口 -->
         <div v-else-if="loadError && favoriteItems.length === 0" class="fav-empty">
           <div class="fav-empty-icon fav-empty-icon-error"><AlertTriangle :size="48" :stroke-width="1.2" /></div>
-          <h3 class="fav-empty-title">{{ t('load_failed_title') }}</h3>
+          <h3 class="fav-empty-title">
+            <DecryptedText :text="t('load_failed_title')" :speed="42" :use-original-chars-only="true" reveal-direction="center" :sequential="true" animate-on="view" />
+          </h3>
           <p class="fav-empty-desc">{{ t('load_failed_desc') }}</p>
           <Button variant="outline" size="sm" class="fav-retry-btn" @click="reloadFavorites">
             <RefreshCw :size="14" /> {{ t('retry_btn') }}
@@ -1801,13 +1818,17 @@ function cancelEditTags() {
         <!-- Empty -->
         <div v-else-if="favoriteItems.length === 0 && !searchInput" class="fav-empty">
           <div class="fav-empty-icon"><Star :size="48" :stroke-width="1.2" /></div>
-          <h3 class="fav-empty-title">{{ t('fav_empty_title') }}</h3>
+          <h3 class="fav-empty-title">
+            <DecryptedText :text="t('fav_empty_title')" :speed="42" :use-original-chars-only="true" reveal-direction="center" :sequential="true" animate-on="view" />
+          </h3>
           <p class="fav-empty-desc">{{ t('fav_empty_desc') }}</p>
           <Button @click="goToClipboard"><ClipboardList :size="14" /> {{ t('fav_empty_action') }}</Button>
         </div>
         <div v-else-if="favoriteItems.length === 0 && searchInput" class="fav-empty">
           <div class="fav-empty-icon"><Search :size="48" :stroke-width="1.2" /></div>
-          <h3 class="fav-empty-title">{{ t('fav_search_empty_title') }}</h3>
+          <h3 class="fav-empty-title">
+            <DecryptedText :text="t('fav_search_empty_title')" :speed="42" :use-original-chars-only="true" reveal-direction="center" :sequential="true" animate-on="view" />
+          </h3>
           <p class="fav-empty-desc">{{ t('fav_search_empty_desc') }}</p>
         </div>
 
