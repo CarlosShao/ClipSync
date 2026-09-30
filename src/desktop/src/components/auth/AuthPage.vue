@@ -11,6 +11,9 @@ import { Eye, EyeOff, Sun, Moon, ArrowLeft, X, Languages } from 'lucide-vue-next
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
+import Waves from '@/components/fx/Waves.vue'
+import DecryptedText from '@/components/fx/DecryptedText.vue'
+import StarBorder from '@/components/fx/StarBorder.vue'
 
 defineOptions({ name: 'AuthPage' })
 const emit = defineEmits<{ (e: 'login-success'): void }>()
@@ -19,6 +22,11 @@ const configStore = useConfigStore()
 const { t, tf, currentLang, setLang } = useI18n()
 const toast = useSonner()
 const { toggleMode, resolvedMode } = useTheme()
+
+// 右栏波浪线色：品牌面板刻意不接主题 token（见样式区注释），线色按明暗取面板自有色板
+const waveLineColor = computed(() =>
+  resolvedMode.value === 'dark' ? 'rgba(221, 214, 254, 0.2)' : 'rgba(255, 255, 255, 0.15)'
+)
 
 // ===== 语言切换入口（C5①）：登录页是未登录态唯一可见页面，必须能改语言 =====
 const langMenuOpen = ref(false)
@@ -612,7 +620,7 @@ const isRegisterView = computed(() => authView.value === 'register')
         </div>
         <div class="auth-card">
           <!-- ===== LOGIN ===== -->
-          <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view">
+          <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view reveal-stagger">
             <div class="auth-brand">
               <div class="auth-logo">C</div>
               <span class="auth-brand-name">ClipSync</span>
@@ -679,9 +687,17 @@ const isRegisterView = computed(() => authView.value === 'register')
                   t('login_forgot_code')
                 }}</Button>
               </div>
-              <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
-                <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
-              </Button>
+              <StarBorder
+                as="div"
+                custom-class="w-full"
+                color="color-mix(in srgb, var(--primary) 70%, white)"
+                speed="4s"
+                :thickness="2"
+              >
+                <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
+                  <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
+                </Button>
+              </StarBorder>
             </div>
 
             <!-- Password Login -->
@@ -724,9 +740,17 @@ const isRegisterView = computed(() => authView.value === 'register')
                 <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
                 <Button variant="link" size="sm" class="link-btn" @click="openForgot">{{ t('login_forgot') }}</Button>
               </div>
-              <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
-                <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
-              </Button>
+              <StarBorder
+                as="div"
+                custom-class="w-full"
+                color="color-mix(in srgb, var(--primary) 70%, white)"
+                speed="4s"
+                :thickness="2"
+              >
+                <Button class="w-full" :disabled="isLoggingIn" @click="handleLogin">
+                  <span v-if="isLoggingIn" class="spinner" /> {{ t('login_signin') }}
+                </Button>
+              </StarBorder>
             </div>
 
             <div class="auth-switch">
@@ -774,7 +798,7 @@ const isRegisterView = computed(() => authView.value === 'register')
           </div>
 
           <!-- ===== 2FA 登录挑战 ===== -->
-          <div v-else-if="authView === 'login-2fa'" class="auth-view">
+          <div v-else-if="authView === 'login-2fa'" class="auth-view reveal-stagger">
             <Button variant="ghost" size="sm" class="back-btn" @click="backToLoginFrom2FA"
               ><ArrowLeft :size="14" /> {{ t('login_2fa_back') }}</Button
             >
@@ -797,14 +821,22 @@ const isRegisterView = computed(() => authView.value === 'register')
                   @keydown.enter="handle2FAVerify"
                 />
               </div>
-              <Button class="w-full" :disabled="isVerifying2FA" @click="handle2FAVerify">
-                <span v-if="isVerifying2FA" class="spinner" /> {{ t('login_2fa_verify') }}
-              </Button>
+              <StarBorder
+                as="div"
+                custom-class="w-full"
+                color="color-mix(in srgb, var(--primary) 70%, white)"
+                speed="4s"
+                :thickness="2"
+              >
+                <Button class="w-full" :disabled="isVerifying2FA" @click="handle2FAVerify">
+                  <span v-if="isVerifying2FA" class="spinner" /> {{ t('login_2fa_verify') }}
+                </Button>
+              </StarBorder>
             </div>
           </div>
 
           <!-- ===== REGISTER ===== -->
-          <div v-else-if="authView === 'register'" class="auth-view">
+          <div v-else-if="authView === 'register'" class="auth-view reveal-stagger">
             <Button variant="ghost" size="sm" class="back-btn" @click="switchAuthView('login-phone')"
               ><ArrowLeft :size="14" /> {{ t('btn_back_login') }}</Button
             >
@@ -958,9 +990,17 @@ const isRegisterView = computed(() => authView.value === 'register')
                   >{{ t('reg_privacy') }}</Button
                 >
               </label>
-              <Button class="w-full" :disabled="isRegistering" @click="handleRegister">
-                <span v-if="isRegistering" class="spinner" /> {{ t('reg_submit') }}
-              </Button>
+              <StarBorder
+                as="div"
+                custom-class="w-full"
+                color="color-mix(in srgb, var(--primary) 70%, white)"
+                speed="4s"
+                :thickness="2"
+              >
+                <Button class="w-full" :disabled="isRegistering" @click="handleRegister">
+                  <span v-if="isRegistering" class="spinner" /> {{ t('reg_submit') }}
+                </Button>
+              </StarBorder>
             </div>
             <div class="auth-divider">
               <span>{{ t('reg_or_social') }}</span>
@@ -1000,7 +1040,7 @@ const isRegisterView = computed(() => authView.value === 'register')
           </div>
 
           <!-- ===== SET PASSWORD ===== -->
-          <div v-else-if="authView === 'set-password'" class="auth-view">
+          <div v-else-if="authView === 'set-password'" class="auth-view reveal-stagger">
             <Button variant="ghost" size="sm" class="back-btn" @click="goBackToLogin()"
               ><ArrowLeft :size="14" /> {{ t('btn_back_login') }}</Button
             >
@@ -1076,9 +1116,17 @@ const isRegisterView = computed(() => authView.value === 'register')
                   </Button>
                 </div>
               </div>
-              <Button class="w-full" :disabled="isSettingPwd || !setPwdValid" @click="handleSetPassword">
-                <span v-if="isSettingPwd" class="spinner" /> {{ t('sp_complete_register') }}
-              </Button>
+              <StarBorder
+                as="div"
+                custom-class="w-full"
+                color="color-mix(in srgb, var(--primary) 70%, white)"
+                speed="4s"
+                :thickness="2"
+              >
+                <Button class="w-full" :disabled="isSettingPwd || !setPwdValid" @click="handleSetPassword">
+                  <span v-if="isSettingPwd" class="spinner" /> {{ t('sp_complete_register') }}
+                </Button>
+              </StarBorder>
             </div>
           </div>
         </div>
@@ -1087,8 +1135,21 @@ const isRegisterView = computed(() => authView.value === 'register')
       <!-- Right: Decorative panel -->
       <div class="auth-right">
         <div class="auth-right-bg"></div>
+        <Waves class="auth-right-waves" :line-color="waveLineColor" :wave-amp-x="26" :wave-amp-y="12" />
+        <div class="auth-right-glow" aria-hidden="true"></div>
         <div class="auth-right-content">
-          <p class="quote-text">{{ t('login_quote') || 'The best way to sync your clipboard across devices.' }}</p>
+          <p class="quote-text">
+            <DecryptedText
+              :key="currentLang"
+              :text="t('login_quote') || 'The best way to sync your clipboard across devices.'"
+              animate-on="view"
+              sequential
+              reveal-direction="start"
+              use-original-chars-only
+              :speed="28"
+              encrypted-class-name="text-white/40"
+            />
+          </p>
           <p class="quote-author">— Carlos Shao, Founder</p>
         </div>
       </div>
@@ -1752,6 +1813,67 @@ const isRegisterView = computed(() => authView.value === 'register')
 :global(html.dark) .auth-right-bg::after {
   background-image: radial-gradient(circle at 2px 2px, rgba(255, 255, 255, 0.06) 1px, transparent 0);
 }
+.auth-right-waves {
+  position: absolute;
+  inset: 0;
+  animation: fx-fade-in 1s var(--ease) backwards;
+}
+
+.auth-right-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 420px;
+  height: 300px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 22%, transparent), transparent 72%);
+  filter: blur(12px);
+  transform: translate(-50%, -50%);
+  animation: auth-glow-breathe 7s ease-in-out infinite alternate;
+}
+
+.auth-view .auth-logo {
+  animation: auth-logo-pop 0.5s var(--ease) 0.15s backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-right-waves,
+  .auth-right-glow,
+  .auth-view .auth-logo {
+    animation: none;
+  }
+}
+
+@keyframes fx-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes auth-glow-breathe {
+  from {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@keyframes auth-logo-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .auth-right-content {
   position: relative;
   z-index: var(--z-sticky);
@@ -1772,6 +1894,7 @@ const isRegisterView = computed(() => authView.value === 'register')
   font-size: 13px;
   color: rgba(255, 255, 255, 0.5);
   margin: 0;
+  animation: fx-fade-in 0.8s var(--ease) 0.9s backwards;
 }
 
 /* ===== Forgot Password Modal ===== */

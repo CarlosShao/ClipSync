@@ -6,6 +6,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { Copy, X, RefreshCw, Sparkles, MessageSquare } from 'lucide-vue-next'
 import AiStreamText from './AiStreamText.vue'
+import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
 
 const props = defineProps<{
   title: string
@@ -24,7 +25,7 @@ const emit = defineEmits<{
   retry: []
 }>()
 
-const { t, tf } = useI18n()
+const { tf } = useI18n()
 const toast = useSonner()
 
 const loadingLabel = computed(() => tf('inline_ai_loading', '分析中…'))
@@ -42,9 +43,7 @@ function copyText() {
 function continueInChat() {
   window.dispatchEvent(new CustomEvent('clipsync:toggle-ai'))
   setTimeout(() => {
-    const detail = props.text
-      ? { content: '请继续：', context: props.text.slice(0, 2000) }
-      : { content: '请继续：' }
+    const detail = props.text ? { content: '请继续：', context: props.text.slice(0, 2000) } : { content: '请继续：' }
     window.dispatchEvent(new CustomEvent('clipsync:ai-send-message', { detail }))
   }, 120)
 }
@@ -54,15 +53,32 @@ function continueInChat() {
   <div class="inline-ai-card">
     <div class="iac-head">
       <span class="iac-title"><Sparkles :size="13" />{{ title }}</span>
-      <button v-if="closable !== false" type="button" class="pl-icon-btn" :title="tf('inline_ai_close', '关闭')" @click="emit('close')">
+      <button
+        v-if="closable !== false"
+        type="button"
+        class="pl-icon-btn"
+        :title="tf('inline_ai_close', '关闭')"
+        @click="emit('close')"
+      >
         <X :size="14" />
       </button>
     </div>
 
-    <!-- 等待后端返回：转圈；打字机播出中：渲染流式 Markdown + 光标 -->
+    <!-- 等待后端返回：晶格加载（fx/LatticeLoader 的 working 态，自带角色与状态播报） -->
     <div v-if="status === 'loading' && !(streaming || streamedText)" class="iac-loading">
-      <span class="iac-spinner" />
-      <span>{{ loadingLabel }}</span>
+      <FxLatticeLoader
+        :label="loadingLabel"
+        :announce="loadingLabel"
+        status="working"
+        :grid="3"
+        pattern="orbit"
+        :cell-size="5"
+        :gap="2"
+        :font-size="12.5"
+        :show-timer="false"
+        color="var(--accent)"
+        glow
+      />
     </div>
     <div v-else-if="status === 'loading'" class="iac-body markdown-body">
       <AiStreamText :text="streamedText" :done="false" />
@@ -89,7 +105,12 @@ function continueInChat() {
         <button type="button" class="pl-btn pl-btn--sm" :title="tf('inline_ai_copy', '复制')" @click="copyText">
           <Copy :size="12" /><span>{{ tf('inline_ai_copy', '复制') }}</span>
         </button>
-        <button type="button" class="pl-btn pl-btn--sm" :title="tf('inline_ai_continue', '在 AI 助手中继续')" @click="continueInChat">
+        <button
+          type="button"
+          class="pl-btn pl-btn--sm"
+          :title="tf('inline_ai_continue', '在 AI 助手中继续')"
+          @click="continueInChat"
+        >
           <MessageSquare :size="12" /><span>{{ tf('inline_ai_continue', '在 AI 助手中继续') }}</span>
         </button>
       </div>
@@ -144,19 +165,6 @@ function continueInChat() {
   padding: 16px 12px;
   font-size: 12.5px;
   color: var(--text-secondary);
-}
-.iac-spinner {
-  width: 13px;
-  height: 13px;
-  border: 2px solid var(--border-default);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: iac-spin 0.8s linear infinite;
-}
-@keyframes iac-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .iac-error {
   display: flex;

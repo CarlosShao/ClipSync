@@ -10,6 +10,8 @@ import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { fetchFullContentDecrypted } from '@/composables/clipboardLoad'
 import { isE2eItem } from '@/utils/e2eCrypto'
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
+import StarBorder from '@/components/fx/StarBorder.vue'
 import {
   Copy,
   Star,
@@ -41,6 +43,10 @@ const emit = defineEmits<{
 const { t, tf } = useI18n()
 const toast = useSonner()
 
+// fx 动效配色：抽屉内容面板聚光 + 底部主操作绕边流光（与工具栏 CTA 同一套 accent 配方）
+const PANEL_SPOT = 'color-mix(in srgb, var(--accent) 10%, transparent)'
+const FOOT_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
+
 const TYPE_META: Record<string, { tile: string; badge: string; label: string; icon: any }> = {
   text: { tile: 't-text', badge: 'b-text', label: '文本', icon: Type },
   link: { tile: 't-link', badge: 'b-link', label: '链接', icon: Link2 },
@@ -52,7 +58,12 @@ const TYPE_META: Record<string, { tile: string; badge: string; label: string; ic
 const meta = computed(() => TYPE_META[props.item?.type || 'text'] || TYPE_META.text)
 const isCode = computed(() => {
   const c = fullContent.value
-  return !!props.item && props.item.type !== 'file' && props.item.type !== 'image' && /[{;=]\s*$|^\s*(function|const|let|var|import|class)\b|<\/?[a-z]+>/m.test(c)
+  return (
+    !!props.item &&
+    props.item.type !== 'file' &&
+    props.item.type !== 'image' &&
+    /[{;=]\s*$|^\s*(function|const|let|var|import|class)\b|<\/?[a-z]+>/m.test(c)
+  )
 })
 
 /* B7：E2E 条目按需解密——打开抽屉时拉全文解密入缓存；失败保持 [E2E] 占位 */
@@ -95,9 +106,24 @@ function fmtTime(ts: number): string {
 }
 
 const AI_ACTS = [
-  { key: 'summary', i18n: 'ai_act_summary', fallback: '总结', prompt: '请总结以下内容：提炼核心要点与主题，中文输出，简明扼要。' },
-  { key: 'translate', i18n: 'ai_act_translate', fallback: '翻译为英文', prompt: '请将以下内容完整翻译为英文，只输出译文，不要附加解释。' },
-  { key: 'extract', i18n: 'ai_act_extract', fallback: '提取关键信息', prompt: '请从以下内容中提取关键信息（要点、链接、数字、代码要点等），以简洁列表输出。' },
+  {
+    key: 'summary',
+    i18n: 'ai_act_summary',
+    fallback: '总结',
+    prompt: '请总结以下内容：提炼核心要点与主题，中文输出，简明扼要。',
+  },
+  {
+    key: 'translate',
+    i18n: 'ai_act_translate',
+    fallback: '翻译为英文',
+    prompt: '请将以下内容完整翻译为英文，只输出译文，不要附加解释。',
+  },
+  {
+    key: 'extract',
+    i18n: 'ai_act_extract',
+    fallback: '提取关键信息',
+    prompt: '请从以下内容中提取关键信息（要点、链接、数字、代码要点等），以简洁列表输出。',
+  },
 ] as const
 
 // A6 抽屉原位 AI：页内 InlineAiCard 出结果，不跳侧栏；再次点击同一按钮收起，切换条目自动收起
@@ -207,23 +233,35 @@ function openInBrowser() {
 
 <template>
   <Teleport to="body">
-    <template v-if="item">
+    <!-- 进场沿用 .drawer 自带的 pl-slide-l（260ms，原型既有）；Transition 主要负责退场。
+         :duration 显式兜底：reduce-motion 把 transition 压到 0.01ms 时 transitionend
+         仍会触发，但显式时长保证任何情况下元素都不会卡在离场状态 -->
+    <Transition name="fx-drawer" :duration="{ enter: 260, leave: 200 }">
       <!-- 原型 drawer：无遮罩，点击其他条目直接切换内容；仅 ❌ / Esc 关闭 -->
-      <aside class="drawer" role="dialog" :aria-label="t('clip_drawer_title', '条目详情')">
+      <aside v-if="item" class="drawer" role="dialog" :aria-label="t('clip_drawer_title', '条目详情')">
         <div class="drawer-head">
           <div class="type-tile" :class="meta.tile">
             <component :is="meta.icon" :size="16" />
           </div>
           <div>
             <div class="dt">{{ tf('clip_drawer_title', '条目详情') }}</div>
-            <div class="dd">{{ t('clip_drawer_from', '来自') }} {{ item.source || 'Desktop' }} · {{ fmtTime(item.timestamp) }}</div>
+            <div class="dd">
+              {{ t('clip_drawer_from', '来自') }} {{ item.source || 'Desktop' }} · {{ fmtTime(item.timestamp) }}
+            </div>
           </div>
-          <button type="button" class="pl-icon-btn" style="margin-left: auto" :title="t('close')" @click="emit('close')">
+          <button
+            type="button"
+            class="pl-icon-btn"
+            style="margin-left: auto"
+            :title="t('close')"
+            @click="emit('close')"
+          >
             <X :size="15" />
           </button>
         </div>
 
-        <div class="drawer-body">
+        <!-- :key 强制切换条目时重挂载 → 播放 pl-fade 淡入；顺带重置滚动与图片查看状态 -->
+        <div :key="item.id" class="drawer-body">
           <!-- 图片：可缩放/旋转/拖拽查看（能力对齐老版图片弹窗） -->
           <div v-if="item.type === 'image'" class="panel drawer-content-panel drawer-img-panel">
             <div
@@ -246,21 +284,49 @@ function openInBrowser() {
                 }"
               />
             </div>
-            <div v-else class="pl-empty" style="padding: 32px 16px"><ImageIcon :size="24" /><div class="t">{{ t('loading') }}</div></div>
+            <div v-else class="pl-empty" style="padding: 32px 16px">
+              <ImageIcon :size="24" />
+              <div class="t">{{ t('loading') }}</div>
+            </div>
             <div v-if="hasImg" class="drawer-img-bar">
-              <button type="button" class="pl-icon-btn" :disabled="imgZoom <= IMG_ZOOM_MIN" :title="tf('img_zoom_out', '缩小')" @click="zoomOut">
+              <button
+                type="button"
+                class="pl-icon-btn"
+                :disabled="imgZoom <= IMG_ZOOM_MIN"
+                :title="tf('img_zoom_out', '缩小')"
+                @click="zoomOut"
+              >
                 <ZoomOut :size="14" />
               </button>
               <span class="drawer-img-zoom-label">{{ Math.round(imgZoom * 100) }}%</span>
-              <button type="button" class="pl-icon-btn" :disabled="imgZoom >= IMG_ZOOM_MAX" :title="tf('img_zoom_in', '放大')" @click="zoomIn">
+              <button
+                type="button"
+                class="pl-icon-btn"
+                :disabled="imgZoom >= IMG_ZOOM_MAX"
+                :title="tf('img_zoom_in', '放大')"
+                @click="zoomIn"
+              >
                 <ZoomIn :size="14" />
               </button>
-              <button v-if="imgZoom !== 1 || imgRotate !== 0" type="button" class="pl-icon-btn drawer-img-reset" :title="tf('img_reset', '重置')" @click="resetImgZoom">1:1</button>
+              <button
+                v-if="imgZoom !== 1 || imgRotate !== 0"
+                type="button"
+                class="pl-icon-btn drawer-img-reset"
+                :title="tf('img_reset', '重置')"
+                @click="resetImgZoom"
+              >
+                1:1
+              </button>
               <span class="drawer-img-sep" />
               <button type="button" class="pl-icon-btn" :title="tf('img_rotate_left', '左旋90度')" @click="rotateLeft">
                 <RotateCcw :size="14" />
               </button>
-              <button type="button" class="pl-icon-btn" :title="tf('img_rotate_right', '右旋90度')" @click="rotateRight">
+              <button
+                type="button"
+                class="pl-icon-btn"
+                :title="tf('img_rotate_right', '右旋90度')"
+                @click="rotateRight"
+              >
                 <RotateCw :size="14" />
               </button>
               <span class="drawer-img-sep" />
@@ -269,10 +335,10 @@ function openInBrowser() {
               </button>
             </div>
           </div>
-          <!-- 文本/链接/代码/文件 全文 -->
-          <div v-else class="panel drawer-content-panel">
+          <!-- 文本/链接/代码/文件 全文：fx/SpotlightCard 给面板加光标聚光 -->
+          <FxSpotlightCard v-else class="panel drawer-content-panel" :spotlight-color="PANEL_SPOT" :radius="160">
             <div class="drawer-fulltext" :class="{ code: isCode }">{{ fullContent }}</div>
-          </div>
+          </FxSpotlightCard>
 
           <!-- 链接条目：一键跳浏览器 -->
           <button v-if="isLinkItem" type="button" class="pl-btn pl-btn--sm drawer-link-btn" @click="openInBrowser">
@@ -315,9 +381,18 @@ function openInBrowser() {
         </div>
 
         <div class="drawer-foot">
-          <button type="button" class="pl-btn pl-btn--acc" style="flex: 1" @click="emit('copy', item)">
-            <Copy :size="14" /><span>{{ t('copy') }}</span>
-          </button>
+          <StarBorder
+            as="div"
+            custom-class="drawer-copy-border"
+            :color="FOOT_GLOW"
+            speed="5s"
+            :thickness="2"
+            border-radius="var(--radius-sm)"
+          >
+            <button type="button" class="pl-btn pl-btn--acc drawer-copy-btn" @click="emit('copy', item)">
+              <Copy :size="14" /><span>{{ t('copy') }}</span>
+            </button>
+          </StarBorder>
           <button type="button" class="pl-btn" :title="t('favorite')" @click="emit('toggle-fav', item)">
             <Star :size="14" :fill="item.isFavorite ? 'currentColor' : 'none'" />
           </button>
@@ -326,6 +401,17 @@ function openInBrowser() {
           </button>
         </div>
       </aside>
-    </template>
+    </Transition>
   </Teleport>
 </template>
+
+<style scoped>
+/* fx/StarBorder 包住抽屉底部「复制」主操作：外层占满剩余宽度，按钮本体撑满 */
+.drawer-copy-border {
+  flex: 1;
+  min-width: 0;
+}
+.drawer-copy-btn {
+  width: 100%;
+}
+</style>

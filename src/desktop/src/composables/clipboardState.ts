@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 
 export interface ClipItem {
   id: string
@@ -161,6 +161,43 @@ export function clearSelection() {
   })
 }
 
+// === 动效标记：新条目滑入 & 复制闪反馈（纯渲染信号，非业务状态）===
+// 必须用 reactive Map：行组件的 class 绑定读 is*()，标记写入要能触发行重渲染，
+// 否则已挂载的行（复制闪反馈场景）永远看不到新标记。
+// 窗口过期在 mark 时统一修剪（渲染期只读，避免 render 期间变更触发循环），
+// 登出由 resetClipboardState 清空。
+const ROW_ENTER_WINDOW_MS = 1600
+const ROW_COPIED_WINDOW_MS = 1200
+const recentArrivals = reactive(new Map<string, number>())
+const copiedFlashes = reactive(new Map<string, number>())
+
+function pruneExpired(map: Map<string, number>, windowMs: number) {
+  const now = Date.now()
+  for (const [k, at] of map) {
+    if (now - at > windowMs) map.delete(k)
+  }
+}
+
+export function markRecentArrival(id: string) {
+  recentArrivals.set(id, Date.now())
+  pruneExpired(recentArrivals, ROW_ENTER_WINDOW_MS)
+}
+
+export function markCopiedFlash(id: string) {
+  copiedFlashes.set(id, Date.now())
+  pruneExpired(copiedFlashes, ROW_COPIED_WINDOW_MS)
+}
+
+export function isRowEntering(id: string): boolean {
+  const at = recentArrivals.get(id)
+  return at !== undefined && Date.now() - at <= ROW_ENTER_WINDOW_MS
+}
+
+export function isCopiedFlashing(id: string): boolean {
+  const at = copiedFlashes.get(id)
+  return at !== undefined && Date.now() - at <= ROW_COPIED_WINDOW_MS
+}
+
 /** 登出/换号：清空列表与分页/筛选/去重等全部模块级剪贴板状态，防止跨用户残留 */
 export function resetClipboardState() {
   items.value = []
@@ -177,6 +214,8 @@ export function resetClipboardState() {
   loadError.value = null
   advancedFilters.value = { deviceId: '', dateFrom: '', dateTo: '' }
   recentUploadHashes.clear()
+  recentArrivals.clear()
+  copiedFlashes.clear()
   setSkipPollUntil(0)
   setInitialLoadDone(false)
 }

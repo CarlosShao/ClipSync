@@ -30,6 +30,7 @@ const FavoritesView = defineAsyncComponent(() => import('@/components/clipboard/
 const TemplatesView = defineAsyncComponent(() => import('@/components/clipboard/TemplatesView.vue'))
 import QuickPastePanel from '@/components/QuickPastePanel.vue'
 import { useSyncLog } from '@/composables/useSyncLog'
+import { markRecentArrival } from '@/composables/clipboardState'
 import CommandPalette from '@/components/layout/CommandPalette.vue'
 // 设置类页面非首屏，改为异步加载，避免初始化时全部解析进内存
 // v2 原型：设置是页面（settings.html），不是弹窗 —— 复用 settings-dialog/ 下的分组组件
@@ -462,6 +463,13 @@ onMounted(async () => {
       syncLog.pushFromWs(data)
     }
     if (data?.type === 'new_clipboard') {
+      // 新条目滑入标记：服务端广播有两种形态——单条 item（clipboard.js / media.js /
+      // chunked-upload.js）与批量 items 数组（sync.js，手机端复制走的批量同步）。
+      // refresh 重取列表渲染时命中即播一次性行进动画（乐观本地 id 被服务端 id 替换后不命中、不重播）
+      const arrivedIds = data.item?.id ? [data.item.id] : Array.isArray(data.items) ? data.items.map((i: { id?: string }) => i?.id) : []
+      for (const id of arrivedIds) {
+        if (id) markRecentArrival(String(id))
+      }
       clip.refresh()
       perfFirstDataLoad()
       // 通知收敛（用户反馈：每次复制都弹太吵）：

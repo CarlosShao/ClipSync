@@ -3,6 +3,7 @@ import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useClipItemDisplay, detectContentType } from '@/composables/useClipItemDisplay'
 import type { ClipItem } from '@/composables/useClipboard'
+import { isCopiedFlashing, isRowEntering } from '@/composables/clipboardState'
 import Button from '@/components/ui/button/Button.vue'
 import FavoriteStarCell from '@/components/clipboard/FavoriteStarCell.vue'
 import {
@@ -117,7 +118,13 @@ watch(
   <div
     ref="rowRef"
     class="clip-item"
-    :class="{ focused, selected: item.selected, selecting }"
+    :class="{
+      focused,
+      selected: item.selected,
+      selecting,
+      'row-enter': isRowEntering(item.id),
+      'row-copied': isCopiedFlashing(item.id),
+    }"
     @mouseenter="emit('focus')"
     @click="onRowClick"
     @dblclick="emit('dblclick', item)"
@@ -343,6 +350,46 @@ watch(
   }
   50% {
     opacity: 0.3;
+  }
+}
+
+/* 新条目滑入（row-enter）：clipboardState.recentArrivals 登记，仅 WS 推送/本地乐观插入的
+   新行命中一次；翻页、筛选、刷新重挂载的旧行不命中、不重播。
+   复制闪反馈（row-copied）：copyItem 触发，accent 内描边渐隐一次。 */
+.clip-item.row-enter {
+  animation:
+    clip-row-slide 0.24s var(--ease),
+    clip-row-flash 1.1s ease-out;
+}
+@keyframes clip-row-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+@keyframes clip-row-flash {
+  0% {
+    box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 999px transparent;
+  }
+}
+.clip-item.row-copied {
+  animation: clip-row-copied 0.9s var(--ease);
+}
+@keyframes clip-row-copied {
+  0% {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-item.row-enter,
+  .clip-item.row-copied {
+    animation: none;
   }
 }
 

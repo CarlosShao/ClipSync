@@ -343,4 +343,25 @@ function confirmCreate(itemId: string) {
     transform: translateY(0) scale(1);
   }
 }
+
+/* 收藏星标：点亮瞬间弹跳（取消收藏不播，class 摘除即无动画） */
+.btn-action-hide.favorited svg {
+  animation: fav-star-pop 0.32s var(--ease);
+}
+@keyframes fav-star-pop {
+  0% {
+    transform: scale(0.4) rotate(-24deg);
+  }
+  60% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-action-hide.favorited svg {
+    animation: none;
+  }
+}
 </style>

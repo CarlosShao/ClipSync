@@ -40,6 +40,8 @@ import {
   HASH_TTL,
   pollIntervalMs,
   maxHistoryCap,
+  markCopiedFlash,
+  markRecentArrival,
   type ClipItem,
   type ClipboardFilter,
 } from './clipboardState'
@@ -424,6 +426,8 @@ export function useClipboard() {
       // 已覆盖回环，长窗口反而会让"远程同步刚到达时用户在 PC 上的复制"丢失 13 秒采集。
       skipNextPolls(opts?.autoFromRemote ? 3000 : COPY_SKIP_MS)
       markContentCopiedFromClipSync(item)
+      // 行内复制闪反馈（row-copied）：动作已确认写向系统剪贴板
+      markCopiedFlash(item.id)
 
       // 预测粘贴：复制成功后记录使用（仅 server item；local 临时 id 后端静默跳过）
       const isServerItem = !isLocalItemId(item.id)
@@ -958,6 +962,7 @@ export function useClipboard() {
       source: 'Desktop',
       timestamp: Date.now(),
     })
+    markRecentArrival(localId)
 
     const deviceId = await ensureDeviceId()
     if (!deviceId) throw new Error('No device ID')

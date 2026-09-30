@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { clipViewSeg, batchMode } from '@/composables/clipboardState'
 import { useI18n } from '@/composables/useI18n'
@@ -18,7 +18,18 @@ import { useFileUpload } from '@/composables/useFileUpload'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useProtectionDialog } from '@/composables/useProtectionDialog'
 import { useItemPassword } from '@/composables/useItemPassword'
-import { Upload, ClipboardList, AlertTriangle, RefreshCw, Sparkles, Star, Trash2, X, ArchiveRestore } from 'lucide-vue-next'
+import {
+  Upload,
+  ClipboardList,
+  AlertTriangle,
+  RefreshCw,
+  Sparkles,
+  Star,
+  Trash2,
+  X,
+  ArchiveRestore,
+  Plus,
+} from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
@@ -31,6 +42,14 @@ import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { api } from '@/api/client'
+import FxClickSpark from '@/components/fx/FxClickSpark.vue'
+import FxGradualBlur from '@/components/fx/FxGradualBlur.vue'
+import FxGlitchText from '@/components/fx/FxGlitchText.vue'
+import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
+import FxMagnet from '@/components/fx/FxMagnet.vue'
+import DecryptedText from '@/components/fx/DecryptedText.vue'
+import { useReducedMotion } from '@/components/fx/useReducedMotion'
+import { useThemeColor } from '@/components/fx/useThemeColor'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -66,6 +85,12 @@ const privacy = usePrivacy()
 const itemPw = useItemPassword()
 const fav = useFavoritePopover()
 const display = useClipItemDisplay()
+
+// === fx 动效层接线（设置→数据→减少动画 一处开关，全组生效）===
+const reduced = useReducedMotion()
+// canvas 解析不了 var()，主题色必须解析成具体 rgb；主题/明暗切换由 useThemeColor 内部跟随
+const accentSparkColor = useThemeColor('--accent-rgb', 0.55)
+const sparkColor = computed(() => accentSparkColor.value ?? 'rgba(140, 150, 165, 0.75)')
 
 const {
   confirmOpen,
@@ -151,7 +176,9 @@ function openAiSuggest() {
   try {
     const favs = localStorage.getItem('clipsync-favorites') || '[]'
     const arr = JSON.parse(favs)
-    suggestCollectionNames.value = Array.isArray(arr) ? arr.map((f: any) => (typeof f === 'string' ? f : f?.name)).filter(Boolean) : []
+    suggestCollectionNames.value = Array.isArray(arr)
+      ? arr.map((f: any) => (typeof f === 'string' ? f : f?.name)).filter(Boolean)
+      : []
   } catch {
     suggestCollectionNames.value = []
   }
@@ -223,14 +250,30 @@ const remaining = computed(() => Math.max(0, totalItems.value - filteredItems.va
 const allSelected = computed(() => clip.allSelected.value)
 
 let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null
+// 列表底沿渐隐（fx/GradualBlur）只在「下面还有内容」时出现，滚到底即撤掉——
+// 否则最后一行会被磨砂糊住，反而看不清。
+const listScrollEl = ref<HTMLElement | null>(null)
+const atListBottom = ref(true)
+function syncListBottom(el?: HTMLElement | null) {
+  const node = el ?? listScrollEl.value
+  atListBottom.value = !node || node.scrollTop + node.clientHeight >= node.scrollHeight - 8
+}
 function onClipboardScroll(e: Event) {
+  const el = e.target as HTMLElement
+  syncListBottom(el)
   if (scrollDebounceTimer) return
   scrollDebounceTimer = setTimeout(() => {
     scrollDebounceTimer = null
   }, 150)
-  const el = e.target as HTMLElement
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 240) clip.loadMore()
 }
+// 首屏/翻页/筛选后条数不变时不会触发 scroll，需要主动同步一次底沿状态
+watch(
+  () => filteredItems.value.length,
+  () => nextTick(() => syncListBottom()),
+)
+// 列表底沿渐隐（fx/GradualBlur）：装饰性磨砂，减少动画时一并撤掉（性能优先的用户要的就是这个）
+const showListFade = computed(() => !reduced.value && filteredItems.value.length > 0 && !atListBottom.value)
 
 function reload() {
   if (viewSeg.value === 'fav') {
@@ -273,8 +316,14 @@ function onDrawerAi(action: string, item: ClipItem) {
   const body = getCachedContent(item.id) || item.content || ''
   window.dispatchEvent(new CustomEvent('clipsync:toggle-ai'))
   setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('clipsync:ai-send-message', { detail: { content: `${action}：
-${body.slice(0, 2000)}` } }))
+    window.dispatchEvent(
+      new CustomEvent('clipsync:ai-send-message', {
+        detail: {
+          content: `${action}：
+${body.slice(0, 2000)}`,
+        },
+      }),
+    )
   }, 120)
 }
 
@@ -332,15 +381,28 @@ const cleanupMsg = computed(() => {
   if (!planned) return ''
   const limit = Math.max(1, Number(configStore.maxHistory) || 500)
   if (planned.skipped > 0) {
-    return tf('cleanup_confirm_msg_skip', '将删除超出历史上限（{limit} 条）的 {n} 条旧记录（另有 {m} 条收藏/置顶记录会保留），删除后不可恢复。确定继续吗？', { limit, n: planned.ids.length, m: planned.skipped })
+    return tf(
+      'cleanup_confirm_msg_skip',
+      '将删除超出历史上限（{limit} 条）的 {n} 条旧记录（另有 {m} 条收藏/置顶记录会保留），删除后不可恢复。确定继续吗？',
+      { limit, n: planned.ids.length, m: planned.skipped },
+    )
   }
-  return tf('cleanup_confirm_msg', '将删除超出历史上限（{limit} 条）的 {n} 条旧记录，且不可恢复。确定继续吗？', { limit, n: planned.ids.length })
+  return tf('cleanup_confirm_msg', '将删除超出历史上限（{limit} 条）的 {n} 条旧记录，且不可恢复。确定继续吗？', {
+    limit,
+    n: planned.ids.length,
+  })
 })
 async function onCleanupHistory() {
   const limit = Math.max(1, Number(configStore.maxHistory) || 500)
   if (cleanupPlanning) return
   if (totalItems.value <= limit) {
-    toast.show(tf('cleanup_under_limit', '当前共 {total} 条，未超过历史上限 {limit} 条，无需清理', { total: totalItems.value, limit }), 'info')
+    toast.show(
+      tf('cleanup_under_limit', '当前共 {total} 条，未超过历史上限 {limit} 条，无需清理', {
+        total: totalItems.value,
+        limit,
+      }),
+      'info',
+    )
     return
   }
   cleanupPlanning = true
@@ -429,6 +491,8 @@ const flatIndexMap = computed(() => {
 onMounted(() => {
   fav.loadCollections()
   reload()
+  // 回到本页时列表可能已有缓存内容：布局完成后同步一次底沿状态，否则首次滚动前不显示渐隐
+  nextTick(() => syncListBottom())
 })
 
 watch(
@@ -457,7 +521,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="clipboard-page">
+  <!-- fx/ClickSpark：整页点击粒子反馈。canvas 是 pointer-events:none 的兄弟节点，
+       不拦截任何行/按钮事件；reduce-motion 时组件只透传 slot，零开销 -->
+  <FxClickSpark class="clipboard-page" :spark-color="sparkColor" :spark-radius="18" :spark-count="8" :duration="420">
     <input :ref="upload.fileInputRef" type="file" style="display: none" multiple @change="upload.handleFileUpload" />
 
     <ClipboardFilterPanel :open="showFilterPanel" @close="showFilterPanel = false" />
@@ -494,205 +560,299 @@ onUnmounted(() => {
       @unlocked="onProtectionUnlocked"
     />
 
-    <div class="clipboard-view" role="region" :aria-label="t('nav_clipboard')" @scroll="onClipboardScroll">
-      <!-- 工具栏置于滚动容器内：与卡片共用同一居中宽度（滚动条不引起错位） -->
-      <ClipboardToolbar
-        :view="viewSeg"
-        :show-filter-panel="showFilterPanel"
-        :ai-enabled="props.aiEnabled"
-        :summary-active="showTodaySummary"
-        @cleanup-history="onCleanupHistory"
-        @summarize-today="onSummarizeToday"
-        @set-view="(v: 'timeline' | 'fav' | 'archive') => (viewSeg = v)"
-        @upload="upload.triggerFileUpload"
-        @new-clip="keyboard.toggleQuickPaste"
-        @toggle-filter-panel="toggleFilterPanel"
-        @batch-delete="ops.handleBatchDelete"
-        @batch-unarchive="ops.handleBatchUnarchive"
-        @batch-favorite="ops.handleBatchFavorite"
-        @batch-ai-suggest="openAiSuggest"
-      />
-      <!-- A1 内联结果卡：总结今日动态（页内弹出，不进侧栏消息流） -->
-      <InlineAiCard
-        v-if="showTodaySummary"
-        class="today-summary-card"
-        :title="tf('inline_ai_summarize_today', '总结今日动态')"
-        :status="todaySummary.status.value"
-        :text="todaySummary.text.value"
-        :display-text="todaySummary.displayText.value"
-        :streaming="todaySummary.streaming.value"
-        :error="todaySummary.error.value"
-        closable
-        @close="closeTodaySummary"
-        @retry="runTodaySummary"
-      />
-      <!-- 原型 .batch-bar：批量选择模式吸附条 -->
-      <div v-if="batchMode" class="batch-bar clip-batchbar">
-        <label>
-          <input type="checkbox" class="cbx" :checked="clip.allSelected.value" @change="clip.toggleSelectAll()" />{{ t('batch_select_all', '全选') }}
-        </label>
-        <span class="sel-info">{{ tf('batch_selected_n', '已选 {n} 项', { n: clip.selectedCount.value }) }}</span>
-        <span class="clip-batchbar-grow" />
-        <template v-if="!isArchive">
-          <button type="button" class="pl-btn pl-btn--sm" :disabled="clip.selectedCount.value === 0" @click="ops.handleBatchFavorite()">
-            <Star :size="12" />{{ t('batch_favorite_btn') || '收藏' }}
-          </button>
-          <button type="button" class="pl-btn pl-btn--sm" :disabled="clip.selectedCount.value === 0" @click="openAiSuggest()">
-            <Sparkles :size="12" />{{ t('ai_suggest_btn_batch') || 'AI 建议' }}
-          </button>
-          <button type="button" class="pl-btn pl-btn--sm pl-btn--danger" :disabled="clip.selectedCount.value === 0" @click="ops.handleBatchDelete()">
-            <Trash2 :size="12" />{{ t('batch_delete_short') || '删除' }}
-          </button>
-        </template>
-        <template v-else>
-          <button type="button" class="pl-btn pl-btn--sm" :disabled="clip.selectedCount.value === 0" @click="ops.handleBatchUnarchive()">
-            <ArchiveRestore :size="12" />{{ t('unarchive_selected_btn') || '恢复' }}
-          </button>
-          <button type="button" class="pl-btn pl-btn--sm pl-btn--danger" :disabled="clip.selectedCount.value === 0" @click="ops.handleBatchDelete()">
-            <Trash2 :size="12" />{{ t('batch_delete_short') || '删除' }}
-          </button>
-        </template>
-        <button type="button" class="pl-btn pl-btn--sm" style="background: transparent; border-color: transparent; box-shadow: none" @click="clip.toggleBatch()">
-          <X :size="12" />{{ t('cancel_btn') }}
-        </button>
-      </div>
+    <div class="clipboard-view-shell">
       <div
-        v-if="isLoading && filteredItems.length === 0"
-        class="skeleton-wrap"
-        :aria-label="t('ver_loading')"
-        role="status"
+        ref="listScrollEl"
+        class="clipboard-view"
+        role="region"
+        :aria-label="t('nav_clipboard')"
+        @scroll="onClipboardScroll"
       >
-        <div v-for="n in 6" :key="n" class="skeleton-row">
-          <div class="sk sk-checkbox" />
-          <div class="sk sk-content" />
-          <div class="sk sk-source" />
-          <div class="sk sk-badge" />
-          <div class="sk sk-time" />
-          <div class="sk sk-actions" />
-        </div>
-      </div>
-
-      <!-- 加载失败：必须可重试，且不能伪装成"暂无内容" -->
-      <div v-else-if="loadError && filteredItems.length === 0" class="error-state">
-        <div class="error-icon-wrap">
-          <AlertTriangle :size="48" style="color: var(--danger)" />
-        </div>
-        <h3 class="error-title">{{ t('load_failed_title') }}</h3>
-        <p class="error-desc">{{ t('load_failed_desc') }}</p>
-        <p v-if="loadError" class="error-detail">{{ loadError }}</p>
-        <Button variant="outline" size="sm" class="error-retry-btn" :disabled="isLoading" @click="reload">
-          <RefreshCw :size="14" class="error-retry-icon" />
-          <span>{{ t('retry_btn') }}</span>
-        </Button>
-      </div>
-
-      <div v-else-if="filteredItems.length > 0" class="table-wrapper">
-        <div class="clip-list" role="list" :aria-label="t('nav_clipboard')">
-          <template v-for="sec in timelineSections" :key="sec.label || 'flat'">
-            <!-- 原型 v1 分节头：置顶 / 今天 / 昨天 / 更早 -->
-            <div v-if="sec.label" class="clip-group">
-              <b>{{ sec.label }}</b><span class="n">{{ sec.items.length }}</span>
-            </div>
-            <ClipboardTableRow
-              v-for="item in sec.items"
-              :key="item.id"
-              role="listitem"
-              :item="item"
-              :focused="flatIndexMap.get(item.id) === focusedIndex"
-              :is-archive="isArchive"
-              :more-open-id="ctx.moreOpenId"
-              :selecting="batchMode"
-              @focus="focusedIndex = flatIndexMap.get(item.id) ?? -1"
-            @click="openDrawer"
-            @dblclick="actions.onDblClick"
-            @contextmenu="ctx.openCtxMenu"
-            @preview="actions.onPreview"
-            @copy="actions.onCopyItem"
-            @delete="ops.handleSingleDelete"
-            @unarchive="ops.handleUnarchive"
-            @toggle-more="ctx.toggleMore"
-            @share="
-              (item) => {
-                ops.shareItem(item)
-                ctx.closeMore()
-              }
-            "
-            @reveal="
-              (item) => {
-                ops.revealFileFolder(item)
-                ctx.closeMore()
-              }
-            "
-            @version-history="
-              (item) => {
-                emit('version-history', item)
-                ctx.closeMore()
-              }
-            "
-            @open-protection="
-              (item) => {
-                openProtectionDialog(item)
-                ctx.closeMore()
-              }
-            "
-            @archive-toggle="
-              (item) => {
-                ops.onArchiveToggle(item)
-                ctx.closeMore()
-              }
-            "
-            @expiry-from-dropdown="ctx.openExpiryFromDropdown"
-            @toggle-select="onToggleSelect"
-            @ai="onRowAi"
-            @pin-toggle="clip.togglePinned"
-          />
-          </template>
-        </div>
-
-        <div v-if="hasMore" class="load-more">
-          <Button variant="outline" size="sm" :disabled="loadingMore" @click="clip.loadMore()">
-            <span v-if="loadingMore">{{ t('loading_more') }}</span>
-            <span v-else>{{ t('load_more') }}</span>
-          </Button>
-          <span class="rem">{{ tf('more_rem', '还有 {n} 条 · 共 {total} 条', { n: remaining, total: totalItems }) }}</span>
-        </div>
-      </div>
-
-      <div v-else class="empty-state">
-        <div class="empty-icon-wrap">
-          <ClipboardList :size="48" style="color: var(--text-tertiary)" />
-        </div>
-        <h3 class="empty-title">{{ isArchive ? t('archive_empty_title') : t('empty_title') }}</h3>
-        <p class="empty-desc">{{ isArchive ? t('archive_empty_desc') : t('empty_desc') }}</p>
-        <div v-if="!isArchive" class="empty-hints">
-          <div class="empty-hint">
-            <Copy :size="14" class="empty-hint-icon" />
-            <span>{{ t('empty_hint_copy') }}</span>
-          </div>
-          <div class="empty-hint">
-            <svg
-              class="empty-hint-icon"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              width="14"
-              height="14"
+        <!-- 工具栏置于滚动容器内：与卡片共用同一居中宽度（滚动条不引起错位） -->
+        <ClipboardToolbar
+          :view="viewSeg"
+          :show-filter-panel="showFilterPanel"
+          :ai-enabled="props.aiEnabled"
+          :summary-active="showTodaySummary"
+          @cleanup-history="onCleanupHistory"
+          @summarize-today="onSummarizeToday"
+          @set-view="(v: 'timeline' | 'fav' | 'archive') => (viewSeg = v)"
+          @upload="upload.triggerFileUpload"
+          @new-clip="keyboard.toggleQuickPaste"
+          @toggle-filter-panel="toggleFilterPanel"
+          @batch-delete="ops.handleBatchDelete"
+          @batch-unarchive="ops.handleBatchUnarchive"
+          @batch-favorite="ops.handleBatchFavorite"
+          @batch-ai-suggest="openAiSuggest"
+        />
+        <!-- A1 内联结果卡：总结今日动态（页内弹出，不进侧栏消息流） -->
+        <InlineAiCard
+          v-if="showTodaySummary"
+          class="today-summary-card"
+          :title="tf('inline_ai_summarize_today', '总结今日动态')"
+          :status="todaySummary.status.value"
+          :text="todaySummary.text.value"
+          :display-text="todaySummary.displayText.value"
+          :streaming="todaySummary.streaming.value"
+          :error="todaySummary.error.value"
+          closable
+          @close="closeTodaySummary"
+          @retry="runTodaySummary"
+        />
+        <!-- 原型 .batch-bar：批量选择模式吸附条 -->
+        <div v-if="batchMode" class="batch-bar clip-batchbar">
+          <label>
+            <input type="checkbox" class="cbx" :checked="clip.allSelected.value" @change="clip.toggleSelectAll()" />{{
+              t('batch_select_all', '全选')
+            }}
+          </label>
+          <span class="sel-info">{{ tf('batch_selected_n', '已选 {n} 项', { n: clip.selectedCount.value }) }}</span>
+          <span class="clip-batchbar-grow" />
+          <template v-if="!isArchive">
+            <button
+              type="button"
+              class="pl-btn pl-btn--sm"
+              :disabled="clip.selectedCount.value === 0"
+              @click="ops.handleBatchFavorite()"
             >
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
-            </svg>
-            <span>{{ t('empty_hint_shortcut') }}</span>
+              <Star :size="12" />{{ t('batch_favorite_btn') || '收藏' }}
+            </button>
+            <button
+              type="button"
+              class="pl-btn pl-btn--sm"
+              :disabled="clip.selectedCount.value === 0"
+              @click="openAiSuggest()"
+            >
+              <Sparkles :size="12" />{{ t('ai_suggest_btn_batch') || 'AI 建议' }}
+            </button>
+            <button
+              type="button"
+              class="pl-btn pl-btn--sm pl-btn--danger"
+              :disabled="clip.selectedCount.value === 0"
+              @click="ops.handleBatchDelete()"
+            >
+              <Trash2 :size="12" />{{ t('batch_delete_short') || '删除' }}
+            </button>
+          </template>
+          <template v-else>
+            <button
+              type="button"
+              class="pl-btn pl-btn--sm"
+              :disabled="clip.selectedCount.value === 0"
+              @click="ops.handleBatchUnarchive()"
+            >
+              <ArchiveRestore :size="12" />{{ t('unarchive_selected_btn') || '恢复' }}
+            </button>
+            <button
+              type="button"
+              class="pl-btn pl-btn--sm pl-btn--danger"
+              :disabled="clip.selectedCount.value === 0"
+              @click="ops.handleBatchDelete()"
+            >
+              <Trash2 :size="12" />{{ t('batch_delete_short') || '删除' }}
+            </button>
+          </template>
+          <button
+            type="button"
+            class="pl-btn pl-btn--sm"
+            style="background: transparent; border-color: transparent; box-shadow: none"
+            @click="clip.toggleBatch()"
+          >
+            <X :size="12" />{{ t('cancel_btn') }}
+          </button>
+        </div>
+        <div
+          v-if="isLoading && filteredItems.length === 0"
+          class="skeleton-wrap"
+          :aria-label="t('ver_loading')"
+          role="status"
+        >
+          <!-- fx/LatticeLoader：把「等待同步」从一排灰条里拎出来，给首屏加载一个明确身份。
+               外层 .skeleton-wrap 已是 role=status + aria-label，这里对读屏隐藏避免重复播报 -->
+          <div class="skeleton-head" aria-hidden="true">
+            <FxLatticeLoader
+              :label="t('ver_loading')"
+              status="working"
+              :grid="3"
+              pattern="orbit"
+              :cell-size="5"
+              :gap="2"
+              :font-size="12.5"
+              :show-timer="false"
+              color="var(--accent)"
+              glow
+            />
           </div>
-          <div class="empty-hint">
-            <Upload :size="14" class="empty-hint-icon" />
-            <span>{{ t('empty_hint_upload') }}</span>
+          <div v-for="n in 6" :key="n" class="skeleton-row">
+            <div class="sk sk-checkbox" />
+            <div class="sk sk-content" />
+            <div class="sk sk-source" />
+            <div class="sk sk-badge" />
+            <div class="sk sk-time" />
+            <div class="sk sk-actions" />
           </div>
         </div>
-        <p v-if="!isArchive" class="empty-action">{{ t('empty_action') }}</p>
+
+        <!-- 加载失败：必须可重试，且不能伪装成"暂无内容" -->
+        <div v-else-if="loadError && filteredItems.length === 0" class="error-state">
+          <div class="error-icon-wrap">
+            <AlertTriangle :size="48" style="color: var(--danger)" />
+          </div>
+          <!-- fx/GlitchText：失败态的故障抖动（一次性语义，hover 才持续闪） -->
+          <h3 class="error-title">
+            <FxGlitchText :text="t('load_failed_title')" :speed="0.7" :offset="1.5" enable-on-hover />
+          </h3>
+          <p class="error-desc">{{ t('load_failed_desc') }}</p>
+          <p v-if="loadError" class="error-detail">{{ loadError }}</p>
+          <Button variant="outline" size="sm" class="error-retry-btn" :disabled="isLoading" @click="reload">
+            <RefreshCw :size="14" class="error-retry-icon" />
+            <span>{{ t('retry_btn') }}</span>
+          </Button>
+        </div>
+
+        <div v-else-if="filteredItems.length > 0" class="table-wrapper">
+          <div class="clip-list" role="list" :aria-label="t('nav_clipboard')">
+            <template v-for="sec in timelineSections" :key="sec.label || 'flat'">
+              <!-- 原型 v1 分节头：置顶 / 今天 / 昨天 / 更早 -->
+              <div v-if="sec.label" class="clip-group">
+                <b>{{ sec.label }}</b
+                ><span class="n">{{ sec.items.length }}</span>
+              </div>
+              <ClipboardTableRow
+                v-for="item in sec.items"
+                :key="item.id"
+                role="listitem"
+                :item="item"
+                :focused="flatIndexMap.get(item.id) === focusedIndex"
+                :is-archive="isArchive"
+                :more-open-id="ctx.moreOpenId"
+                :selecting="batchMode"
+                @focus="focusedIndex = flatIndexMap.get(item.id) ?? -1"
+                @click="openDrawer"
+                @dblclick="actions.onDblClick"
+                @contextmenu="ctx.openCtxMenu"
+                @preview="actions.onPreview"
+                @copy="actions.onCopyItem"
+                @delete="ops.handleSingleDelete"
+                @unarchive="ops.handleUnarchive"
+                @toggle-more="ctx.toggleMore"
+                @share="
+                  (item) => {
+                    ops.shareItem(item)
+                    ctx.closeMore()
+                  }
+                "
+                @reveal="
+                  (item) => {
+                    ops.revealFileFolder(item)
+                    ctx.closeMore()
+                  }
+                "
+                @version-history="
+                  (item) => {
+                    emit('version-history', item)
+                    ctx.closeMore()
+                  }
+                "
+                @open-protection="
+                  (item) => {
+                    openProtectionDialog(item)
+                    ctx.closeMore()
+                  }
+                "
+                @archive-toggle="
+                  (item) => {
+                    ops.onArchiveToggle(item)
+                    ctx.closeMore()
+                  }
+                "
+                @expiry-from-dropdown="ctx.openExpiryFromDropdown"
+                @toggle-select="onToggleSelect"
+                @ai="onRowAi"
+                @pin-toggle="clip.togglePinned"
+              />
+            </template>
+          </div>
+
+          <div v-if="hasMore" class="load-more">
+            <Button variant="outline" size="sm" :disabled="loadingMore" @click="clip.loadMore()">
+              <span v-if="loadingMore">{{ t('loading_more') }}</span>
+              <span v-else>{{ t('load_more') }}</span>
+            </Button>
+            <span class="rem">{{
+              tf('more_rem', '还有 {n} 条 · 共 {total} 条', { n: remaining, total: totalItems })
+            }}</span>
+          </div>
+        </div>
+
+        <div v-else class="empty-state reveal-stagger">
+          <div class="empty-icon-wrap">
+            <ClipboardList :size="48" style="color: var(--text-tertiary)" />
+          </div>
+          <!-- fx/DecryptedText：空态标题解密揭示。中文只允许在原文自身字形间打乱
+             （useOriginalCharsOnly），否则会掺入拉丁乱码，看着像 bug 而不是动效 -->
+          <h3 class="empty-title">
+            <DecryptedText
+              :text="isArchive ? t('archive_empty_title') : t('empty_title')"
+              :speed="42"
+              :max-iterations="14"
+              :use-original-chars-only="true"
+              reveal-direction="center"
+              :sequential="true"
+              animate-on="view"
+            />
+          </h3>
+          <p class="empty-desc">{{ isArchive ? t('archive_empty_desc') : t('empty_desc') }}</p>
+          <div v-if="!isArchive" class="empty-hints">
+            <div class="empty-hint">
+              <Copy :size="14" class="empty-hint-icon" />
+              <span>{{ t('empty_hint_copy') }}</span>
+            </div>
+            <div class="empty-hint">
+              <svg
+                class="empty-hint-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="14"
+                height="14"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
+              </svg>
+              <span>{{ t('empty_hint_shortcut') }}</span>
+            </div>
+            <div class="empty-hint">
+              <Upload :size="14" class="empty-hint-icon" />
+              <span>{{ t('empty_hint_upload') }}</span>
+            </div>
+          </div>
+          <p v-if="!isArchive" class="empty-action">{{ t('empty_action') }}</p>
+          <!-- fx/Magnet：空态唯一的主 CTA，给它磁吸跟随——空页面上这点「活气」最讨好，
+             列表里则一律不上磁吸，避免密集区域内元素乱跑 -->
+          <FxMagnet v-if="!isArchive" class="empty-cta-magnet" :padding="80" :magnet-strength="3">
+            <button type="button" class="pl-btn pl-btn--acc empty-cta" @click="keyboard.toggleQuickPaste">
+              <Plus :size="14" /><span>{{ t('new_clip') }}</span>
+            </button>
+          </FxMagnet>
+        </div>
       </div>
+
+      <!-- fx/GradualBlur：列表底沿磨砂渐隐（只在「下面还有内容」时渲染，滚到底自动撤掉） -->
+      <FxGradualBlur
+        v-if="showListFade"
+        position="bottom"
+        curve="bezier"
+        :strength="2"
+        :div-count="3"
+        height="3.25rem"
+        :opacity="0.9"
+        :z-index="12"
+        :style="{ borderRadius: '0 0 var(--radius-sm) var(--radius-sm)' }"
+      />
     </div>
 
     <ClipboardContextMenu
@@ -744,14 +904,23 @@ onUnmounted(() => {
       @apply-cleanup="onSuggestCleanup"
       @apply-tags="onSuggestTags"
     />
-  </div>
+  </FxClickSpark>
 </template>
 
 <style scoped>
+/* fx/ClickSpark 的根元素同时承载页面根布局（两套 class 各自 scoped，互不冲突） */
 .clipboard-page {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+/* 滚动容器外壳：底沿渐隐需要一个 position:relative 的定位基准（脱离滚动流，不随内容移动） */
+.clipboard-view-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .clipboard-view {
   flex: 1;
@@ -954,6 +1123,18 @@ onUnmounted(() => {
 }
 .error-retry-icon {
   flex-shrink: 0;
+}
+
+.skeleton-head {
+  padding: 2px 16px 12px;
+}
+.empty-cta-magnet {
+  margin-top: 14px;
+}
+.empty-cta {
+  height: 34px;
+  padding: 0 18px;
+  font-size: 13px;
 }
 
 .skeleton-wrap {

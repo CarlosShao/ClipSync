@@ -6,7 +6,7 @@ import { useSonner } from '@/composables/useSonner'
 import { enqueue } from '@/utils/offlineQueue'
 import { logger } from '@/utils/logger'
 import { CHUNK_SIZE, chunkedUpload } from '@/utils/chunkedUpload'
-import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, type ClipItem } from './clipboardState'
+import { items, recentUploadHashes, HASH_TTL, totalItems, mainTotalItems, currentView, markRecentArrival, type ClipItem } from './clipboardState'
 import { cacheContent } from './clipboardCache'
 import { trimToMaxHistory } from './clipboardLoad'
 import { useConfigStore } from '@/stores/configStore'
@@ -362,6 +362,7 @@ export async function uploadToServer(content: string, type: ClipItem['type'] = '
       selected: false,
       ...(keptHtml ? { metadata: { html: keptHtml } } : {}),
     })
+    markRecentArrival(localId)
     // 同步即时更新顶部计数：乐观插入即 +1（刷新时 loadClipboardItems 会用服务器真实
     // total 重设，自动纠正，不会重复计数）。否则同步后数字要等刷新/加载更多才变化。
     totalItems.value += 1
@@ -466,6 +467,7 @@ export async function uploadImageToServer(dataUrl: string, contentHash?: string)
       timestamp: Date.now(),
       selected: false,
     })
+    markRecentArrival(localId)
     totalItems.value += 1
     mainTotalItems.value += 1
     trimToMaxHistory()
@@ -657,6 +659,7 @@ export async function uploadFileToServer(payload: string) {
       selected: false,
       metadata: { ...baseMeta },
     })
+    markRecentArrival(localId)
     totalItems.value += 1
     mainTotalItems.value += 1
     trimToMaxHistory()
@@ -726,6 +729,7 @@ export async function uploadFileToServer(payload: string) {
         selected: false,
         metadata: { ...meta },
       })
+      markRecentArrival(localId)
       totalItems.value += 1
       mainTotalItems.value += 1
       trimToMaxHistory()

@@ -355,13 +355,24 @@
 .clip-item.selected {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 4%, var(--bg-surface));
+  /* 点选瞬间：accent 底色从浓扫到常态（class 摘除即无动画，重选重播） */
+  animation: clip-row-select 0.4s var(--ease);
+}
+@keyframes clip-row-select {
+  0% {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
+  }
+  100% {
+    background: color-mix(in srgb, var(--accent) 4%, var(--bg-surface));
+  }
 }
 .clip-item.selecting {
   cursor: default;
 }
-/* 「更多」菜单展开期间：所在行整体置顶——否则下一行 hover 的 transform
-   会形成更高处的层叠上下文，把向下弹出的菜单盖住 */
+/* 「更多」菜单 / 收藏 popover / 标签编辑展开期间：所在行整体置顶——否则下一行
+   hover 的 transform 会形成更高处的层叠上下文，把向下弹出的菜单盖住 */
 .clip-item:has(.more-dropdown),
+.clip-item:has(.fav-popover),
 .clip-item:has(.fav-add-col-dropdown),
 .clip-item.fav-item--editing-tags {
   z-index: 30;
@@ -490,6 +501,14 @@
   transition:
     background var(--ease-d, 160ms) var(--ease),
     border-color var(--ease-d, 160ms) var(--ease);
+  /* 批量模式进入：复选框随 v-if 挂载淡入缩放 */
+  animation: cbx-in 0.18s var(--ease);
+}
+@keyframes cbx-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
 }
 .cbx:hover {
   border-color: var(--accent);
@@ -497,6 +516,25 @@
 .cbx:checked {
   background: var(--accent);
   border-color: var(--accent);
+  /* 勾选瞬间：弹跳 */
+  animation: cbx-pop 0.22s var(--ease);
+}
+@keyframes cbx-pop {
+  0% {
+    transform: scale(0.75);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-item.selected,
+  .cbx {
+    animation: none;
+  }
 }
 .cbx:checked::after {
   content: '';
@@ -869,6 +907,24 @@
     opacity: 1;
   }
 }
+/* 抽屉退场：由 ClipDetailDrawer 里的 <Transition name="fx-drawer"> 驱动；
+   进场仍走 .drawer 自带的 pl-slide-l 挂载动画，两者互不接管 */
+.fx-drawer-leave-active {
+  transition: transform 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+.fx-drawer-leave-to {
+  transform: translateX(40px);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawer-body {
+    animation: none;
+  }
+  .fx-drawer-leave-active {
+    transition: none;
+  }
+}
 .drawer-head {
   display: flex;
   align-items: center;
@@ -890,6 +946,8 @@
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  /* 切换条目时 drawer-body :key 重挂载 → 淡入（复用上方 pl-fade） */
+  animation: pl-fade 160ms var(--ease);
 }
 .drawer-foot {
   padding: 12px 16px;

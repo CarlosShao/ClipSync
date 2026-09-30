@@ -5,12 +5,40 @@ import { useI18n } from '@/composables/useI18n'
 import { useClipboard, type ClipboardFilter } from '@/composables/useClipboard'
 import { useSearchHistory } from '@/composables/useSearchHistory'
 import SearchHistoryDropdown from './SearchHistoryDropdown.vue'
-import { Upload, Plus, Search, Filter, X, Trash2, ArchiveRestore, Sparkles, Star, Type, Link2, Code2, Image as ImageIcon, FileText, CircleCheck, Archive, Calendar, History, Wifi } from 'lucide-vue-next'
+import {
+  Upload,
+  Plus,
+  Search,
+  Filter,
+  X,
+  Trash2,
+  ArchiveRestore,
+  Sparkles,
+  Star,
+  Type,
+  Link2,
+  Code2,
+  Image as ImageIcon,
+  FileText,
+  CircleCheck,
+  Archive,
+  Calendar,
+  History,
+  Wifi,
+} from 'lucide-vue-next'
 import { Trash2 as TrashIcon } from 'lucide-vue-next'
 import { getClipboardStats, type ClipboardStats } from '@/api/clipboard'
 import { useDevice } from '@/composables/useDevice'
+import CountUp from '@/components/fx/CountUp.vue'
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
+import StarBorder from '@/components/fx/StarBorder.vue'
 
-defineProps<{ view: 'timeline' | 'fav' | 'archive'; showFilterPanel: boolean; aiEnabled?: boolean; summaryActive?: boolean }>()
+defineProps<{
+  view: 'timeline' | 'fav' | 'archive'
+  showFilterPanel: boolean
+  aiEnabled?: boolean
+  summaryActive?: boolean
+}>()
 const emit = defineEmits<{
   upload: []
   'new-clip': []
@@ -52,6 +80,11 @@ const batchMode = computed(() => clip.batchMode.value)
 const allSelected = computed(() => clip.allSelected.value)
 
 const CHIP_ICONS: Record<string, any> = { text: Type, images: ImageIcon, links: Link2, files: FileText }
+
+// fx/SpotlightCard 光斑色：accent 低透明度，DOM 侧可直接用 color-mix（不需要走 canvas 那套 rgb 解析）
+const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
+// fx/StarBorder 绕边光色：登录页同一套配方（accent 70% 混白，1-2px 边缘缝里才看得见）
+const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
 
 // 历史下拉显隐：聚焦显示、失焦延迟关闭（确保下拉项 mousedown 先触发）
 const showHistory = ref(false)
@@ -148,34 +181,64 @@ function clearSearch() {
         <button v-if="view !== 'archive'" type="button" class="pl-btn" @click="emit('upload')">
           <Upload :size="14" /><span>{{ t('upload_file') }}</span>
         </button>
-        <button v-if="view !== 'archive'" type="button" class="pl-btn pl-btn--acc" @click="emit('new-clip')">
-          <Plus :size="14" /><span>{{ t('new_clip') }}</span>
-        </button>
+        <!-- fx/StarBorder：主 CTA 绕边流光（登录页同款，速度放慢一档避免抢注意力） -->
+        <StarBorder
+          v-if="view !== 'archive'"
+          as="div"
+          custom-class="toolbar-cta-border"
+          :color="CTA_GLOW"
+          speed="5s"
+          :thickness="2"
+          border-radius="var(--radius-sm)"
+        >
+          <button type="button" class="pl-btn pl-btn--acc toolbar-cta" @click="emit('new-clip')">
+            <Plus :size="14" /><span>{{ t('new_clip') }}</span>
+          </button>
+        </StarBorder>
       </div>
     </div>
 
-    <!-- 原型 v1 统计卡：真实服务端数据 -->
-    <div class="clip-stats">
-      <div class="clip-stat">
+    <!-- 原型 v1 统计卡：真实服务端数据；fx/SpotlightCard 给每张卡加光标聚光 -->
+    <div class="clip-stats reveal-stagger">
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT" :radius="150">
         <span class="clip-stat-k"><Calendar :size="12" />{{ tf('stats_today', '今日新增') }}</span>
-        <span class="clip-stat-v">{{ stats?.today ?? '—' }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
+        <span class="clip-stat-v"
+          ><CountUp v-if="stats?.today != null" :key="stats.today" :to="stats.today" :duration="0.9" /><template v-else
+            >—</template
+          ><em>{{ tf('stats_unit_tiao', '条') }}</em></span
+        >
         <span class="clip-stat-d">{{ todayDelta }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT" :radius="150">
         <span class="clip-stat-k"><History :size="12" />{{ tf('stats_week', '本周累计') }}</span>
-        <span class="clip-stat-v">{{ stats?.week ?? '—' }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
+        <span class="clip-stat-v"
+          ><CountUp v-if="stats?.week != null" :key="stats.week" :to="stats.week" :duration="0.9" /><template v-else
+            >—</template
+          ><em>{{ tf('stats_unit_tiao', '条') }}</em></span
+        >
         <span class="clip-stat-d">{{ tf('stats_week_sub', '自然周 · 实时同步') }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT" :radius="150">
         <span class="clip-stat-k"><Star :size="12" />{{ t('nav_favorites') }}</span>
-        <span class="clip-stat-v">{{ stats?.favorites ?? '—' }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
+        <span class="clip-stat-v"
+          ><CountUp
+            v-if="stats?.favorites != null"
+            :key="stats.favorites"
+            :to="stats.favorites"
+            :duration="0.9"
+          /><template v-else>—</template><em>{{ tf('stats_unit_tiao', '条') }}</em></span
+        >
         <span class="clip-stat-d">{{ tf('stats_fav_sub', '{n} 条置顶', { n: stats?.pinned ?? 0 }) }}</span>
-      </div>
-      <div class="clip-stat">
+      </FxSpotlightCard>
+      <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT" :radius="150">
         <span class="clip-stat-k"><Wifi :size="12" />{{ tf('stats_devices', '在线设备') }}</span>
-        <span class="clip-stat-v">{{ onlineDeviceCount }}<em>{{ tf('stats_unit_tai', '台') }}</em></span>
+        <span class="clip-stat-v"
+          ><CountUp :key="onlineDeviceCount" :to="onlineDeviceCount" :duration="0.9" /><em>{{
+            tf('stats_unit_tai', '台')
+          }}</em></span
+        >
         <span class="clip-stat-d">{{ tf('stats_dev_sub', '端到端加密 · 实时同步') }}</span>
-      </div>
+      </FxSpotlightCard>
     </div>
 
     <div class="clip-filter-row">
@@ -190,7 +253,13 @@ function clearSearch() {
           @blur="onSearchBlur"
           @keyup.enter="commitSearch()"
         />
-        <button v-if="searchInput.length > 0" type="button" class="clip-search-clear" :title="t('clear_search')" @click="clearSearch">
+        <button
+          v-if="searchInput.length > 0"
+          type="button"
+          class="clip-search-clear"
+          :title="t('clear_search')"
+          @click="clearSearch"
+        >
           <X :size="13" />
         </button>
         <SearchHistoryDropdown
@@ -215,18 +284,39 @@ function clearSearch() {
       </button>
 
       <div class="seg" role="tablist" :aria-label="t('nav_clipboard')">
-        <button role="tab" :class="{ active: view === 'timeline' }" :aria-selected="view === 'timeline'" @click="emit('set-view', 'timeline')">
+        <button
+          role="tab"
+          :class="{ active: view === 'timeline' }"
+          :aria-selected="view === 'timeline'"
+          @click="emit('set-view', 'timeline')"
+        >
           {{ t('view_timeline', '时间流') }}
         </button>
-        <button role="tab" :class="{ active: view === 'fav' }" :aria-selected="view === 'fav'" @click="emit('set-view', 'fav')">
+        <button
+          role="tab"
+          :class="{ active: view === 'fav' }"
+          :aria-selected="view === 'fav'"
+          @click="emit('set-view', 'fav')"
+        >
           {{ t('view_fav_only', '仅收藏') }}
         </button>
-        <button role="tab" :class="{ active: view === 'archive' }" :aria-selected="view === 'archive'" @click="emit('set-view', 'archive')">
+        <button
+          role="tab"
+          :class="{ active: view === 'archive' }"
+          :aria-selected="view === 'archive'"
+          @click="emit('set-view', 'archive')"
+        >
           {{ t('nav_archive') }}
         </button>
       </div>
 
-      <button type="button" class="pl-icon-btn" :class="{ on: showFilterPanel }" :title="t('adv_filter')" @click="emit('toggle-filter-panel')">
+      <button
+        type="button"
+        class="pl-icon-btn"
+        :class="{ on: showFilterPanel }"
+        :title="t('adv_filter')"
+        @click="emit('toggle-filter-panel')"
+      >
         <Filter :size="15" />
       </button>
 
@@ -242,7 +332,6 @@ function clearSearch() {
     </div>
   </div>
 </template>
-
 
 <style scoped>
 .page-inner {
@@ -269,6 +358,11 @@ function clearSearch() {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
+}
+/* fx/StarBorder 包住主 CTA：外层只负责 2px 光带，按钮外观仍是 .pl-btn--acc */
+.toolbar-cta-border {
+  display: inline-flex;
+  flex: none;
 }
 .clip-stat-k {
   display: inline-flex;
