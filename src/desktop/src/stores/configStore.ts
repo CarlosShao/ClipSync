@@ -56,6 +56,16 @@ export const useConfigStore = defineStore('config', () => {
         // 它与"用户显式保存的值"无法区分。dev 下默认值/空值一律走 Vite proxy（同源，
         // 避免 1420→3001 跨域预检被 CORS 拦截）；仅当用户配置了其它地址时才直连。
         config.value.server_url = ''
+        // 自愈：历史版本会把 dev 的空地址（前端"走代理"约定）原样落盘，
+        // 而 Rust 侧 '' = 未配置，login/send_verification_code 等原生命令会直接报
+        // "服务器地址未配置"。dev 下 Rust 的 server_url 不允许为空，读到脏数据就修复回默认值。
+        if (!c.server_url) {
+          try {
+            await tauri.updateConfig({ ...c, server_url: DEFAULT_SERVER_URL })
+          } catch {
+            /* 修复失败不阻塞启动，下次 load 重试 */
+          }
+        }
       }
       const auto = await tauri.isAutostartEnabled().catch(() => false)
       autostart.value = auto
@@ -112,8 +122,14 @@ export const useConfigStore = defineStore('config', () => {
   // 既有调用方（completeLogin 等）忽略返回值，行为向后兼容。
   async function save(partial: Partial<AppConfig>): Promise<boolean> {
     const updated = { ...config.value, ...partial }
+    // 边界翻译：前端视图里 server_url='' 表示"走 Vite 代理"（代理目标见 vite.config.ts，
+    // 与 DEFAULT_SERVER_URL 同指 localhost:3001），但 Rust 侧 '' = 未配置，会让
+    // login/send_verification_code 等原生命令直接报"服务器地址未配置"。
+    // dev 下落盘前把空地址翻译回默认值；生产构建保留 ''（用户主动清空 = 未连接，合法）。
+    const persisted =
+      isDev && !updated.server_url ? { ...updated, server_url: DEFAULT_SERVER_URL } : updated
     try {
-      await tauri.updateConfig(updated)
+      await tauri.updateConfig(persisted)
       config.value = updated
       return true
     } catch {

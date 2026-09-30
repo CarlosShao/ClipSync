@@ -32,13 +32,17 @@
           var stack = r && r.stack ? ('\n\n' + r.stack) : '';
           el.textContent = '[ClipSync 未处理的 Promise 拒绝 / early] ' + msg + stack;
         });
-        // 挂载超时检测：若无 JS 报错但 #app 在 3s 内仍未渲染任何内容，
+        // 挂载超时检测：若无 JS 报错但 #app 在阈值内仍未渲染任何内容，
         // 说明是"静默白/黑屏"（组件 setup 抛错被 Vue 吞掉、或路由首屏未渲染）。
+        // 阈值放宽到 8s：dev 冷启动首次全量 transform 模块需数秒，3s 会误报。
+        // 遮罩只作诊断，一旦应用迟到挂载成功必须自动撤掉——否则误报会永久盖住
+        // （其实可用的）界面，即用户看到的"蓝屏"。
+        var MOUNT_TIMEOUT_MS = 8000;
         setTimeout(function () {
           var app = document.getElementById('app');
           if (!app || app.children.length === 0) {
             var el = box('clip-mount-timeout', '#1e3a8a');
-            el.textContent = '[ClipSync 诊断] #app 在 3 秒内未渲染任何内容（挂载超时）。\n' +
+            el.textContent = '[ClipSync 诊断] #app 在 ' + MOUNT_TIMEOUT_MS / 1000 + ' 秒内未渲染任何内容（挂载超时）。\n' +
               '可能原因：\n' +
               '  1) 某个组件 setup() 抛错但被 Vue 错误边界吞掉（未冒泡到 window.onerror）\n' +
               '  2) 路由首屏组件未渲染\n' +
@@ -46,8 +50,19 @@
               '请对照：在普通浏览器访问 http://localhost:1420/ ——\n' +
               '  - 若浏览器也空白 → 前端代码本身有问题\n' +
               '  - 若浏览器正常、仅 Tauri 黑屏 → 是 Tauri/WebView2 渲染问题';
+            // 迟到挂载成功 → 立即撤掉误报遮罩
+            if (app) {
+              var removeOverlay = function () {
+                if (app.children.length === 0) return;
+                observer.disconnect();
+                el.remove();
+              };
+              var observer = new MutationObserver(removeOverlay);
+              observer.observe(app, { childList: true });
+              removeOverlay();
+            }
           }
-        }, 3000);
+        }, MOUNT_TIMEOUT_MS);
       })();
     </script>
     <meta charset="UTF-8" />
