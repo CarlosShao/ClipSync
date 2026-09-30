@@ -464,7 +464,10 @@ const timelineSections = computed(() => {
   const startOfYesterday = startOfToday.getTime() - 86_400_000
   const flat = !isTimeline.value
   const sections: { label: string; items: ClipItem[] }[] = []
-  let cur = ''
+  // 哨兵必须是 null 而不能是 ''：仅收藏/归档视图（flat）下每一项的 label 都是空串，
+  // 若初值也是空串，首个条目就命中 label === cur 而不 push 分节，
+  // 紧接着的 sections[sections.length - 1].items 就会读 undefined.items 直接炸渲染。
+  let cur: string | null = null
   for (const it of filteredItems.value) {
     const label = flat
       ? ''

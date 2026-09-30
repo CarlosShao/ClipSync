@@ -443,31 +443,24 @@
 .fav-search-input::placeholder {
   color: var(--text-tertiary);
 }
-.fav-action-btn {
-  height: 30px !important;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary) !important;
-  font-size: 12px;
-}
-.fav-action-btn:hover {
-  background: var(--bg-hover) !important;
-  color: var(--text-primary) !important;
-}
-.fav-action-btn.fav-active {
-  background: var(--accent-light) !important;
-  color: var(--accent) !important;
-  font-weight: 600;
-}
-.fav-batch-count {
-  font-family: var(--font-content);
-  font-size: 11.5px;
-  color: var(--accent);
-  padding: 2px 8px;
-  background: var(--accent-light);
-  border-radius: 999px;
-}
 .fav-unfav-btn {
   color: var(--warning) !important;
+}
+/* 时间排序 / 批量选择：与剪贴板工具栏同一套 .pl-btn 语言（原来用 shadcn ghost Button，
+   与旁边的 .pl-btn 并排时风格不一致）。 */
+.fav-sort-btn,
+.fav-batch-toggle {
+  height: 26px;
+  flex: none;
+}
+/* 批量条：复用全局 .batch-bar（吸附 + accent 描边 + pl-pop-in 入场），只补收藏页特有的两处 */
+.fav-batchbar-grow {
+  flex: 1;
+}
+.fav-batchbar-cancel {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 /* 视图切换 = Clearline 分段器 */
 .fav-view-toggle {

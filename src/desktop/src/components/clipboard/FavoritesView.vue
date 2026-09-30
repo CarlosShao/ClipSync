@@ -7,10 +7,9 @@ import { useSonner } from '@/composables/useSonner'
 import { useConfigStore } from '@/stores/configStore'
 import { useDevice } from '@/composables/useDevice'
 import { usePrivacy } from '@/composables/usePrivacy'
-import { Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, ExternalLink, FileText, Folder, FolderPlus, FolderInput, Plus, X, Check, CheckSquare, Square, ArrowUpDown, Tag, ClipboardList, ChevronRight, Lock, Bookmark, Archive, Trash2, Palette, Edit, AlertTriangle, RefreshCw, Code2, Sparkles, Eye, Pencil, History } from 'lucide-vue-next'
+import { Star, Search, Copy, Image as ImageIcon, LayoutGrid, List, ExternalLink, FileText, Folder, FolderPlus, FolderInput, Plus, X, Check, ArrowUpDown, ArrowDownWideNarrow, ArrowUpWideNarrow, CircleCheck, Tag, ClipboardList, ChevronRight, Lock, Bookmark, Archive, Trash2, Palette, Edit, AlertTriangle, RefreshCw, Code2, Sparkles, Eye, Pencil, History } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Badge from '@/components/ui/badge/Badge.vue'
-import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { createFavoriteCollection, updateFavoriteCollection, deleteFavoriteCollection, addCollectionItem, removeCollectionItem, setItemTags, getAllFavoriteTags, deleteTag, createTag, updateTag, getCollectionItems, type FavoriteTag } from '@/api/client'
 import { useCollections, type CollectionNode } from '@/composables/useCollections'
@@ -858,6 +857,14 @@ function toggleSelect(id: string) {
   if (selectedIds.value.has(id)) selectedIds.value.delete(id)
   else selectedIds.value.add(id)
 }
+// 全选（与剪贴板 toolbar 的「全选」同语义）：范围就是当前可见的 favoriteItems
+const allSelected = computed(
+  () => favoriteItems.value.length > 0 && selectedIds.value.size >= favoriteItems.value.length,
+)
+function toggleSelectAll() {
+  if (allSelected.value) selectedIds.value.clear()
+  else favoriteItems.value.forEach((i) => selectedIds.value.add(i.id))
+}
 async function batchUnfavorite() {
   const items = clip.items.value.filter((i) => selectedIds.value.has(i.id))
   const activeColId = collections.activeNodeId.value
@@ -1570,27 +1577,25 @@ function cancelEditTags() {
           <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="aiSummarizeCollection">
             <Sparkles :size="14" /><span>{{ tf('fav_ai_summarize_col', '总结这个合集') }}</span>
           </button>
-          <Button variant="ghost" size="sm" class="fav-action-btn" @click="toggleSort">
-            <ArrowUpDown :size="14" /><span>{{ sortLabel() }}</span>
-          </Button>
-          <Button
+          <!-- 时间排序：与工具栏其它按钮同一套 .pl-btn 语言。原来是 shadcn ghost Button，
+               和旁边的 .pl-btn 并排时看着像一段孤立文字（被指出"不好看"）。图标随方向切换。 -->
+          <button type="button" class="pl-btn pl-btn--sm fav-sort-btn" @click="toggleSort">
+            <ArrowDownWideNarrow v-if="sortBy === 'time' && !sortAsc" :size="13" />
+            <ArrowUpWideNarrow v-else-if="sortBy === 'time'" :size="13" />
+            <ArrowUpDown v-else :size="13" />
+            <span>{{ sortLabel() }}</span>
+          </button>
+          <!-- 批量选择：与剪贴板工具栏 .clip-batch-toggle 完全一致（同文案 key、同 pl-btn--acc 高亮）；
+               选中计数与批量操作移到下方 .batch-bar，与剪贴板同一套结构（原来收藏页没有全选）。 -->
+          <button
             v-if="favoriteItems.length > 0"
-            variant="ghost"
-            size="sm"
-            class="fav-action-btn"
-            :class="{ 'fav-active': batchMode }"
+            type="button"
+            class="pl-btn pl-btn--sm fav-batch-toggle"
+            :class="{ 'pl-btn--acc': batchMode }"
             @click="toggleBatchMode"
           >
-            <CheckSquare v-if="batchMode" :size="14" /><Square v-else :size="14" /><span>{{
-              batchMode ? t('fav_batch_exit') : t('fav_batch_select')
-            }}</span>
-          </Button>
-          <template v-if="batchMode && selectedCount > 0">
-            <span class="fav-batch-count">{{ t('fav_batch_selected', { n: selectedCount }) }}</span>
-            <Button variant="ghost" size="sm" class="fav-action-btn fav-unfav-btn" @click="batchUnfavorite">
-              <Star :size="14" fill="currentColor" /><span>{{ t('unfavorite') }}</span>
-            </Button>
-          </template>
+            <CircleCheck :size="13" /><span>{{ t('batch_select_btn', '批量选择') }}</span>
+          </button>
           <div class="fav-view-toggle">
             <!-- 横向滑动指示块：视图切换是**横向**分段控件，必须显式 axis="x"，
                  否则 left/width 不参与过渡 → 指示块会"跳"过去而不是"滑"过去。
@@ -1795,6 +1800,22 @@ function cancelEditTags() {
 
       <!-- Content -->
       <div ref="favContentRef" class="fav-content">
+        <!-- 批量选择条：与剪贴板 .batch-bar 同一套（吸附 + accent 描边 + pl-pop-in 入场）。
+             全选 / 已选 N 项 / 批量取消收藏 / 取消 —— 之前收藏页缺全选，与剪贴板不统一。 -->
+        <div v-if="batchMode" class="batch-bar fav-batchbar">
+          <label>
+            <input type="checkbox" class="cbx" :checked="allSelected" @change="toggleSelectAll" />
+            {{ t('batch_select_all', '全选') }}
+          </label>
+          <span class="sel-info">{{ tf('batch_selected_n', '已选 {n} 项', { n: selectedCount }) }}</span>
+          <span class="fav-batchbar-grow" />
+          <button type="button" class="pl-btn pl-btn--sm" :disabled="selectedCount === 0" @click="batchUnfavorite">
+            <Star :size="12" fill="currentColor" /><span>{{ t('unfavorite') }}</span>
+          </button>
+          <button type="button" class="pl-btn pl-btn--sm fav-batchbar-cancel" @click="toggleBatchMode">
+            <X :size="12" /><span>{{ t('cancel_btn') }}</span>
+          </button>
+        </div>
         <!-- Skeleton loading -->
         <div v-if="collections.loading.value || clip.loading.value" class="fav-skeleton">
           <div v-if="viewMode === 'grid'" class="fav-skeleton-grid">
@@ -1857,7 +1878,13 @@ function cancelEditTags() {
             @dragend="onDragEnd"
           >
             <div v-if="batchMode" class="fav-list-check">
-              <Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" />
+              <input
+                type="checkbox"
+                class="cbx"
+                :checked="selectedIds.has(item.id)"
+                :aria-label="t('select_item', '选择此条')"
+                @change="toggleSelect(item.id)"
+              />
             </div>
 
             <div class="type-tile" :class="favTileClass(item)">
@@ -2014,7 +2041,13 @@ function cancelEditTags() {
                 @dragend="onDragEnd"
               >
                 <div v-if="batchMode" class="fav-card-check">
-                  <Checkbox :model-value="selectedIds.has(item.id)" @update:model-value="() => toggleSelect(item.id)" />
+                  <input
+                    type="checkbox"
+                    class="cbx"
+                    :checked="selectedIds.has(item.id)"
+                    :aria-label="t('select_item', '选择此条')"
+                    @change="toggleSelect(item.id)"
+                  />
                 </div>
                 <!-- 卡头：类型 tile + 来源 + 时间（悬浮操作条盖在右上） -->
                 <div class="fav-card-head">
