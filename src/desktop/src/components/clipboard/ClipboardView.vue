@@ -270,77 +270,78 @@ watch(
 // 列表底沿渐隐（fx/GradualBlur）：装饰性磨砂，减少动画时一并撤掉（性能优先的用户要的就是这个）
 const showListFade = computed(() => !reduced.value && filteredItems.value.length > 0 && !atListBottom.value)
 
-// === 焦点滑轨（↑↓ 切行的丝滑过渡）===
-// 现状：↑↓ 只是把 .focused 从一个行挪到另一行，border-color 有 160ms 淡入，但视觉上是「咔」一下跳变。
-// 做法：在 .clip-list 里放一个绝对定位的 accent 小胶囊，量出焦点行的位置后用 transform 滑过去。
-// 三个刻意的取舍：
-//   ① 对齐到行「顶部偏移」而不是垂直居中 —— 焦点行会因为 .clip-text 从 2 行撑到 8 行而长高
-//      （220ms），居中对齐会让滑轨在长高过程中一直往下追，抖且需要 ResizeObserver；
-//      顶部对齐则长高时纹丝不动。
-//   ② 只有键盘导航才滑（railGliding），鼠标移入直接吸附 —— 否则滑轨永远慢指针半拍，像卡了。
-//   ③ 用 offsetTop 而非 getBoundingClientRect —— 前者是布局值，不受滚动与行 hover 的
-//      translateY(-1px) 影响，滚列表时不需要重算。
-const RAIL_TOP_OFFSET = 13
-const railY = ref(0)
-const railVisible = ref(false)
-const railGliding = ref(false)
-// 同一次 tick 内标记「这次焦点变更来自鼠标」，watch 里据此决定要不要播滑动
-let focusFromPointer = false
+// === 焦点环：选中态「滑」过去而不是「跳」过去 ===
+// 上一版这里放的是 3×20px 的小胶囊，且只有键盘导航才播滑动 —— 实测被否：
+// ① 胶囊太小，看不出"选中态在移动"；② 用鼠标测时走的是"瞬间吸附"分支，等于没有动效。
+// 现在改成「整行大小的 accent 环」+「键盘鼠标都滑」：
+//   · 环的尺寸/位置都量焦点行，180ms 从旧行形态过渡到新行形态（高度也跟着变 → 液态感）；
+//   · 焦点行自己的 border-color 高亮已从 prototype-v2.css 撤掉，唯一焦点指示就是这个环，
+//     所以不会出现"环还在半路、静态高亮已经跳到位"的双指示器打架。
+// 两个仍然保留的技术取舍：
+//   · 用 offsetTop / offsetHeight 而非 getBoundingClientRect：前者是布局值，不受滚动与行
+//     hover 的 translateY(-1px) 影响，滚列表时无需重算。
+//   · 焦点行长高（.clip-text 2 行→8 行，220ms）后要再量一次，否则环会停在旧高度；
+//     靠列表容器上冒泡的 transitionend(max-height) 触发，不写死时长。
+const RING_MIN_H = 24
+const ringY = ref(0)
+const ringH = ref(RING_MIN_H)
+const ringVisible = ref(false)
 
-function onRowPointerFocus(item: ClipItem) {
-  focusFromPointer = true
-  focusedIndex.value = flatIndexMap.value.get(item.id) ?? -1
-}
-
-function syncFocusRail() {
+function syncFocusRing() {
   const listEl = listScrollEl.value?.querySelector('.clip-list') ?? null
   const item = filteredItems.value[focusedIndex.value]
   if (!listEl || !item) {
-    railVisible.value = false
+    ringVisible.value = false
     return
   }
   const rowEl = listEl.querySelector<HTMLElement>(`[data-clip-id="${CSS.escape(item.id)}"]`)
   if (!rowEl) {
-    railVisible.value = false
+    ringVisible.value = false
     return
   }
   // 自检：offsetTop 只有在 offsetParent 正好是 .clip-list 时才等于「相对列表的位置」。
-  // 将来若有人在 .clip-list 与行之间插入带 position 的包裹层，滑轨会静默错位——
+  // 将来若有人在 .clip-list 与行之间插入带 position 的包裹层，环会静默错位——
   // 与其默默错，不如在 dev 下喊一声（生产不打日志）。
   if (import.meta.env.DEV && rowEl.offsetParent !== listEl) {
-    console.warn('[clipboard] 焦点滑轨定位基准被破坏：行的 offsetParent 不是 .clip-list', rowEl.offsetParent)
+    console.warn('[clipboard] 焦点环定位基准被破坏：行的 offsetParent 不是 .clip-list', rowEl.offsetParent)
   }
-  railY.value = rowEl.offsetTop + RAIL_TOP_OFFSET
-  railVisible.value = true
+  ringY.value = rowEl.offsetTop
+  ringH.value = Math.max(RING_MIN_H, rowEl.offsetHeight)
+  ringVisible.value = true
 }
 
-watch(focusedIndex, () => {
-  railGliding.value = !focusFromPointer
-  focusFromPointer = false
-  nextTick(syncFocusRail)
-})
+watch(focusedIndex, () => nextTick(syncFocusRing))
 // 行数变化（新增/删除/翻页）会让焦点行整体位移；窗口宽度变化会让上方行重新折行、
 // 高度随之改变，同样会顶动焦点行的 offsetTop —— 两处都要重算。
 // 刻意不 watch filteredItems 本体：items 有原地 unshift 的更新路径，watch 比不到引用变化。
 watch(
   () => filteredItems.value.length,
-  () => nextTick(syncFocusRail),
+  () => nextTick(syncFocusRing),
 )
-let railRaf: number | null = null
-function requestRailSync() {
-  if (railRaf !== null) return
-  railRaf = requestAnimationFrame(() => {
-    railRaf = null
-    syncFocusRail()
+let ringRaf: number | null = null
+function requestRingSync() {
+  if (ringRaf !== null) return
+  ringRaf = requestAnimationFrame(() => {
+    ringRaf = null
+    syncFocusRing()
   })
 }
-window.addEventListener('resize', requestRailSync)
-onUnmounted(() => {
-  window.removeEventListener('resize', requestRailSync)
-  if (railRaf !== null) cancelAnimationFrame(railRaf)
-  railRaf = null
+// 焦点行从 2 行撑到 8 行是 max-height 过渡（220ms），过渡结束再量一次收口；
+// transitionend 会冒泡，所以挂在滚动容器上收一次即可，不写死时长。
+function onListTransitionEnd(e: TransitionEvent) {
+  if (e.propertyName === 'max-height') requestRingSync()
+}
+window.addEventListener('resize', requestRingSync)
+onMounted(() => {
+  listScrollEl.value?.addEventListener('transitionend', onListTransitionEnd)
+  nextTick(syncFocusRing)
 })
-onMounted(() => nextTick(syncFocusRail))
+onUnmounted(() => {
+  listScrollEl.value?.removeEventListener('transitionend', onListTransitionEnd)
+  window.removeEventListener('resize', requestRingSync)
+  if (ringRaf !== null) cancelAnimationFrame(ringRaf)
+  ringRaf = null
+})
 
 function reload() {
   if (viewSeg.value === 'fav') {
@@ -777,12 +778,12 @@ onUnmounted(() => {
 
         <div v-else-if="filteredItems.length > 0" class="table-wrapper">
           <div class="clip-list" role="list" :aria-label="t('nav_clipboard')">
-            <!-- 焦点滑轨：↑↓ 切行时这个 accent 小胶囊在行间滑过去，把"焦点跳变"变成"焦点移动"。
-                 它是装饰，对读屏与指针都透明；位置由 syncFocusRail() 量行元素得出 -->
+            <!-- 焦点环：整行大小的 accent 环，焦点一变就 180ms 从旧行形态滑到新行形态。
+                 它是唯一的焦点指示（行自身的 .focused 边框高亮已撤掉），对读屏与指针透明 -->
             <span
-              class="clip-focus-rail"
-              :class="{ 'is-visible': railVisible, 'is-gliding': railGliding }"
-              :style="{ transform: `translateY(${railY}px)` }"
+              v-if="ringVisible"
+              class="clip-focus-ring"
+              :style="{ transform: `translateY(${ringY}px)`, height: `${ringH}px` }"
               aria-hidden="true"
             />
             <template v-for="sec in timelineSections" :key="sec.label || 'flat'">
@@ -801,7 +802,7 @@ onUnmounted(() => {
                 :is-archive="isArchive"
                 :more-open-id="ctx.moreOpenId"
                 :selecting="batchMode"
-                @focus="onRowPointerFocus(item)"
+                @focus="focusedIndex = flatIndexMap.get(item.id) ?? -1"
                 @click="openDrawer"
                 @dblclick="actions.onDblClick"
                 @contextmenu="ctx.openCtxMenu"
@@ -1002,40 +1003,33 @@ onUnmounted(() => {
 }
 .clip-list {
   display: block;
-  /* 焦点滑轨的定位基准：滑轨是 .clip-list 的绝对定位子元素，随列表一起滚动；
-     同时让行元素的 offsetTop 以本元素为原点，syncFocusRail() 才能直接拿来做 translateY */
+  /* 焦点环的定位基准：环是 .clip-list 的绝对定位子元素，随列表一起滚动；
+     同时让行元素的 offsetTop 以本元素为原点，syncFocusRing() 才能直接拿来做 translateY */
   position: relative;
 }
-/* 焦点滑轨：↑↓ 切行时在行间滑过去的 accent 小胶囊。
-   - 鼠标移动时直接吸附（无 transition），键盘导航才播 220ms 位移；
-   - 对齐行顶部偏移量而非垂直居中，因为焦点行会随 .clip-text 展开而长高（见 syncFocusRail 注释）；
-   - reduce-motion 双通道都压掉位移：html.reduce-motion 由 globals.css 全局压，
-     prefers-reduced-motion 这条媒体查询在本组件内单独兜。 */
-.clip-focus-rail {
+/* 焦点环：选中态「滑」过去而不是「跳」过去。
+   - 整行大小（宽撑满列表、高 = 焦点行高），从旧行形态 180ms 过渡到新行形态；
+     高度一起过渡 → 在长短行之间移动时是"液态变形"，不是硬切；
+   - 用 expo-out 曲线（cubic-bezier(0.22,1,0.36,1)）而不是全站 --ease：
+     位移类的收尾要更快更稳，否则长距离滑动末尾会有"蹭"的感觉；
+   - 键盘与鼠标都播（上一版只有键盘播，实测被否）；reduce-motion 双通道都压掉：
+     html.reduce-motion 由 globals.css 全局压，prefers-reduced-motion 在此单独兜。 */
+.clip-focus-ring {
   position: absolute;
-  left: -1px;
+  left: 0;
+  right: 0;
   top: 0;
-  width: 3px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 42%, transparent);
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
   pointer-events: none;
-  opacity: 0;
-  z-index: 6;
-}
-.clip-focus-rail.is-visible {
-  opacity: 1;
-  transition: opacity 120ms var(--ease);
-}
-.clip-focus-rail.is-visible.is-gliding {
+  z-index: 5;
   transition:
-    transform 220ms var(--ease),
-    opacity 120ms var(--ease);
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @media (prefers-reduced-motion: reduce) {
-  .clip-focus-rail.is-visible,
-  .clip-focus-rail.is-visible.is-gliding {
+  .clip-focus-ring {
     transition: none;
   }
 }

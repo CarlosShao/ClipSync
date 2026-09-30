@@ -349,9 +349,9 @@
   box-shadow: var(--shadow-elevated);
   transform: translateY(-1px);
 }
-.clip-item.focused {
-  border-color: var(--accent);
-}
+/* 焦点高亮已交给 ClipboardView 里的 .clip-focus-ring（绝对定位的 accent 环，会从旧行滑到新行）。
+   这里刻意不再给 .focused 上 accent 边框：否则"环还在半路、静态边框已经跳到位"会出现两个
+   指示器打架，正是上一版被否的观感。.focused 现在只承担「内容展开 + 动作列常显」的职责。 */
 .clip-item.selected {
   border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: color-mix(in srgb, var(--accent) 4%, var(--bg-surface));
@@ -882,7 +882,9 @@
 
 /* ---------- 详情抽屉（原型 .drawer：右侧滑出） ---------- */
 @keyframes pl-fade {
-  from { opacity: 0; }
+  from {
+    opacity: 0;
+  }
 }
 .drawer {
   position: fixed;
@@ -910,7 +912,9 @@
 /* 抽屉退场：由 ClipDetailDrawer 里的 <Transition name="fx-drawer"> 驱动；
    进场仍走 .drawer 自带的 pl-slide-l 挂载动画，两者互不接管 */
 .fx-drawer-leave-active {
-  transition: transform 0.2s var(--ease), opacity 0.2s var(--ease);
+  transition:
+    transform 0.2s var(--ease),
+    opacity 0.2s var(--ease);
 }
 .fx-drawer-leave-to {
   transform: translateX(40px);
