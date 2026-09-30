@@ -42,14 +42,12 @@ import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { api } from '@/api/client'
-import FxClickSpark from '@/components/fx/FxClickSpark.vue'
 import FxGradualBlur from '@/components/fx/FxGradualBlur.vue'
 import FxGlitchText from '@/components/fx/FxGlitchText.vue'
 import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
 import FxMagnet from '@/components/fx/FxMagnet.vue'
 import DecryptedText from '@/components/fx/DecryptedText.vue'
 import { useReducedMotion } from '@/components/fx/useReducedMotion'
-import { useThemeColor } from '@/components/fx/useThemeColor'
 
 const emit = defineEmits<{
   'toggle-quick-paste': []
@@ -88,9 +86,6 @@ const display = useClipItemDisplay()
 
 // === fx 动效层接线（设置→数据→减少动画 一处开关，全组生效）===
 const reduced = useReducedMotion()
-// canvas 解析不了 var()，主题色必须解析成具体 rgb；主题/明暗切换由 useThemeColor 内部跟随
-const accentSparkColor = useThemeColor('--accent-rgb', 0.55)
-const sparkColor = computed(() => accentSparkColor.value ?? 'rgba(140, 150, 165, 0.75)')
 
 const {
   confirmOpen,
@@ -274,6 +269,78 @@ watch(
 )
 // 列表底沿渐隐（fx/GradualBlur）：装饰性磨砂，减少动画时一并撤掉（性能优先的用户要的就是这个）
 const showListFade = computed(() => !reduced.value && filteredItems.value.length > 0 && !atListBottom.value)
+
+// === 焦点滑轨（↑↓ 切行的丝滑过渡）===
+// 现状：↑↓ 只是把 .focused 从一个行挪到另一行，border-color 有 160ms 淡入，但视觉上是「咔」一下跳变。
+// 做法：在 .clip-list 里放一个绝对定位的 accent 小胶囊，量出焦点行的位置后用 transform 滑过去。
+// 三个刻意的取舍：
+//   ① 对齐到行「顶部偏移」而不是垂直居中 —— 焦点行会因为 .clip-text 从 2 行撑到 8 行而长高
+//      （220ms），居中对齐会让滑轨在长高过程中一直往下追，抖且需要 ResizeObserver；
+//      顶部对齐则长高时纹丝不动。
+//   ② 只有键盘导航才滑（railGliding），鼠标移入直接吸附 —— 否则滑轨永远慢指针半拍，像卡了。
+//   ③ 用 offsetTop 而非 getBoundingClientRect —— 前者是布局值，不受滚动与行 hover 的
+//      translateY(-1px) 影响，滚列表时不需要重算。
+const RAIL_TOP_OFFSET = 13
+const railY = ref(0)
+const railVisible = ref(false)
+const railGliding = ref(false)
+// 同一次 tick 内标记「这次焦点变更来自鼠标」，watch 里据此决定要不要播滑动
+let focusFromPointer = false
+
+function onRowPointerFocus(item: ClipItem) {
+  focusFromPointer = true
+  focusedIndex.value = flatIndexMap.value.get(item.id) ?? -1
+}
+
+function syncFocusRail() {
+  const listEl = listScrollEl.value?.querySelector('.clip-list') ?? null
+  const item = filteredItems.value[focusedIndex.value]
+  if (!listEl || !item) {
+    railVisible.value = false
+    return
+  }
+  const rowEl = listEl.querySelector<HTMLElement>(`[data-clip-id="${CSS.escape(item.id)}"]`)
+  if (!rowEl) {
+    railVisible.value = false
+    return
+  }
+  // 自检：offsetTop 只有在 offsetParent 正好是 .clip-list 时才等于「相对列表的位置」。
+  // 将来若有人在 .clip-list 与行之间插入带 position 的包裹层，滑轨会静默错位——
+  // 与其默默错，不如在 dev 下喊一声（生产不打日志）。
+  if (import.meta.env.DEV && rowEl.offsetParent !== listEl) {
+    console.warn('[clipboard] 焦点滑轨定位基准被破坏：行的 offsetParent 不是 .clip-list', rowEl.offsetParent)
+  }
+  railY.value = rowEl.offsetTop + RAIL_TOP_OFFSET
+  railVisible.value = true
+}
+
+watch(focusedIndex, () => {
+  railGliding.value = !focusFromPointer
+  focusFromPointer = false
+  nextTick(syncFocusRail)
+})
+// 行数变化（新增/删除/翻页）会让焦点行整体位移；窗口宽度变化会让上方行重新折行、
+// 高度随之改变，同样会顶动焦点行的 offsetTop —— 两处都要重算。
+// 刻意不 watch filteredItems 本体：items 有原地 unshift 的更新路径，watch 比不到引用变化。
+watch(
+  () => filteredItems.value.length,
+  () => nextTick(syncFocusRail),
+)
+let railRaf: number | null = null
+function requestRailSync() {
+  if (railRaf !== null) return
+  railRaf = requestAnimationFrame(() => {
+    railRaf = null
+    syncFocusRail()
+  })
+}
+window.addEventListener('resize', requestRailSync)
+onUnmounted(() => {
+  window.removeEventListener('resize', requestRailSync)
+  if (railRaf !== null) cancelAnimationFrame(railRaf)
+  railRaf = null
+})
+onMounted(() => nextTick(syncFocusRail))
 
 function reload() {
   if (viewSeg.value === 'fav') {
@@ -521,9 +588,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- fx/ClickSpark：整页点击粒子反馈。canvas 是 pointer-events:none 的兄弟节点，
-       不拦截任何行/按钮事件；reduce-motion 时组件只透传 slot，零开销 -->
-  <FxClickSpark class="clipboard-page" :spark-color="sparkColor" :spark-radius="18" :spark-count="8" :duration="420">
+  <div class="clipboard-page">
     <input :ref="upload.fileInputRef" type="file" style="display: none" multiple @change="upload.handleFileUpload" />
 
     <ClipboardFilterPanel :open="showFilterPanel" @close="showFilterPanel = false" />
@@ -712,6 +777,14 @@ onUnmounted(() => {
 
         <div v-else-if="filteredItems.length > 0" class="table-wrapper">
           <div class="clip-list" role="list" :aria-label="t('nav_clipboard')">
+            <!-- 焦点滑轨：↑↓ 切行时这个 accent 小胶囊在行间滑过去，把"焦点跳变"变成"焦点移动"。
+                 它是装饰，对读屏与指针都透明；位置由 syncFocusRail() 量行元素得出 -->
+            <span
+              class="clip-focus-rail"
+              :class="{ 'is-visible': railVisible, 'is-gliding': railGliding }"
+              :style="{ transform: `translateY(${railY}px)` }"
+              aria-hidden="true"
+            />
             <template v-for="sec in timelineSections" :key="sec.label || 'flat'">
               <!-- 原型 v1 分节头：置顶 / 今天 / 昨天 / 更早 -->
               <div v-if="sec.label" class="clip-group">
@@ -721,13 +794,14 @@ onUnmounted(() => {
               <ClipboardTableRow
                 v-for="item in sec.items"
                 :key="item.id"
+                :data-clip-id="item.id"
                 role="listitem"
                 :item="item"
                 :focused="flatIndexMap.get(item.id) === focusedIndex"
                 :is-archive="isArchive"
                 :more-open-id="ctx.moreOpenId"
                 :selecting="batchMode"
-                @focus="focusedIndex = flatIndexMap.get(item.id) ?? -1"
+                @focus="onRowPointerFocus(item)"
                 @click="openDrawer"
                 @dblclick="actions.onDblClick"
                 @contextmenu="ctx.openCtxMenu"
@@ -904,11 +978,10 @@ onUnmounted(() => {
       @apply-cleanup="onSuggestCleanup"
       @apply-tags="onSuggestTags"
     />
-  </FxClickSpark>
+  </div>
 </template>
 
 <style scoped>
-/* fx/ClickSpark 的根元素同时承载页面根布局（两套 class 各自 scoped，互不冲突） */
 .clipboard-page {
   display: flex;
   flex-direction: column;
@@ -929,6 +1002,42 @@ onUnmounted(() => {
 }
 .clip-list {
   display: block;
+  /* 焦点滑轨的定位基准：滑轨是 .clip-list 的绝对定位子元素，随列表一起滚动；
+     同时让行元素的 offsetTop 以本元素为原点，syncFocusRail() 才能直接拿来做 translateY */
+  position: relative;
+}
+/* 焦点滑轨：↑↓ 切行时在行间滑过去的 accent 小胶囊。
+   - 鼠标移动时直接吸附（无 transition），键盘导航才播 220ms 位移；
+   - 对齐行顶部偏移量而非垂直居中，因为焦点行会随 .clip-text 展开而长高（见 syncFocusRail 注释）；
+   - reduce-motion 双通道都压掉位移：html.reduce-motion 由 globals.css 全局压，
+     prefers-reduced-motion 这条媒体查询在本组件内单独兜。 */
+.clip-focus-rail {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 3px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 42%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 6;
+}
+.clip-focus-rail.is-visible {
+  opacity: 1;
+  transition: opacity 120ms var(--ease);
+}
+.clip-focus-rail.is-visible.is-gliding {
+  transition:
+    transform 220ms var(--ease),
+    opacity 120ms var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .clip-focus-rail.is-visible,
+  .clip-focus-rail.is-visible.is-gliding {
+    transition: none;
+  }
 }
 /* A1 内联 AI 结果卡：与工具栏留出间距。
    注意：通用规则 .clipboard-view > * 的 28px 内边距会被卡片自带背景画出

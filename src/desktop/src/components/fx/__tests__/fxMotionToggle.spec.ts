@@ -52,7 +52,6 @@ vi.hoisted(() => {
 })
 
 import { createApp, defineComponent, h, nextTick, type Component } from 'vue'
-import FxClickSpark from '../FxClickSpark.vue'
 import FxSpotlightCard from '../FxSpotlightCard.vue'
 import FxGlitchText from '../FxGlitchText.vue'
 import FxMagnet from '../FxMagnet.vue'
@@ -122,28 +121,6 @@ describe('useReducedMotion — 双通道开关', () => {
     ROOT.classList.remove('reduce-motion')
     await flushObservers()
     expect(reduced.value).toBe(false)
-  })
-})
-
-describe('FxClickSpark', () => {
-  it('默认挂载 canvas 并监听点击', () => {
-    const m = mount(FxClickSpark)
-    expect(m.host.querySelector('canvas')).toBeTruthy()
-    m.unmount()
-  })
-
-  it('减少动效时不建 canvas（卸载即停止），关闭后恢复', async () => {
-    const m = mount(FxClickSpark)
-    expect(m.host.querySelector('canvas')).toBeTruthy()
-
-    ROOT.classList.add('reduce-motion')
-    await flushObservers()
-    expect(m.host.querySelector('canvas')).toBeNull()
-
-    ROOT.classList.remove('reduce-motion')
-    await flushObservers()
-    expect(m.host.querySelector('canvas')).toBeTruthy()
-    m.unmount()
   })
 })
 
