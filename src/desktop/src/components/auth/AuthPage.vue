@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLogo from '@/components/AppLogo.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useConfigStore } from '@/stores/configStore'
 import { useI18n } from '@/composables/useI18n'
@@ -622,7 +623,7 @@ const isRegisterView = computed(() => authView.value === 'register')
           <!-- ===== LOGIN ===== -->
           <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view reveal-stagger">
             <div class="auth-brand">
-              <div class="auth-logo">C</div>
+              <AppLogo :size="36" />
               <span class="auth-brand-name">ClipSync</span>
             </div>
             <h1 class="auth-heading">{{ t('login_welcome') }}</h1>

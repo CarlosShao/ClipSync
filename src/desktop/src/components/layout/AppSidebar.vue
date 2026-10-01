@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import AppLogo from '@/components/AppLogo.vue'
 import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
@@ -186,19 +185,14 @@ async function openAdminConsole() {
 
 <template>
   <aside :class="['sidebar', { 'sidebar--collapsed': isCollapsed }]" role="navigation" :aria-label="t('app_name')">
-    <!-- ===== Header（折叠开关已上移标题栏；折叠态点 logo 展开） ===== -->
+    <!-- ===== Header（折叠开关在标题栏；折叠态点这块空白即可展开） ===== -->
     <div v-show="isCollapsed" class="sb-header sb-header--clickable" @click="emit('toggle')">
-      <div class="sb-logo-wrap">
-        <!-- 折叠开关在标题栏已有一处，这里不再重复画提示图标；
-             折叠态点整块 header 即可展开，视觉上只留品牌标识。 -->
-        <AppLogo :size="22" />
-      </div>
     </div>
-    <!-- 展开态：原来是个空 div（= 用户反馈的"左上角一块留白"），
-         现在用品牌标识 + 名称填充，与下方【系统】分组形成呼应的层级。 -->
+    <!-- 展开态：原来是个空 div（用户反馈的"左上角一块留白"）。
+         这里**不放 logo** —— 标题栏左上角已经有品牌标识了，再放一个就是重复（用户明确否掉）。
+         放的是与下方【系统】同级的分类标题，给上面那组导航一个归属。 -->
     <div v-show="!isCollapsed" class="sb-header">
-      <AppLogo :size="20" />
-      <span class="sb-brand-name">{{ t('app_name') }}</span>
+      <div class="sb-sect-label">{{ t('nav_section_workspace', '工作台') }}</div>
     </div>
 
     <!-- ===== Main Navigation ===== -->
@@ -428,13 +422,6 @@ async function openAdminConsole() {
   padding: 0;
 }
 
-.sb-brand-name {
-  font-family: var(--font-display, inherit);
-  font-size: 13.5px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
 .sb-logo-wrap {
   display: flex;
   align-items: center;
