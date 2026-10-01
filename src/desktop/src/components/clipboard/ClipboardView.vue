@@ -43,6 +43,7 @@ import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { api } from '@/api/client'
 import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
+import { vFxReveal } from '@/components/fx/fxReveal'
 import FxGradualBlur from '@/components/fx/FxGradualBlur.vue'
 import FxGlitchText from '@/components/fx/FxGlitchText.vue'
 import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
@@ -724,6 +725,7 @@ onUnmounted(() => {
                 ><span class="n">{{ sec.items.length }}</span>
               </div>
               <ClipboardTableRow
+                v-fx-reveal
                 v-for="item in sec.items"
                 :key="item.id"
                 :data-clip-id="item.id"

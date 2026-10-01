@@ -19,6 +19,7 @@ import { TAG_PRESET_COLORS, getTagDisplayColor, tagColorStyle } from '@/utils/fa
 import { COLLECTION_ICON_MAP, renderCollectionIcon } from '@/utils/favorites/collectionIcons'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
 import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
+import { vFxReveal } from '@/components/fx/fxReveal'
 import CountUp from '@/components/fx/CountUp.vue'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
@@ -1862,6 +1863,7 @@ function cancelEditTags() {
                容器同时是环的 parentElement，行元素的 offsetParent 必须是它 —— 见 favorites-view.css -->
           <FxSelectionRing :active="hoveredFavKey" :revision="favoriteItems.length" />
           <div
+            v-fx-reveal
             v-for="item in favoriteItems"
             :key="item.id"
             :data-ring-key="item.id"
@@ -2026,6 +2028,7 @@ function cancelEditTags() {
             </div>
             <div v-if="!collapsedGroups.has(gk)" class="fav-grid">
               <div
+                v-fx-reveal
                 v-for="item in groupedItems[gk]"
                 :key="item.id"
                 class="fav-card"
