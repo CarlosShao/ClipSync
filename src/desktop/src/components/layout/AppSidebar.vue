@@ -862,4 +862,39 @@ async function openAdminConsole() {
 .sb-footer-dot--upgrade:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
+
+/* ---- 用户菜单弹层：从锚点弹起（pop-in），替代原来几乎等于硬出现的淡入 ----
+   要点：短(180ms)、expo-out、从下往上 6px + 轻微缩放、transform-origin 贴锚点；
+   只用 transform/opacity（不碰 will-change/fill-mode，避免重演桌面端黑屏那个坑）。 */
+.user-menu {
+  transform-origin: bottom left;
+}
+.user-menu-fade-enter-active {
+  transition:
+    opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.user-menu-fade-leave-active {
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+.user-menu-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px) scale(0.96);
+}
+.user-menu-fade-leave-to {
+  opacity: 0;
+  transform: translateY(3px) scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .user-menu-fade-enter-active,
+  .user-menu-fade-leave-active {
+    transition-duration: 1ms;
+  }
+  .user-menu-fade-enter-from,
+  .user-menu-fade-leave-to {
+    transform: none;
+  }
+}
 </style>
