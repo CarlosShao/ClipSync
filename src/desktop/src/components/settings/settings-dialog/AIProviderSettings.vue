@@ -319,29 +319,86 @@ function toggleModel(m: string) {
 }
 
 // 刷新该供应商可用模型列表（上游 /models）。
-// 已保存供应商走后端解密 key；未保存供应商先落地（密钥加密入库）再用已存密钥拉取，避免明文 key 出现在请求体。
+//
+// 服务端 /providers/fetch-models 经 P0 安全加固（commit 4a67beb）后**只认 providerId**：
+// 只用库里已存的加密 apiKey 与 base_url，请求体里的明文 key / baseUrl 一律忽略
+// （防 SSRF 与密钥外流）。所以「还没保存就预览模型」在服务端做不到 ——
+// 旧实现因此直接弹「请先保存该供应商配置」，把流程卡在了与用户自然顺序相反的位置
+//（用户预期：填配置 → 刷新模型 → 选模型 → 保存）。
+//
+// 现在把流程接上：需要时**先落库再拉模型**，并在按钮上写明（未保存态显示「保存并获取模型」），
+// 不做早期那种"点一下刷新悄悄写一条供应商"。只有"编辑已保存的供应商且没动 key / baseUrl"
+// 时才跳过保存直接拉取。
+const refreshNeedsPersist = computed(() => {
+  if (!editingId.value) return true
+  // 输了新 key：必须先把新 key 落库（加解密只在服务端），否则拉取用的还是旧 key
+  if (formApiKey.value.trim().length > 0) return true
+  const saved = providers.value.find((p) => p.id === editingId.value)
+  if (saved && (formBaseUrl.value.trim() || '') !== (saved.base_url || '')) return true
+  return false
+})
+const refreshLabel = computed(() =>
+  refreshNeedsPersist.value
+    ? tf('ai_save_and_fetch_models', '保存并获取模型')
+    : tf('ai_refresh_models', '刷新模型列表'),
+)
+// 按钮可否点：新增时必须先有 key；编辑已保存的供应商即使没重输 key 也能刷新
+//（服务端会用库里已存的加密 key 拉取）。此前这里写死 `!formApiKey.trim()`，
+// 导致编辑态不重新输一遍 key 就点不动，用户只能"改了名/改了地址却刷不了模型"。
+const canRefreshModels = computed(() => !!editingId.value || formApiKey.value.trim().length > 0)
+
+/**
+ * 刷新模型前的落库步骤。
+ * 不能直接复用 save()：那一版要求已选模型，而本流程的目的恰恰是"先拿到模型列表再选"。
+ * 服务端新建只要求 provider + name（model 允许为空），所以这里能安全地先存一条。
+ */
+async function persistForModelFetch(): Promise<boolean> {
+  if (!formProvider.value) {
+    formError.value = t('ai_provider_required')
+    return false
+  }
+  if (!formName.value.trim()) {
+    formError.value = t('ai_name_required')
+    return false
+  }
+  const typedKey = formApiKey.value.trim()
+  if (!editingId.value && !typedKey) {
+    formError.value = t('ai_api_key_required')
+    return false
+  }
+  const payload = {
+    provider: formProvider.value,
+    name: formName.value.trim(),
+    apiKey: typedKey || undefined, // 留空 = 保留库里旧 key
+    baseUrl: formBaseUrl.value.trim() || undefined,
+    model: formSelectedModels.value[0] || '',
+    models: formSelectedModels.value,
+    isDefault: formIsDefault.value,
+    contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
+    apiFormat: isCustom.value ? formApiFormat.value : undefined,
+  }
+  const res = editingId.value ? await updateProvider(editingId.value, payload) : await createProvider(payload)
+  if (!res.ok || !res.data?.id) {
+    formError.value = tMsg(res.error) || t('ai_save_failed')
+    return false
+  }
+  editingId.value = res.data.id
+  window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
+  await load()
+  return true
+}
+
 async function refreshModels() {
   if (refreshingModels.value) return
-  const hasKey = formApiKey.value.trim().length > 0
-  if (!hasKey) {
-    formError.value = t('ai_api_key_required')
-    return
-  }
   refreshingModels.value = true
   formError.value = ''
   try {
-    let res
-    if (editingId.value) {
-      res = await getProviderModels(editingId.value)
-    } else {
-      // 未保存表单：不再隐式 createProvider 落库（否则"刷新模型"会悄悄写入一条配置），
-      // 改为明确提示用户先保存。保存后 editingId 就绪，再点刷新即可拉取模型列表。
-      toast.show(
-        t('ai_refresh_models_need_save', '请先保存该供应商配置，再刷新模型列表'),
-        'info',
-      )
-      return
+    if (refreshNeedsPersist.value) {
+      const ok = await persistForModelFetch()
+      if (!ok) return
+      toast.show(tf('ai_saved_fetching_models', '已保存该供应商，正在获取模型列表…'), 'info')
     }
+    const res = await getProviderModels(editingId.value as string)
     if (res.ok && res.data) {
       const list = res.data.models || []
       formModels.value = list
@@ -649,11 +706,11 @@ onMounted(() => {
               size="sm"
               variant="outline"
               class="min-w-[100px]"
-              :disabled="refreshingModels || !formApiKey.trim()"
+              :disabled="refreshingModels || !canRefreshModels"
               @click="refreshModels"
             >
               <RefreshCw v-if="!refreshingModels" :size="12" />
-              {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
+              {{ refreshingModels ? t('ai_refreshing') : refreshLabel }}
             </Button>
           </div>
         </div>
