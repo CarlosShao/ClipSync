@@ -73,13 +73,12 @@ function continueInChat() {
         :announce="loadingLabel"
         status="working"
         :grid="3"
-        pattern="orbit"
-        :cell-size="5"
-        :gap="2"
+        pattern="ripple"
+        :cell-size="3"
+        :gap="3"
         :font-size="12.5"
         :show-timer="false"
         color="var(--accent)"
-        glow
       />
     </div>
     <div v-else-if="status === 'loading'" class="iac-body markdown-body">

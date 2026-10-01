@@ -77,9 +77,18 @@ function fixIncompleteMarkdown(raw: string): string {
   return text
 }
 
+/**
+ * blurStream 模式专用：当前**已揭示**的文本切片。
+ * 必须用这个而不是 props.text —— 揭示节奏是由本组件上方的节流 + 追赶（catchupTarget）
+ * 循环驱动的，直接喂原始全文就会出现"模型一次性返回 → 整段同时出现"（用户实测：
+ * 比原来的打字机还差）。这里复刻同一份切片，逐词模糊才跟得上揭示节奏。
+ */
+const revealText = ref('')
+
 function renderSlice(upto: number | null) {
   const raw = props.text || ''
   const slice = upto === null ? raw : raw.slice(0, upto)
+  revealText.value = slice
   if (!slice) {
     html.value = ''
     return
@@ -203,7 +212,7 @@ onBeforeUnmount(cancelScheduled)
 
 <template>
   <div v-if="reveal === 'blurStream' && !done" class="ai-stream-text">
-    <FxBlurText :text="text" />
+    <FxBlurText :text="revealText" />
   </div>
   <!-- eslint-disable-next-line vue/no-v-html -- html 只由 renderSlice() 写入：sanitizeHtml(marked.parse(...))，catch 分支也是 sanitizeHtml(prepared)，无任何绕过 DOMPurify 的赋值路径 -->
   <div v-else class="ai-stream-text" v-html="html"></div>
