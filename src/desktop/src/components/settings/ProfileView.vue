@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
+import { vFxReveal } from '@/components/fx/fxReveal'
+// 与剪贴板 / 收藏页 / 设备页统计卡同一配方（accent 13% 聚光）
+const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
 import { computed, ref } from 'vue'
 import { Camera, Pencil, Lock } from 'lucide-vue-next'
 import { useI18n } from '@/composables/useI18n'
@@ -147,8 +152,13 @@ async function handleAvatarUpload(e: Event) {
 
 <template>
   <div class="settings-view">
-    <h2 class="sv-title">{{ t('prof_t') }}</h2>
-    <div class="profile-card">
+    <!-- 页头：与剪贴板 / 收藏 / 设备 / 模板库统一用 FxPageHeader（破折号 → eyebrow 逐字 → 标题逐字 → 副标题） -->
+    <FxPageHeader
+      eyebrow="Profile"
+      :title="t('prof_t')"
+      :subtitle="tf('page_sub_profile', '账号信息与套餐 · 头像、名称、邮箱可在此修改')"
+    />
+    <FxSpotlightCard v-fx-reveal class="profile-card" :spotlight-color="STAT_SPOT">
       <!-- Avatar section — shadcn Avatar -->
       <div class="avatar-wrap" :title="t('avatar_change') || '点击更换头像'" @click="triggerAvatarUpload">
         <Avatar class="avatar-shadcn">
@@ -221,13 +231,13 @@ async function handleAvatarUpload(e: Event) {
           </div>
         </div>
       </div>
-    </div>
+    </FxSpotlightCard>
 
     <!-- 套餐管理（升级/申请退款）：订阅页砍掉后，个人资料页是套餐管理唯一场所 -->
-    <PlanManagementCard v-if="showPlanCard" @open-modal="(type) => emit('open-modal', type)" />
+    <PlanManagementCard v-if="showPlanCard" v-fx-reveal @open-modal="(type) => emit('open-modal', type)" />
 
     <!-- Password change hint -->
-    <div class="profile-hint">
+    <div class="profile-hint" v-fx-reveal>
       <Lock :size="14" style="flex-shrink: 0" />
       <span>{{ t('pwd_change_hint') || '修改密码请前往 设置 → 隐私和安全 → 修改密码' }}</span>
     </div>
