@@ -99,7 +99,7 @@ onUnmounted(() => {
   z-index: -1;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 260ms var(--ease);
+  transition: opacity 260ms var(--ease, cubic-bezier(0.25, 0.8, 0.3, 1)); /* --ease 只在 clearline 主题里定义，必须带兜底 */
   background: radial-gradient(
     circle var(--fx-spot-r, 180px) at var(--fx-spot-x, 50%) var(--fx-spot-y, 30%),
     var(--fx-spot-color, transparent),

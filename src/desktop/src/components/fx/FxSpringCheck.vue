@@ -67,11 +67,17 @@ const props = withDefaults(defineProps<SpringCheckProps>(), {
   checked: undefined,
   defaultChecked: false,
   disabled: false,
-  color: 'var(--border-strong)',
+  // 描边色（--sc-ink）。
+  // 坑：--border-strong 只在默认浅色/暗色两个主题块里定义（globals.css 共 16 个主题块，
+  // 它只出现 2 次）→ 其余 14 个主题下 var(--border-strong) 解析失败，整条 box-shadow 成为
+  // 无效声明，勾选框彻底不画（用户实测：换主题后勾选框看不见，但位置还在、能点）。
+  // 原版 .cbx 写的 var(--border-strong, #cbd0d8) 正是同一个原因。
+  // 这里退回 --text-tertiary（16/16 全主题覆盖、中灰，作为描边比 border-default 更清楚）。
+  color: 'var(--border-strong, var(--text-tertiary))',
   fillColor: 'var(--accent)',
   // 打勾色：必须与 accent 填充形成对比。硬编码 #ffffff 在「浅色 accent」主题（mono 暗色等）
   // 下是白勾白底 —— 用户反馈"暗色下勾也看不清"。--text-inverse 每个主题里正好是 accent 上的可读色。
-  checkColor: 'var(--text-inverse)',
+  checkColor: 'var(--text-inverse, #ffffff)',
   boxSize: 16,
   boxRadius: 5,
   fontSize: 13,
