@@ -622,10 +622,6 @@ const isRegisterView = computed(() => authView.value === 'register')
         <div class="auth-card">
           <!-- ===== LOGIN ===== -->
           <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view reveal-stagger">
-            <div class="auth-brand">
-              <AppLogo :size="36" />
-              <span class="auth-brand-name">ClipSync</span>
-            </div>
             <h1 class="auth-heading">{{ t('login_welcome') }}</h1>
             <p class="auth-subtitle">{{ authTab === 'password' ? t('login_pwd_subtitle') : t('login_subtitle') }}</p>
 
@@ -803,10 +799,6 @@ const isRegisterView = computed(() => authView.value === 'register')
             <Button variant="ghost" size="sm" class="back-btn" @click="backToLoginFrom2FA"
               ><ArrowLeft :size="14" /> {{ t('login_2fa_back') }}</Button
             >
-            <div class="auth-brand">
-              <div class="auth-logo">C</div>
-              <span class="auth-brand-name">ClipSync</span>
-            </div>
             <h1 class="auth-heading">{{ t('login_2fa_title') }}</h1>
             <p class="auth-subtitle">{{ t('login_2fa_desc') }}</p>
             <div class="auth-form">
