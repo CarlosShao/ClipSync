@@ -395,20 +395,27 @@ async function confirmDelete() {
 .tpl-detail-body {
   flex: 1;
   min-height: 120px;
-  /* 代码区风格：模板正文本质是"带 {{变量}} 占位符的文本骨架"，用编辑器等宽字体 +
-     代码块外壳（底色/边框/圆角/内边距）比正文段落更贴切。变量高亮由
-     highlightTemplateVars() 负责，这里只管外壳。 */
+  /* 代码块：用**固定深色**（不跟随主题 token）—— 深底浅字才是"一眼认出"的代码区；
+     字体用编辑器等宽那一档。变量高亮见下方 :deep(.var-hl) 规则。 */
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.7;
-  color: var(--text-primary);
+  color: #e6e8ea;
+  background: #1b1d21;
+  border: 1px solid #2c3038;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
   white-space: pre-wrap;
   word-break: break-all;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
 }
+
+/* 变量占位符高亮：深底上必须用固定亮色，不能跟着 --accent 走
+   （浅色主题的 accent 是深蓝，落在深底上读不清）。 */
+.tpl-detail-body :deep(.var-hl) {
+  color: #7dd3fc;
+  font-weight: 600;
+}
+
 .tpl-detail-vars {
   display: flex;
   flex-wrap: wrap;

@@ -29,9 +29,11 @@ interface RevealEl extends HTMLElement {
   __fxRevealStop?: () => void
 }
 
-const HIDDEN = { opacity: 0, scale: 0.96 }
-const SHOWN = { opacity: 1, scale: 1 }
-const DIMMED = { opacity: 0.5, scale: 0.99 }
+// 幅度取"看得出来但不夸张"：原来只有 0.96 缩放 + 淡入，实测用户反馈"没效果" ✗
+// 现在改成 8px 上浮 + 轻微缩放，入场更明确，也和页头/条目入场的语言一致。
+const HIDDEN = { opacity: 0, y: 8, scale: 0.98 }
+const SHOWN = { opacity: 1, y: 0, scale: 1 }
+const DIMMED = { opacity: 0.5, y: 0, scale: 0.995 }
 const EASE = [0.22, 1, 0.36, 1] as const
 
 export const vFxReveal: Directive<RevealEl, unknown> = {
@@ -59,7 +61,7 @@ export const vFxReveal: Directive<RevealEl, unknown> = {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            const ctrl = animate(el, SHOWN, { duration: 0.3, delay: revealed ? 0 : delay, ease: EASE })
+            const ctrl = animate(el, SHOWN, { duration: 0.4, delay: revealed ? 0 : delay, ease: EASE })
             // 入场动画收尾后释放图层提示（catch 兜住：动画被打断时 finished 会 reject）
             ctrl.finished?.then(releaseWillChange).catch(() => {})
             revealed = true
