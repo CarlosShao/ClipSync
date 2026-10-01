@@ -431,4 +431,16 @@ async function handleAvatarUpload(e: Event) {
   color: var(--text-tertiary);
   font-size: 11.5px;
 }
+
+/* ---- 排版重构 v2：单列收窄居中（取代被否掉的 1.6:1 两栏）----
+   用户反馈 v1 的"一边大一边小"很丑。这类内容少的页面正确做法不是硬分栏，
+   而是把内容列收窄到易读宽度、单列居中：左右边对齐、没有大小对比、也没有大片留白。
+   （标签定宽 + 值左对齐的"配对收紧"保留，那条是有效的。） */
+.settings-view {
+  max-width: 780px;
+}
+.pf-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
 </style>
