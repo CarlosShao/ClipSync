@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFxTilt } from '@/components/fx/fxTilt'
 import StarBorder from '@/components/fx/StarBorder.vue'
 // 与剪贴板 / 模板库 / 设备三处主 CTA 同一配方
 const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
@@ -297,7 +298,7 @@ function onRefundClick(o: RefundableOrder) {
   <!-- fx/SpotlightCard：光标跟随柔光（与统计卡 / 资料卡同一配方）。
        注意光斑是 z-index:-1 + isolation 的夹层 ⇒ 位于「本卡 background 之上、内容之下」，
        所以卡片自带的不透明底色不会把它盖掉。 -->
-  <FxSpotlightCard class="pmc" :spotlight-color="STAT_SPOT">
+  <FxSpotlightCard class="pmc" v-fx-tilt="6" :spotlight-color="STAT_SPOT">
     <div class="pmc-head">
       <div class="pmc-title">{{ t('prof_plan_section') }}</div>
       <div class="pmc-plan">
