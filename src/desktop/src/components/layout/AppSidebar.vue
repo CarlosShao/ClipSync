@@ -897,4 +897,28 @@ async function openAdminConsole() {
     transform: none;
   }
 }
+/* ---- 左下角常驻区的**一次性**入场：进桌面端时同步胶囊先就位、用户 chip 紧随其后 ----
+   一次性动画（无 will-change / 无 fill-mode，避免图层常驻）；reduce-motion 下直接静态。 */
+@keyframes sb-foot-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sync-pill {
+  animation: sb-foot-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.user-chip {
+  animation: sb-foot-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) 90ms backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-pill,
+  .user-chip {
+    animation: none;
+  }
+}
 </style>
