@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import StarBorder from '@/components/fx/StarBorder.vue'
+// fx/StarBorder 绕边流光（与剪贴板主 CTA 同一配方：accent 70% 混白，只在 2px 边缝里可见）
+const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
 import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { ref, computed, watch, onMounted, reactive } from 'vue'
 import { useI18n } from '@/composables/useI18n'
@@ -147,9 +150,18 @@ async function confirmDelete() {
           <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="genOpen = true">
             <Sparkles :size="14" /><span>{{ tf('tpl_ai_generate', 'AI 生成模板') }}</span>
           </button>
-          <button type="button" class="pl-btn pl-btn--acc" @click="onNew">
-            <Plus :size="14" /><span>{{ t('tpl_new_btn', '新建模板') }}</span>
-          </button>
+          <!-- fx/StarBorder：主 CTA 绕边流光（与剪贴板「新建剪贴」同款，速度放慢一档） -->
+          <StarBorder
+            as="div"
+            custom-class="tpl-cta-border"
+            :color="CTA_GLOW"
+            speed="5s"
+            :thickness="2"
+          >
+            <button type="button" class="pl-btn pl-btn--acc" @click="onNew">
+              <Plus :size="14" /><span>{{ t('tpl_new_btn', '新建模板') }}</span>
+            </button>
+          </StarBorder>
         </div>
       </div>
 
@@ -248,6 +260,11 @@ async function confirmDelete() {
 </template>
 
 <style scoped>
+/* StarBorder 只负责 2px 光带；按钮外观仍是 .pl-btn--acc */
+.tpl-cta-border {
+  display: inline-flex;
+  flex: none;
+}
 .tpl-view {
   height: 100%;
   overflow-y: auto;

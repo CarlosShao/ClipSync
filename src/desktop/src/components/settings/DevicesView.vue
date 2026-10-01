@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import StarBorder from '@/components/fx/StarBorder.vue'
+// fx/StarBorder 绕边流光（与剪贴板主 CTA 同一配方：accent 70% 混白，只在 2px 边缝里可见）
+const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
 import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
@@ -133,9 +136,18 @@ async function handleDelete(id: string, name: string) {
           <button type="button" class="pl-btn" @click="emit('open-modal', 'pair-scan')">
             <QrCode :size="14" /><span>{{ t('pair_scan') }}</span>
           </button>
-          <button type="button" class="pl-btn pl-btn--acc" @click="emit('open-modal', 'pair-generate')">
-            <Plus :size="14" /><span>{{ t('pair_generate') }}</span>
-          </button>
+          <!-- fx/StarBorder：同模板库/剪贴板主 CTA 的绕边流光 -->
+          <StarBorder
+            as="div"
+            custom-class="dev-cta-border"
+            :color="CTA_GLOW"
+            speed="5s"
+            :thickness="2"
+          >
+            <button type="button" class="pl-btn pl-btn--acc" @click="emit('open-modal', 'pair-generate')">
+              <Plus :size="14" /><span>{{ t('pair_generate') }}</span>
+            </button>
+          </StarBorder>
         </div>
       </div>
 
@@ -274,6 +286,11 @@ async function handleDelete(id: string, name: string) {
 </template>
 
 <style scoped>
+/* StarBorder 只负责 2px 光带；按钮外观仍是 .pl-btn--acc */
+.dev-cta-border {
+  display: inline-flex;
+  flex: none;
+}
 .dev-page {
   height: 100%;
   overflow-y: auto;
