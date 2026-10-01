@@ -21,6 +21,7 @@ import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
 import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
 import { vFxReveal } from '@/components/fx/fxReveal'
 import CountUp from '@/components/fx/CountUp.vue'
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import DecryptedText from '@/components/fx/DecryptedText.vue'
@@ -1367,11 +1368,11 @@ function cancelEditTags() {
       <div class="fav-page-wrap">
     <!-- v2 原型页头：标题 + 副题 + AI 整理收藏（管理控制台关闭 AI 时隐藏） -->
     <div class="page-head">
-      <div>
-        <div class="page-eyebrow">Favorite Collections</div>
-        <div class="page-title page-title--big">{{ t('nav_favorites') }}</div>
-        <div class="page-sub">{{ tf('page_sub_fav', '树形合集归档 + 全局标签体系 · 把常用片段沉淀为可复用资产') }}</div>
-      </div>
+      <FxPageHeader
+        eyebrow="Favorite Collections"
+        :title="t('nav_favorites')"
+        :subtitle="tf('page_sub_fav', '树形合集归档 + 全局标签体系 · 把常用片段沉淀为可复用资产')"
+      />
       <div class="page-acts">
         <button v-if="props.aiEnabled" type="button" class="pl-btn" @click="aiOrganize">
           <Sparkles :size="14" /><span>{{ tf('fav_ai_organize', 'AI 整理收藏') }}</span>

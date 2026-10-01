@@ -32,6 +32,7 @@ import { useDevice } from '@/composables/useDevice'
 import CountUp from '@/components/fx/CountUp.vue'
 import FxRubberSegment from '@/components/fx/FxRubberSegment.vue'
 import FxJellyRadio from '@/components/fx/FxJellyRadio.vue'
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import StarBorder from '@/components/fx/StarBorder.vue'
 
@@ -173,11 +174,11 @@ function clearSearch() {
   <!-- v2 原型排版：page-head（标题/副题/动作） + 筛选行（搜索 + 类型 chips + 视图分段 + 批量） -->
   <div class="page-inner">
     <div class="page-head">
-      <div>
-        <div class="page-eyebrow">Clipboard Stream</div>
-        <div class="page-title page-title--big">{{ t('nav_clipboard') }}</div>
-        <div class="page-sub">{{ t('page_sub_clip', '跨设备实时同步 · 本地加密存储 · 保留 30 天') }}</div>
-      </div>
+      <FxPageHeader
+        eyebrow="Clipboard Stream"
+        :title="t('nav_clipboard')"
+        :subtitle="t('page_sub_clip', '跨设备实时同步 · 本地加密存储 · 保留 30 天')"
+      />
       <div class="page-acts">
         <button
           v-if="view !== 'archive' && aiEnabled"
