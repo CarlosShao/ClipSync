@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
@@ -34,6 +34,8 @@ const userScrolledUp = ref(false)
 // 好处是不必在 scroll 事件里逐条测量 DOM。跳转仍用真实消息下标（见 jumpTo）。
 const activeIndex = ref(-1)
 const reduced = useReducedMotion()
+// 刻度尺的概要数据（与消息一一对应）：悬停刻度时弹出该条消息的摘要
+const rulerItems = computed(() => props.messages.map((m) => ({ role: m.role, text: m.content || '' })))
 let scrollRafId: number | null = null
 
 function isNearBottom(el: HTMLElement) {
@@ -167,7 +169,7 @@ defineExpose({ scrollToPos })
     />
     </div>
     <!-- 右侧竖直刻度尺（方案 A）：每条消息一个刻度，鼠标靠近时刻度伸长，点击跳转 -->
-    <FxConversationRuler :count="messages.length" :active-index="activeIndex" @jump="jumpTo" />
+    <FxConversationRuler :items="rulerItems" :active-index="activeIndex" @jump="jumpTo" />
   </div>
 </template>
 
