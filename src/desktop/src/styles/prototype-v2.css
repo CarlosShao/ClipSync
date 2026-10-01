@@ -1146,6 +1146,13 @@
   color: var(--text-primary);
   letter-spacing: -0.02em;
 }
+/* 文字型统计值（如「已开启」）：数字用 26px 粗体合适，文字套同样的字号会非常突兀
+   （用户实测反馈）。降到 17px 半粗，视觉权重与同排的数字卡齐平。 */
+.clip-stat-v--text {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
 .clip-stat-v em {
   font-style: normal;
   font-size: 12px;

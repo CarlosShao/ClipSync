@@ -185,7 +185,7 @@ async function handleDelete(id: string, name: string) {
         </FxSpotlightCard>
         <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
           <span class="clip-stat-k">{{ t('dev_stat_e2e', '端到端加密') }}</span>
-          <span class="clip-stat-v">{{ t('dev_stat_e2e_on', '已开启') }}</span>
+          <span class="clip-stat-v clip-stat-v--text">{{ t('dev_stat_e2e_on', '已开启') }}</span>
           <span class="clip-stat-d">{{ t('dev_stat_e2e_d', '密钥不出设备') }}</span>
         </FxSpotlightCard>
       </div>
