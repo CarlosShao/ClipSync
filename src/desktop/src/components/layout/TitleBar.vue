@@ -76,11 +76,14 @@ const CRUMB_KEYS: Record<string, string> = {
   devices: 'nav_devices',
   profile: 'nav_profile',
   notifications: 'nav_notifications',
+  // 设置页此前漏了映射 → crumbLabel 回退成 app_name，标题栏显示成「ClipSync」（用户实测反馈）
+  settings: 'nav_settings',
 }
-const crumbLabel = computed(() => {
-  const key = props.currentSub ? CRUMB_KEYS[props.currentSub] : ''
-  return (key && t(key)) || t('app_name')
-})
+/** 标题栏页面名：只显示"映射得到的页面"。
+ *  未映射时返回空串，**不再回退成 app_name** —— 否则登录页（没有菜单）与任何
+ *  未收录的页面都会显示成「ClipSync」，与左侧品牌重复（用户实测反馈）。 */
+const crumbKey = computed(() => (props.currentSub ? (CRUMB_KEYS[props.currentSub] ?? '') : ''))
+const crumbLabel = computed(() => (crumbKey.value ? t(crumbKey.value) : ''))
 const isDark = computed(() => resolvedMode.value === 'dark')
 </script>
 
@@ -88,9 +91,12 @@ const isDark = computed(() => resolvedMode.value === 'dark')
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-left" data-tauri-drag-region>
       <span class="brand-mark" data-tauri-drag-region><AppLogo :size="16" /></span>
-      <span class="brand-word" data-tauri-drag-region>ClipSync</span>
-      <span class="tb-sep" data-tauri-drag-region />
-      <span class="tb-crumb" data-tauri-drag-region>{{ crumbLabel }}</span>
+      <!-- 这里原来还有一个固定的「ClipSync」品牌字：logo 已经表达品牌，再写一遍就是重复
+           （用户明确要求去掉）。分隔符与页面名只在有页面名时出现，登录页即整段不显示。 -->
+      <template v-if="crumbLabel">
+        <span class="tb-sep" data-tauri-drag-region />
+        <span class="tb-crumb" data-tauri-drag-region>{{ crumbLabel }}</span>
+      </template>
       <button
         v-if="!minimal"
         type="button"

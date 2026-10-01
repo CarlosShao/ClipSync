@@ -622,6 +622,10 @@ const isRegisterView = computed(() => authView.value === 'register')
         <div class="auth-card">
           <!-- ===== LOGIN ===== -->
           <div v-if="authView === 'login-phone' || authView === 'login-password'" class="auth-view reveal-stagger">
+            <div class="auth-brand">
+              <AppLogo :size="36" />
+              <span class="auth-brand-name">ClipSync</span>
+            </div>
             <h1 class="auth-heading">{{ t('login_welcome') }}</h1>
             <p class="auth-subtitle">{{ authTab === 'password' ? t('login_pwd_subtitle') : t('login_subtitle') }}</p>
 
