@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import StarBorder from '@/components/fx/StarBorder.vue'
+// 与剪贴板 / 模板库 / 设备三处主 CTA 同一配方
+const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
 /**
  * 个人资料页「套餐管理」卡片（2026-09-19 用户裁定：套餐管理唯一场所）。
  *
@@ -304,10 +307,14 @@ function onRefundClick(o: RefundableOrder) {
       </div>
     </div>
     <div class="pmc-actions">
-      <Button v-if="upgradable" class="pmc-btn" @click="emit('open-modal', 'pricing')">
+      <!-- fx/StarBorder：主 CTA 绕边流光（与剪贴板「新建剪贴」、模板库「新建模板」、
+           设备「生成配对码」同一套配方：accent 70% 混白、2px 边缝、5s 一圈） -->
+<StarBorder as="div" custom-class="pmc-cta-border" :color="CTA_GLOW" speed="5s" :thickness="2">
+            <Button v-if="upgradable" class="pmc-btn" @click="emit('open-modal', 'pricing')">
         <Crown :size="14" />
         <span>{{ t('sub_upgrade_plan') }}</span>
       </Button>
+            </StarBorder>
       <Button v-if="refundable" variant="outline" class="pmc-btn" @click="openRefund">
         <Undo2 :size="14" />
         <span>{{ t('refund_request_btn') }}</span>
@@ -552,5 +559,11 @@ function onRefundClick(o: RefundableOrder) {
 }
 .pmc-confirm-btn:hover {
   background: color-mix(in srgb, var(--danger) 88%, black);
+}
+
+/* StarBorder 外层只负责 2px 光带；按钮外观仍是 .pmc-btn */
+.pmc-cta-border {
+  display: inline-flex;
+  flex: none;
 }
 </style>
