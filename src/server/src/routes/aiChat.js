@@ -10,6 +10,7 @@ import { runChatLoop } from './aiChatCore.js'
 import { isValidUUID } from '../validation/validator.js'
 // AN-03：providerId 缺省兜底路由（ai_default_provider）+ 禁用供应商统一过滤
 import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
+import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
 import { runOrchestration } from './aiOrchestrator.js'
 import { updateConversationUsage } from './aiConversations.js'
 import {
@@ -49,8 +50,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // AN-03：providerId 缺省时兜底路由（用户 is_default → 全局 ai_default_provider 供应商族）；
     // 管理台禁用的供应商（enabled=FALSE）在此统一视为不存在
     const providerRow = await resolveUserProvider(req.userId, providerId)
-    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
-    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+    if (!providerRow) { const f = providerPrecheckFailure('no_provider'); return res.status(f.httpStatus).json(f.body) }
+    if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const thinkingEnabled = options?.thinking || false
@@ -357,7 +358,8 @@ router.post('/chat', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('AI chat proxy error:', err)
     if (!res.headersSent) {
-      res.status(500).json({ error: 'AI chat failed', detail: err.message })
+      const f = buildAiFailure(err, null, 'AI chat failed')
+      res.status(f.httpStatus).json(f.body)
     } else {
       safeFinish()
     }
@@ -366,15 +368,17 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
 // POST /api/ai/summarize - 轻量剪贴板内容摘要（非流式，供桌面复制后 AI 摘要浮窗使用）
 router.post('/summarize', apiLimiter, async (req, res) => {
+  // catch 里也要用它构造失败响应（告知是哪个供应商出了问题），所以提到 try 外
+  let providerRow = null
   try {
     const { providerId, content } = req.body || {}
     if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
 
     // AN-03：providerId 缺省时兜底路由（用户 is_default → 全局 ai_default_provider 供应商族）；
     // 管理台禁用的供应商（enabled=FALSE）在此统一视为不存在
-    const providerRow = await resolveUserProvider(req.userId, providerId)
-    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
-    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+    providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) { const f = providerPrecheckFailure('no_provider'); return res.status(f.httpStatus).json(f.body) }
+    if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const MAX_SUMMARY_INPUT = 4000
@@ -398,7 +402,8 @@ router.post('/summarize', apiLimiter, async (req, res) => {
     return res.json({ summary: (finalContent || '').trim().slice(0, 200) })
   } catch (err) {
     logger.error('[AI] summarize error:', err)
-    res.status(500).json({ error: 'Summary failed', detail: err.message })
+    const f = buildAiFailure(err, providerRow, 'Summary failed')
+    res.status(f.httpStatus).json(f.body)
   }
 })
 
@@ -406,6 +411,8 @@ router.post('/summarize', apiLimiter, async (req, res) => {
 // 判断一段内容与候选条目中哪些"语义重复"（改写/同义/部分重叠），
 // 输出命中列表 + 原因。非流式，供前端选中条目后提示重复。
 router.post('/similarity', apiLimiter, async (req, res) => {
+  // catch 里也要用它构造失败响应（告知是哪个供应商出了问题），所以提到 try 外
+  let providerRow = null
   try {
     const { providerId, content, candidates = [] } = req.body || {}
     if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content is required' })
@@ -420,9 +427,9 @@ router.post('/similarity', apiLimiter, async (req, res) => {
     if (limited.length === 0) return res.json({ duplicates: [], checked: 0 })
 
     // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
-    const providerRow = await resolveUserProvider(req.userId, providerId)
-    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
-    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+    providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) { const f = providerPrecheckFailure('no_provider'); return res.status(f.httpStatus).json(f.body) }
+    if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const truncated = content.slice(0, 4000)
@@ -483,7 +490,8 @@ router.post('/similarity', apiLimiter, async (req, res) => {
     return res.json({ duplicates, checked: limited.length })
   } catch (err) {
     logger.error('[AI] similarity error:', err)
-    res.status(500).json({ error: 'Similarity check failed', detail: err.message })
+    const f = buildAiFailure(err, providerRow, 'Similarity failed')
+    res.status(f.httpStatus).json(f.body)
   }
 })
 
@@ -497,6 +505,8 @@ router.post('/similarity', apiLimiter, async (req, res) => {
  * 失败同样把 fetch failed 等上游异常透传到 SSE data: {"error":...}，前端用 onError 渲染。
  */
 router.post('/refactor-prompt', apiLimiter, async (req, res) => {
+  // catch 里也要用它构造失败响应（告知是哪个供应商出了问题），所以提到 try 外
+  let providerRow = null
   try {
     const { providerId, content } = req.body || {}
     if (!content || typeof content !== 'string' || !content.trim()) {
@@ -504,12 +514,14 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
     }
 
     // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
-    const providerRow = await resolveUserProvider(req.userId, providerId)
+    providerRow = await resolveUserProvider(req.userId, providerId)
     if (!providerRow) {
-      return res.status(404).json({ error: 'provider not found' })
+      const f1 = providerPrecheckFailure('no_provider')
+      return res.status(f1.httpStatus).json(f1.body)
     }
     if (!providerRow.api_key_encrypted) {
-      return res.status(400).json({ error: 'Provider has no API key' })
+      const f2 = providerPrecheckFailure('no_key', providerRow)
+      return res.status(f2.httpStatus).json(f2.body)
     }
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const role = req.user.roleKey || 'user'
@@ -605,7 +617,8 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
   } catch (err) {
     logger.error('[AI] refactor-prompt error:', err)
     if (!res.headersSent) {
-      res.status(500).json({ error: 'refactor failed', detail: err.message })
+      const f = buildAiFailure(err, providerRow, 'Refactor failed')
+    res.status(f.httpStatus).json(f.body)
     } else {
       try {
         if (!res.writableEnded) {
@@ -627,6 +640,8 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
 // 批量场景：用户勾选 N 条文本后一次性获取所有条目的建议，避免单条接口串行慢。
 // AI 一次返回 N 个建议的 JSON 数组（按 items 顺序），前端展示为列表。
 router.post('/suggest', apiLimiter, async (req, res) => {
+  // catch 里也要用它构造失败响应（告知是哪个供应商出了问题），所以提到 try 外
+  let providerRow = null
   try {
     const { providerId, content, collections = [], items } = req.body || {}
 
@@ -645,9 +660,9 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     }
 
     // AN-03：providerId 缺省时兜底路由 + 禁用供应商统一过滤（见 utils/aiRuntimeConfig.js）
-    const providerRow = await resolveUserProvider(req.userId, providerId)
-    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
-    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+    providerRow = await resolveUserProvider(req.userId, providerId)
+    if (!providerRow) { const f = providerPrecheckFailure('no_provider'); return res.status(f.httpStatus).json(f.body) }
+    if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const MAX_SUGGEST_INPUT = 4000
@@ -790,7 +805,8 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     return res.json({ suggestion: returnShape.parsed(parsed), raw: undefined })
   } catch (err) {
     logger.error('[AI] suggest error:', err)
-    res.status(500).json({ error: 'Suggestion failed', detail: err.message })
+    const f = buildAiFailure(err, providerRow, 'Suggestion failed')
+    res.status(f.httpStatus).json(f.body)
   }
 })
 

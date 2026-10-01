@@ -5,17 +5,20 @@ import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
 import { runChatLoop } from './aiChatCore.js'
 import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
+import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
 
 const router = Router()
 
 // POST /api/ai/inline - 单轮内联 AI（非流式、不建会话）：供桌面页内结果卡直接调用，
 // 与 /summarize 同一套 runChatLoop 管线；不进侧栏消息流、不落会话用量
 router.post('/', apiLimiter, async (req, res) => {
+  // catch 里也要用它构造失败响应（告知用户是哪个供应商出了问题），所以提到 try 外
+  let providerRow = null
   try {
     const { providerId, prompt, context, maxTokens } = req.body || {}
     if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt is required' })
 
-    let providerRow = await resolveUserProvider(req.userId, providerId)
+    providerRow = await resolveUserProvider(req.userId, providerId)
     if (!providerRow) {
       // 兜底：账号没有任何 is_default provider 时（resolveUserProvider 返回 null），
       // 取任一启用且有 key 的 provider——与侧栏聊天 loadProviders 的「无默认取第一个」同语义，
@@ -28,8 +31,8 @@ router.post('/', apiLimiter, async (req, res) => {
       )
       providerRow = rows[0] || null
     }
-    if (!providerRow) return res.status(404).json({ error: 'Provider not found' })
-    if (!providerRow.api_key_encrypted) return res.status(400).json({ error: 'Provider has no API key' })
+    if (!providerRow) { const f = providerPrecheckFailure('no_provider'); return res.status(f.httpStatus).json(f.body) }
+    if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const MAX_INPUT = 24000
@@ -60,7 +63,8 @@ router.post('/', apiLimiter, async (req, res) => {
     return res.json({ ok: true, text: (finalContent || '').trim() })
   } catch (err) {
     logger.error('[AI] inline error:', err)
-    res.status(500).json({ ok: false, error: 'Inline AI failed', detail: err.message })
+    const f = buildAiFailure(err, providerRow, 'Inline AI failed')
+    res.status(f.httpStatus).json({ ok: false, ...f.body })
   }
 })
 

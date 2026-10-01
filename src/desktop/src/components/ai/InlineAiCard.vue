@@ -86,7 +86,10 @@ function continueInChat() {
     </div>
 
     <div v-else-if="status === 'error'" class="iac-error">
-      <span>{{ tf(error || 'inline_ai_failed', 'AI 调用失败') }}</span>
+      <!-- error 已是「可行动的中文文案」（useInlineAi 经 utils/aiErrors 翻译，含供应商名与
+           该去哪里改）。以前这里套了 tf()，非 i18n 键会被 fallback 覆盖成笼统的
+           「AI 调用失败」，把服务端好不容易带回来的原因吃掉。 -->
+      <span class="iac-error-text">{{ error || tf('inline_ai_failed', 'AI 调用失败') }}</span>
       <button type="button" class="pl-btn pl-btn--sm" @click="emit('retry')">
         <RefreshCw :size="12" /><span>{{ tf('inline_ai_retry', '重试') }}</span>
       </button>
@@ -168,12 +171,20 @@ function continueInChat() {
 }
 .iac-error {
   display: flex;
-  align-items: center;
+  /* 文案变长后（现在会写明是哪个供应商、什么原因、去哪改）要与按钮分列并允许换行，
+     所以改为顶对齐 + 让文本占满剩余宽度 */
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 12px;
   font-size: 12.5px;
   color: var(--danger);
+}
+.iac-error-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.6;
+  word-break: break-word;
 }
 .iac-body {
   padding: 12px;

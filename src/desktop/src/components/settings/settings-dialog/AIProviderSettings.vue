@@ -7,7 +7,7 @@ import Input from '@/components/ui/input/Input.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
 import CustomSelect from '@/components/ui/select/CustomSelect.vue'
 import CustomSelectOption from '@/components/ui/select/CustomSelectOption.vue'
-import { RefreshCw, PlayCircle, Pencil, Trash2, Check, X, ChevronDown, Plus } from 'lucide-vue-next'
+import { RefreshCw, PlayCircle, Pencil, Trash2, Check, X, ChevronDown, Plus, Star } from 'lucide-vue-next'
 import { useMenuAccess } from '@/composables/useMenuAccess'
 import {
   getProviders,
@@ -243,6 +243,29 @@ async function load() {
   }
 }
 
+// 一键设为默认。
+// 之前只能打开「编辑」表单里的开关才能改默认 —— 而默认供应商同时决定所有 AI 快捷功能
+// （页内总结 / AI 建议 / 整理收藏 / 相似度…）走哪个模型，入口藏这么深就是用户说的
+// 「前台没有任何可以配置的入口」。这里给卡片补一个直接按钮。
+const settingDefaultId = ref<string | null>(null)
+async function setDefault(p: AiProvider) {
+  if (p.is_default || settingDefaultId.value) return
+  settingDefaultId.value = p.id
+  try {
+    const res = await updateProvider(p.id, { isDefault: true })
+    if (res.ok) {
+      toast.show(t('ai_set_default_done'), 'success')
+      await load()
+    } else {
+      toast.show(res.error || t('ai_save_failed', '保存失败'), 'error')
+    }
+  } catch (e) {
+    toast.show(String((e as Error)?.message || e), 'error')
+  } finally {
+    settingDefaultId.value = null
+  }
+}
+
 function onProviderChange(v: string) {
   formProvider.value = v
   const preset = presets.value.find((x) => x.provider === v)
@@ -446,7 +469,12 @@ onMounted(() => {
           <div class="ai-prov-main">
             <div class="ai-prov-name">
               <span class="ai-prov-name-text">{{ p.name }}</span>
-              <span v-if="p.is_default" class="ai-badge ai-badge--default">{{ t('ai_default') }}</span>
+              <span
+                v-if="p.is_default"
+                class="ai-badge ai-badge--default"
+                :title="t('ai_badge_default_h')"
+                >{{ t('ai_default') }}</span
+              >
               <span v-if="p.has_key" class="ai-badge ai-badge--key">{{ t('ai_key_set') }}</span>
               <span v-else class="ai-badge ai-badge--nokey">{{ t('ai_no_key') }}</span>
             </div>
@@ -459,6 +487,17 @@ onMounted(() => {
             </div>
           </div>
           <div class="ai-card-actions">
+            <button
+              v-if="!p.is_default"
+              type="button"
+              class="ai-card-btn"
+              :class="{ testing: settingDefaultId === p.id }"
+              :title="t('ai_set_default')"
+              :disabled="settingDefaultId === p.id"
+              @click="setDefault(p)"
+            >
+              <Star :size="16" />
+            </button>
             <button
               type="button"
               class="ai-card-btn"

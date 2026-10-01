@@ -1,10 +1,13 @@
 // === 页内内联 AI（不进侧栏消息流）：一次性调用 /api/ai/inline，统一 loading/结果/错误/取消 ===
 import { ref } from 'vue'
 import { inlineChat } from '@/api/ai'
+import { useI18n } from '@/composables/useI18n'
+import { aiFailureFrom, describeAiFailure } from '@/utils/aiErrors'
 
 export type InlineAiStatus = 'idle' | 'loading' | 'done' | 'error'
 
 export function useInlineAi() {
+  const { tf } = useI18n()
   const status = ref<InlineAiStatus>('idle')
   // text：完整正文（复制/「在助手中继续」用）；displayText：打字机逐字追加的展示值
   const text = ref('')
@@ -91,7 +94,10 @@ export function useInlineAi() {
         text.value = res.data.text
         await startTyping(my, res.data.text)
       } else {
-        error.value = res.data?.error || res.error || 'inline_ai_failed'
+        // 失败原因要能让用户照着做：服务端回 code + provider（哪个供应商、什么原因），
+        // 这里翻成「供应商『X』的 API Key 无效或已过期。请到 设置 → AI 供应商 …」这类可行动文案。
+        // 以前只显示一句「AI 调用失败」，用户完全不知道往哪查。
+        error.value = describeAiFailure(aiFailureFrom(res), tf)
         status.value = 'error'
       }
     } catch (e: any) {
