@@ -29,11 +29,22 @@ const props = withDefaults(
 const reduced = useReducedMotion()
 // 标题按**字符**切分：中文标题没有空格，按"词"切会整块一刀不动、毫无错峰感
 const chars = computed(() => Array.from(props.title))
+// eyebrow 同样按字符错峰（节奏更快、幅度更小）—— 之前只做纯 opacity 淡入，
+// 用户实测"根本没带上这串小字"，因为 0.42s 的淡入肉眼几乎分辨不出来
+const eyebrowChars = computed(() => Array.from(props.eyebrow))
 </script>
 
 <template>
   <div class="fx-page-head" :class="{ 'is-static': reduced }">
-    <div v-if="eyebrow" class="page-eyebrow fx-ph-eyebrow">{{ eyebrow }}</div>
+    <div v-if="eyebrow" class="page-eyebrow fx-ph-eyebrow">
+      <span
+        v-for="(ch, i) in eyebrowChars"
+        :key="i"
+        class="fx-ph-echar"
+        :style="{ animationDelay: `${40 + i * 16}ms` }"
+        >{{ ch }}</span
+      >
+    </div>
     <div class="page-title page-title--big fx-ph-title">
       <span v-for="(ch, i) in chars" :key="i" class="fx-ph-char" :style="{ animationDelay: `${60 + i * 34}ms` }">{{
         ch
@@ -45,7 +56,25 @@ const chars = computed(() => Array.from(props.title))
 
 <style scoped>
 .fx-ph-eyebrow {
-  animation: fx-ph-fade 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  /* 容器级淡入：让 CSS ::before 画的破折号（—）也一起进入，否则它会瞬间出现 */
+  animation: fx-ph-fade 0.3s ease backwards;
+}
+/* eyebrow 的逐字入场：比标题更快(16ms/字)更轻(3px 位移 + 3px blur) */
+.fx-ph-echar {
+  display: inline-block;
+  animation: fx-ph-erise 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes fx-ph-erise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 .fx-ph-char {
   /* inline-block 才能吃 transform/filter；行内换行不受影响（标题是单行） */
@@ -87,6 +116,7 @@ const chars = computed(() => Array.from(props.title))
 }
 /* 关掉动画：直接静态最终态 */
 .fx-page-head.is-static .fx-ph-eyebrow,
+.fx-page-head.is-static .fx-ph-echar,
 .fx-page-head.is-static .fx-ph-char,
 .fx-page-head.is-static .fx-ph-sub {
   animation: none;

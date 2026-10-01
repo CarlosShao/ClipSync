@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
-  PanelLeftOpen,
   ClipboardList,
   Monitor,
   FileText,
@@ -189,7 +188,9 @@ async function openAdminConsole() {
     <!-- ===== Header（折叠开关已上移标题栏；折叠态点 logo 展开） ===== -->
     <div v-show="isCollapsed" class="sb-header sb-header--clickable" @click="emit('toggle')">
       <div class="sb-logo-wrap">
-        <PanelLeftOpen :size="15" stroke-width="2" class="sb-collapse-hint" />
+        <!-- 折叠开关在标题栏已有一处；这里原本再画一个 PanelLeftOpen 提示图标，
+             与标题栏那个形成"两个地方都能折叠"的观感（用户反馈多此一举）。
+             折叠态下点 logo 仍可展开，提示改由 title 承担。 -->
       </div>
     </div>
     <div v-show="!isCollapsed" class="sb-header" />
