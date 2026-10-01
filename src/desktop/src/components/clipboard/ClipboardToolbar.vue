@@ -31,6 +31,7 @@ import { getClipboardStats, type ClipboardStats } from '@/api/clipboard'
 import { useDevice } from '@/composables/useDevice'
 import CountUp from '@/components/fx/CountUp.vue'
 import FxRubberSegment from '@/components/fx/FxRubberSegment.vue'
+import FxJellyRadio from '@/components/fx/FxJellyRadio.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import StarBorder from '@/components/fx/StarBorder.vue'
 
@@ -105,6 +106,11 @@ const viewSegItems = computed(() => [
   { value: 'fav', label: t('view_fav_only', '仅收藏') },
   { value: 'archive', label: t('nav_archive') },
 ])
+
+// 条目类型 chips 的 items（Jelly Radio）：与 CHIP_ICONS 对齐，图标是 lucide 组件
+const chipItems = computed(() =>
+  filterOptions.value.map((o) => ({ value: o.value as string, label: o.label, icon: CHIP_ICONS[o.value] })),
+)
 
 const activeFilter = computed(() => clip.activeFilter.value)
 const selectedCount = computed(() => clip.selectedCount.value)
@@ -279,17 +285,24 @@ function clearSearch() {
         />
       </div>
 
-      <button
-        v-for="opt in filterOptions"
-        :key="opt.value"
-        type="button"
-        class="chip"
-        :class="{ active: activeFilter === opt.value }"
-        @click="clip.setFilter(opt.value as ClipboardFilter)"
-      >
-        <component :is="CHIP_ICONS[opt.value]" v-if="CHIP_ICONS[opt.value]" :size="12" />
-        {{ opt.label }}
-      </button>
+      <!-- 条目类型筛选：Jelly Radio（vue-bits Micro/JellyRadio）—— 选中/悬停时胶囊有果冻回弹。
+           配色沿用原 .chip 的 token（未选中 = --bg-surface / --text-secondary；
+           选中 = --accent-light / --accent）。原来 .chip.active 的静态底色已撤掉（指示器唯一化）。 -->
+      <FxJellyRadio
+        class="clip-type-radio"
+        size="sm"
+        :swell="0.14"
+        :gap="6"
+        :radius="13"
+        chip-color="var(--bg-surface)"
+        active-color="var(--accent-light)"
+        text-color="var(--text-secondary)"
+        active-text-color="var(--accent)"
+        :items="chipItems"
+        :value="activeFilter"
+        :aria-label="t('filter_label', '筛选') "
+        @change="(v: string) => clip.setFilter(v as ClipboardFilter)"
+      />
 
       <!-- 视图切换：Rubber Segment（vue-bits Micro/RubberSegment）—— 指示块带橡皮筋拉伸/挤压，
            拖拽与点击都能切换。原来 .seg 的静态 .active 白底已撤掉（指示器唯一化）。
@@ -333,6 +346,24 @@ function clearSearch() {
 </template>
 
 <style scoped>
+/* Jelly Radio 接入：对齐原 .chip 的外观与行高
+   1) 原 chips 有 1px 边框，而组件的可视元素是内层 span → 补回来；选中态透明（同原 .chip.active）
+   2) 组件根部为"果冻溢出"预留了上下内边距，会把工具栏行撑高 → 纵向归零（横向保留，避免溢出撞到邻居）
+   3) lucide 图标默认 24px，原 chips 是 12px → 收窄 */
+.clip-type-radio {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.clip-type-radio :deep(button > span) {
+  border: 1px solid var(--border-default);
+}
+.clip-type-radio :deep(button[data-on='true'] > span) {
+  border-color: transparent;
+}
+.clip-type-radio :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
 .page-inner {
   /* flex 列容器内 margin auto 会 shrink-to-fit，必须显式撑满再由 max-width 收口 */
   width: 100%;
