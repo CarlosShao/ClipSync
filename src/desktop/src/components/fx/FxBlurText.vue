@@ -48,8 +48,14 @@ const words = computed(() => props.text.split(/(\s+)/).filter((s) => s.length > 
 .fx-blur-word {
   /* inline-block 让 filter/transform 生效；换行仍发生在词之间的空白处 */
   display: inline-block;
-  animation: fx-blur-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: opacity, filter, transform;
+  /* 基线即最终态 + **不加 fill-mode**：动画播完元素自然回到基线，不会长期停在
+     "动画中"状态（用 both/forwards 会让每个词一直被视为有活动动画，图层不回收）。
+     也**刻意不加 will-change** —— 一个词一个图层，长摘要几百个词会把 WebView2 的
+     合成层吃爆（表现为用一会儿黑屏）。这两个坑都是实测桌面端黑屏后定位到的。 */
+  opacity: 1;
+  filter: none;
+  transform: none;
+  animation: fx-blur-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes fx-blur-in {
   from {
@@ -74,6 +80,5 @@ const words = computed(() => props.text.split(/(\s+)/).filter((s) => s.length > 
   opacity: 1;
   filter: none;
   transform: none;
-  will-change: auto;
 }
 </style>

@@ -48,12 +48,20 @@ export const vFxReveal: Directive<RevealEl, unknown> = {
     // 先置为隐藏态（duration 0 = 立即到位，不产生一次多余动画）
     animate(el, HIDDEN, { duration: 0 })
 
+    // 动画结束后必须撤掉 will-change：它是"永久提升为合成图层"的提示，长列表里
+    // 每行留一个图层会把 WebView2 合成层吃爆（桌面端用一会儿黑屏的元凶之一）。
+    const releaseWillChange = () => {
+      el.style.willChange = ''
+    }
+
     let revealed = false
     const io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            animate(el, SHOWN, { duration: 0.3, delay: revealed ? 0 : delay, ease: EASE })
+            const ctrl = animate(el, SHOWN, { duration: 0.3, delay: revealed ? 0 : delay, ease: EASE })
+            // 入场动画收尾后释放图层提示（catch 兜住：动画被打断时 finished 会 reject）
+            ctrl.finished?.then(releaseWillChange).catch(() => {})
             revealed = true
           } else if (revealed) {
             // ② 离场只压暗，不做整条消失
