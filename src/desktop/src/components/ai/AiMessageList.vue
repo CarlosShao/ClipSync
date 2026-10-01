@@ -5,6 +5,8 @@ import type { ChatMessage } from '@/api/ai'
 import AiMessage from './AiMessage.vue'
 import AiErrorBar from './AiErrorBar.vue'
 import AiDuplicateNotice from './AiDuplicateNotice.vue'
+import FxConversationRuler from '@/components/fx/FxConversationRuler.vue'
+import { useReducedMotion } from '@/components/fx/useReducedMotion'
 
 /**
  * UI-C：顶部区域挂载原子状态组件（错误条 / 图片重复横幅）。
@@ -28,6 +30,10 @@ const { t } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
 const userScrolledUp = ref(false)
+// 刻度尺：当前"读到哪"的刻度。按滚动进度等比映射 —— 消息高度不等，等比只是定位近似，
+// 好处是不必在 scroll 事件里逐条测量 DOM。跳转仍用真实消息下标（见 jumpTo）。
+const activeIndex = ref(-1)
+const reduced = useReducedMotion()
 let scrollRafId: number | null = null
 
 function isNearBottom(el: HTMLElement) {
@@ -50,6 +56,15 @@ function onScroll() {
   const el = scrollRef.value
   if (!el) return
   userScrolledUp.value = !isNearBottom(el)
+  const span = el.scrollHeight - el.clientHeight
+  activeIndex.value =
+    span <= 0 ? props.messages.length - 1 : Math.round((el.scrollTop / span) * (props.messages.length - 1))
+}
+
+/** 点刻度跳到第 index 条消息（reduce-motion 命中时不走平滑滚动） */
+function jumpTo(index: number) {
+  const el = scrollRef.value?.querySelector(`[data-msg-index="${index}"]`) as HTMLElement | null
+  el?.scrollIntoView({ behavior: reduced.value ? 'auto' : 'smooth', block: 'start' })
 }
 
 watch(
@@ -130,7 +145,8 @@ defineExpose({ scrollToPos })
 </script>
 
 <template>
-  <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
+  <div class="ai-msg-list-wrap">
+    <div ref="scrollRef" class="ai-msg-list" @scroll="onScroll">
     <!-- 顶部原子状态区（UI-C）：错误条 / 图片重复横幅；破坏性工具确认 Modal 由 AiChatPanel 统一管理 -->
     <AiErrorBar v-if="error" :message="error" />
     <AiDuplicateNotice v-if="duplicateNotice" :notice="duplicateNotice" @dismiss="emit('dismiss-duplicate')" />
@@ -142,16 +158,29 @@ defineExpose({ scrollToPos })
       :key="messageKey(m, i)"
       :message="m"
       :index="i"
+      :data-msg-index="i"
       :is-streaming="isStreamingMessage(i)"
       :is-latest="isLatestMessage(i)"
       :confirm-tool="confirmTool ?? null"
       :class="isLocateMarked(i) ? 'ai-msg-locate-mark' : undefined"
       @reedit="(c: string, m: import('@/api/ai').ChatMessage) => emit('reedit', c, m)"
     />
+    </div>
+    <!-- 右侧竖直刻度尺（方案 A）：每条消息一个刻度，鼠标靠近时刻度伸长，点击跳转 -->
+    <FxConversationRuler :count="messages.length" :active-index="activeIndex" @jump="jumpTo" />
   </div>
 </template>
 
 <style scoped>
+/* 刻度尺要绝对定位在对话区右缘、但不随内容滚动 ⇒ 必须有一个 position: relative 的外层，
+   滚动仍由内层的 .ai-msg-list 负责（保持它原来的 flex/滚动行为不变）。 */
+.ai-msg-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .ai-msg-list {
   flex: 1;
   min-height: 0;
