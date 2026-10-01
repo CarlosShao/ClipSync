@@ -30,8 +30,7 @@ const { t, tf } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
 const userScrolledUp = ref(false)
-// 刻度尺：当前"读到哪"的刻度。按滚动进度等比映射 —— 消息高度不等，等比只是定位近似，
-// 好处是不必在 scroll 事件里逐条测量 DOM。跳转仍用真实消息下标（见 jumpTo）。
+// 刻度尺：当前"读到哪"的那一轮（见 computeActiveTurn —— 按轮数 + DOM 实测，不用等比近似）。
 const activeIndex = ref(-1)
 const reduced = useReducedMotion()
 // 刻度尺按"轮"分组：一个刻度 = 一轮完整对话（我发出的消息 + 它的回答），
@@ -55,6 +54,8 @@ const rulerData = computed(() => {
 })
 const rulerTurns = computed(() => rulerData.value.turns)
 let scrollRafId: number | null = null
+// 刻度尺"当前读到哪"的 rAF 节流（rect 读取会触发布局，每帧最多一次）
+let scrollProbeRaf: number | null = null
 
 function isNearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 120
@@ -72,19 +73,42 @@ function scrollToBottom(force = false) {
   })
 }
 
+/** 视口顶部往下 1/3 处作为"当前读到哪"的探针，返回该位置所在的**轮**下标。
+ *  必须按轮数（不是消息条数）算 —— 刻度尺是按轮分格的；上一版沿用 messages.length
+ *  导致下标永远对不上，点刻度后没有任何高亮（用户实测）。
+ *  也不再用滚动进度等比映射：一轮回答可能占大半屏，等比会明显偏。 */
+function computeActiveTurn(el: HTMLElement) {
+  const nodes = el.querySelectorAll<HTMLElement>('[data-turn-index]')
+  const total = rulerTurns.value.length
+  if (!nodes.length || total === 0) return -1
+  const probeY = el.getBoundingClientRect().top + el.clientHeight / 3
+  let current = 0
+  nodes.forEach((n) => {
+    if (n.getBoundingClientRect().top <= probeY) current = Number(n.dataset.turnIndex) || 0
+  })
+  return Math.min(current, total - 1)
+}
+
 function onScroll() {
   const el = scrollRef.value
   if (!el) return
   userScrolledUp.value = !isNearBottom(el)
-  const span = el.scrollHeight - el.clientHeight
-  activeIndex.value =
-    span <= 0 ? props.messages.length - 1 : Math.round((el.scrollTop / span) * (props.messages.length - 1))
+  // 每帧最多测一次（rect 读取会触发布局）
+  if (scrollProbeRaf !== null) return
+  scrollProbeRaf = requestAnimationFrame(() => {
+    scrollProbeRaf = null
+    const node = scrollRef.value
+    if (node) activeIndex.value = computeActiveTurn(node)
+  })
 }
 
 /** 点刻度跳到该轮的第一条消息（reduce-motion 命中时不走平滑滚动） */
 function jumpTo(turnIndex: number) {
   const el = scrollRef.value?.querySelector(`[data-turn-index="${turnIndex}"]`) as HTMLElement | null
   el?.scrollIntoView({ behavior: reduced.value ? 'auto' : 'smooth', block: 'start' })
+  // 点击后立刻把高亮落到该轮：平滑滚动过程中 onScroll 会陆续触发，
+  // 但落点若与探针有偏差，这里先给出正确的高亮（避免"点了没反应"的观感）
+  activeIndex.value = turnIndex
 }
 
 watch(
