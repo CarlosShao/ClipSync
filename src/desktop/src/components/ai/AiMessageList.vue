@@ -26,7 +26,7 @@ const emit = defineEmits<{
   reedit: [content: string, message: import('@/api/ai').ChatMessage]
   'dismiss-duplicate': []
 }>()
-const { t } = useI18n()
+const { t, tf } = useI18n()
 
 const scrollRef = ref<HTMLElement | null>(null)
 const userScrolledUp = ref(false)
@@ -34,8 +34,26 @@ const userScrolledUp = ref(false)
 // 好处是不必在 scroll 事件里逐条测量 DOM。跳转仍用真实消息下标（见 jumpTo）。
 const activeIndex = ref(-1)
 const reduced = useReducedMotion()
-// 刻度尺的概要数据（与消息一一对应）：悬停刻度时弹出该条消息的摘要
-const rulerItems = computed(() => props.messages.map((m) => ({ role: m.role, text: m.content || '' })))
+// 刻度尺按"轮"分组：一个刻度 = 一轮完整对话（我发出的消息 + 它的回答），
+// 不是一个消息一个刻度。map[i] = 第 i 条消息属于哪一轮，供"点刻度跳到该轮首条消息"用。
+const rulerData = computed(() => {
+  const turns: { question?: string; answer?: string }[] = []
+  const map: number[] = []
+  for (const m of props.messages) {
+    const isUser = m.role === 'user'
+    if (isUser || turns.length === 0) {
+      turns.push({ question: isUser ? m.content || '' : '', answer: isUser ? '' : m.content || '' })
+    } else {
+      // 回答方 / 工具消息：并入当前轮（概要展示时会压平空白，多段也能看）
+      const cur = turns[turns.length - 1]
+      const text = m.content || ''
+      cur.answer = cur.answer ? `${cur.answer}\n${text}` : text
+    }
+    map.push(turns.length - 1)
+  }
+  return { turns, map }
+})
+const rulerTurns = computed(() => rulerData.value.turns)
 let scrollRafId: number | null = null
 
 function isNearBottom(el: HTMLElement) {
@@ -63,9 +81,9 @@ function onScroll() {
     span <= 0 ? props.messages.length - 1 : Math.round((el.scrollTop / span) * (props.messages.length - 1))
 }
 
-/** 点刻度跳到第 index 条消息（reduce-motion 命中时不走平滑滚动） */
-function jumpTo(index: number) {
-  const el = scrollRef.value?.querySelector(`[data-msg-index="${index}"]`) as HTMLElement | null
+/** 点刻度跳到该轮的第一条消息（reduce-motion 命中时不走平滑滚动） */
+function jumpTo(turnIndex: number) {
+  const el = scrollRef.value?.querySelector(`[data-turn-index="${turnIndex}"]`) as HTMLElement | null
   el?.scrollIntoView({ behavior: reduced.value ? 'auto' : 'smooth', block: 'start' })
 }
 
@@ -160,7 +178,7 @@ defineExpose({ scrollToPos })
       :key="messageKey(m, i)"
       :message="m"
       :index="i"
-      :data-msg-index="i"
+      :data-turn-index="rulerData.map[i]"
       :is-streaming="isStreamingMessage(i)"
       :is-latest="isLatestMessage(i)"
       :confirm-tool="confirmTool ?? null"
@@ -169,7 +187,13 @@ defineExpose({ scrollToPos })
     />
     </div>
     <!-- 右侧竖直刻度尺（方案 A）：每条消息一个刻度，鼠标靠近时刻度伸长，点击跳转 -->
-    <FxConversationRuler :items="rulerItems" :active-index="activeIndex" @jump="jumpTo" />
+    <FxConversationRuler
+      :turns="rulerTurns"
+      :active-index="activeIndex"
+      :question-label="tf('ai_ruler_question', '我')"
+      :answer-label="tf('ai_ruler_answer', 'AI')"
+      @jump="jumpTo"
+    />
   </div>
 </template>
 
