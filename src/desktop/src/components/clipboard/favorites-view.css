@@ -77,6 +77,30 @@
   gap: 8px;
   min-width: 0;
 }
+/* 合集树面板入场：一次性播完，无 will-change、无 fill-mode（避免图层常驻 ----
+   fx 层此前出过桌面端用一会儿黑屏的事故，根因就是这两样）。
+   面板不随列表滚动，纯 CSS 一次性动画即可，不必挂 IntersectionObserver。
+   注意：.fav-col-panel 原本是选择器列表的一员（见上方 ".fav-col-panel, … { }"），
+   这里单独追加一条只含 animation 的规则，避免改动共用样式。 */
+@keyframes fav-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fav-col-panel {
+  animation: fav-panel-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+/* 系统级"减少动态效果"同样尊重（应用内开关由 globals.css 统一压制） */
+@media (prefers-reduced-motion: reduce) {
+  .fav-col-panel {
+    animation: none;
+  }
+}
 .fav-col-panel-title {
   font-size: 13.5px;
   font-weight: 600;

@@ -2015,7 +2015,7 @@ function cancelEditTags() {
         <!-- GRID VIEW (grouped) -->
         <div v-else class="fav-groups">
           <div v-for="gk in sortedGroupKeys" :key="gk" class="fav-group">
-            <div class="fav-group-header" style="cursor: pointer" @click="toggleGroup(gk)">
+            <div class="fav-group-header" v-fx-reveal style="cursor: pointer" @click="toggleGroup(gk)">
               <ChevronRight
                 :size="14"
                 class="fav-group-chevron"
