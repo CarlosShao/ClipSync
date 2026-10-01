@@ -69,7 +69,9 @@ const props = withDefaults(defineProps<SpringCheckProps>(), {
   disabled: false,
   color: 'var(--border-strong)',
   fillColor: 'var(--accent)',
-  checkColor: '#ffffff',
+  // 打勾色：必须与 accent 填充形成对比。硬编码 #ffffff 在「浅色 accent」主题（mono 暗色等）
+  // 下是白勾白底 —— 用户反馈"暗色下勾也看不清"。--text-inverse 每个主题里正好是 accent 上的可读色。
+  checkColor: 'var(--text-inverse)',
   boxSize: 16,
   boxRadius: 5,
   fontSize: 13,
@@ -193,7 +195,7 @@ const cssVars = computed(() => {
     :aria-checked="on"
     :aria-label="ariaLabel"
     :disabled="disabled"
-    class="group inline-flex relative items-center gap-[var(--sc-gap)] bg-transparent disabled:opacity-50 p-0 border-0 outline-none min-h-[var(--sc-row)] font-medium text-[length:var(--sc-font)] text-left leading-[1.2] tracking-[-0.01em] [-webkit-touch-callout:none] touch-manipulation cursor-pointer disabled:cursor-not-allowed select-none [-webkit-tap-highlight-color:transparent] [color:var(--sc-ink)]"
+    class="fx-sc-btn group inline-flex relative items-center gap-[var(--sc-gap)] bg-transparent disabled:opacity-50 p-0 border-0 outline-none min-h-[var(--sc-row)] font-medium text-[length:var(--sc-font)] text-left leading-[1.2] tracking-[-0.01em] [-webkit-touch-callout:none] touch-manipulation cursor-pointer disabled:cursor-not-allowed select-none [-webkit-tap-highlight-color:transparent] [color:var(--sc-ink)]"
     :class="className"
     :style="cssVars"
     @pointerdown="handlePointerDown"
@@ -209,10 +211,7 @@ const cssVars = computed(() => {
         ref="boxRef"
         class="relative place-items-center grid rounded-[inherit] w-full h-full overflow-hidden origin-center"
       >
-        <span
-          class="absolute inset-0 opacity-[0.28] [@media(hover:hover)_and_(pointer:fine)]:group-enabled:group-hover:opacity-50 rounded-[inherit] [box-shadow:inset_0_0_0_var(--sc-ring)_var(--sc-ink)] [transition:opacity_120ms_ease]"
-          aria-hidden="true"
-        />
+        <span class="fx-sc-ring" aria-hidden="true" />
         <span
           ref="fillRef"
           class="absolute inset-0 rounded-[inherit] origin-center [background:var(--sc-fill)]"
@@ -241,3 +240,23 @@ const cssVars = computed(() => {
     </span>
   </button>
 </template>
+
+<style scoped>
+/* ① 内描边：上游用 opacity-[0.28] 的 --sc-ink 画环（hover 也只提到 0.5）。
+   实测在浅色与暗色主题下都淡到几乎看不见 —— 用户反馈「勾选框看不见但能点」。
+   这里改为实色描边，与原来的 .cbx 对齐（1.5px solid var(--border-strong)），
+   hover 转 accent（与 .cbx:hover 的 border-color 一致）。 */
+.fx-sc-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--sc-ring) var(--sc-ink);
+  transition: box-shadow 120ms ease;
+}
+.fx-sc-btn:hover:not(:disabled) .fx-sc-ring {
+  box-shadow: inset 0 0 0 var(--sc-ring) var(--accent);
+}
+.fx-sc-btn:disabled .fx-sc-ring {
+  box-shadow: inset 0 0 0 var(--sc-ring) var(--border-default);
+}
+</style>
