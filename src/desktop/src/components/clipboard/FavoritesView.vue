@@ -18,6 +18,8 @@ import ProtectionDialog from '@/components/clipboard/ProtectionDialog.vue'
 import { TAG_PRESET_COLORS, getTagDisplayColor, tagColorStyle } from '@/utils/favorites/tagColors'
 import { COLLECTION_ICON_MAP, renderCollectionIcon } from '@/utils/favorites/collectionIcons'
 import ClipDetailDrawer from '@/components/clipboard/ClipDetailDrawer.vue'
+import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
+import CountUp from '@/components/fx/CountUp.vue'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import DecryptedText from '@/components/fx/DecryptedText.vue'
@@ -1380,22 +1382,22 @@ function cancelEditTags() {
     <div class="fav-stats">
       <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Star :size="12" />{{ tf('fav_stat_total', '收藏总数') }}</span>
-        <span class="clip-stat-v">{{ favoriteCount }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
+        <span class="clip-stat-v"><CountUp :key="favoriteCount" :to="favoriteCount" :duration="0.9" /><em>{{ tf('stats_unit_tiao', '条') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_total_sub', '跨 {n} 个合集', { n: collections.flatCollections.value.length }) }}</span>
       </FxSpotlightCard>
       <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><History :size="12" />{{ tf('fav_stat_month', '本月新增') }}</span>
-        <span class="clip-stat-v">{{ monthNewCount }}<em>{{ tf('stats_unit_tiao', '条') }}</em></span>
+        <span class="clip-stat-v"><CountUp :key="monthNewCount" :to="monthNewCount" :duration="0.9" /><em>{{ tf('stats_unit_tiao', '条') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_month_sub', '按收藏时间统计') }}</span>
       </FxSpotlightCard>
       <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Tag :size="12" />{{ tf('fav_stat_tags', '标签') }}</span>
-        <span class="clip-stat-v">{{ allTags.length }}<em>{{ tf('stats_unit_ge', '个') }}</em></span>
+        <span class="clip-stat-v"><CountUp :key="allTags.length" :to="allTags.length" :duration="0.9" /><em>{{ tf('stats_unit_ge', '个') }}</em></span>
         <span class="clip-stat-d">{{ tf('fav_stat_tags_sub', '全局标签体系') }}</span>
       </FxSpotlightCard>
       <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
         <span class="clip-stat-k"><Wifi :size="12" />{{ tf('stats_devices', '在线设备') }}</span>
-        <span class="clip-stat-v">{{ onlineDeviceCount }}<em>{{ tf('stats_unit_tai', '台') }}</em></span>
+        <span class="clip-stat-v"><CountUp :key="onlineDeviceCount" :to="onlineDeviceCount" :duration="0.9" /><em>{{ tf('stats_unit_tai', '台') }}</em></span>
         <span class="clip-stat-d">{{ tf('stats_dev_sub', '端到端加密 · 实时同步') }}</span>
       </FxSpotlightCard>
     </div>
@@ -1803,8 +1805,8 @@ function cancelEditTags() {
         <!-- 批量选择条：与剪贴板 .batch-bar 同一套（吸附 + accent 描边 + pl-pop-in 入场）。
              全选 / 已选 N 项 / 批量取消收藏 / 取消 —— 之前收藏页缺全选，与剪贴板不统一。 -->
         <div v-if="batchMode" class="batch-bar fav-batchbar">
-          <label>
-            <input type="checkbox" class="cbx" :checked="allSelected" @change="toggleSelectAll" />
+          <label @click="toggleSelectAll">
+            <FxSpringCheck class="fx-check" :checked="allSelected" />
             {{ t('batch_select_all', '全选') }}
           </label>
           <span class="sel-info">{{ tf('batch_selected_n', '已选 {n} 项', { n: selectedCount }) }}</span>
@@ -1877,10 +1879,9 @@ function cancelEditTags() {
             @drop="onDrop($event, item)"
             @dragend="onDragEnd"
           >
-            <input
+            <FxSpringCheck
               v-if="batchMode"
-              type="checkbox"
-              class="cbx"
+              class="fx-row-check"
               :checked="selectedIds.has(item.id)"
               :aria-label="t('select_item', '选择此条')"
               @click.stop
@@ -2042,10 +2043,9 @@ function cancelEditTags() {
               >
                 <!-- 卡头：类型 tile + 来源 + 时间（悬浮操作条盖在右上） -->
                 <div class="fav-card-head">
-                  <input
+                  <FxSpringCheck
                     v-if="batchMode"
-                    type="checkbox"
-                    class="cbx"
+                    class="fx-row-check"
                     :checked="selectedIds.has(item.id)"
                     :aria-label="t('select_item', '选择此条')"
                     @click.stop

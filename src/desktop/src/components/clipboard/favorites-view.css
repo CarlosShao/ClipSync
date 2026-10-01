@@ -678,6 +678,11 @@
    现在与剪贴板 ClipboardTableRow 完全一致：.cbx 直接作为行的第一个 flex 子项（在流内），
    内容自然右移，不需要任何专属样式 —— 因此这两条规则被删除。 */
 /* ---- 卡片排版（v2 重设计）：扁平两段式 = 卡头(类型tile+来源+时间) + 内容区 ---- */
+/* FxSpringCheck（批量勾选框）：作为行/卡头内的 flex 子项不伸缩，对齐原来 .cbx 的 flex:none */
+.fx-row-check,
+.fx-check {
+  flex: none;
+}
 .fav-card-head {
   display: flex;
   align-items: center;

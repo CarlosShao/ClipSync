@@ -2,6 +2,7 @@
 import { ref, watch, nextTick, computed } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useClipItemDisplay, detectContentType } from '@/composables/useClipItemDisplay'
+import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
 import type { ClipItem } from '@/composables/useClipboard'
 import { isCopiedFlashing, isRowEntering } from '@/composables/clipboardState'
 import Button from '@/components/ui/button/Button.vue'
@@ -131,14 +132,13 @@ watch(
     @contextmenu.prevent="emit('contextmenu', item, $event)"
   >
     <!-- 原型：复选框仅批量选择模式渲染且恒显 -->
-    <input
+    <FxSpringCheck
       v-if="selecting"
-      type="checkbox"
-      class="cbx"
+      class="fx-row-check"
       :checked="item.selected"
       :aria-label="t('select_item', '选择此条')"
       @click.stop
-      @change="emit('toggle-select', item, ($event.target as HTMLInputElement).checked)"
+      @change="(checked: boolean) => emit('toggle-select', item, checked)"
     />
 
     <!-- 条目级密码保护遮罩：受保护且未解锁/超时时覆盖所有内容 -->
@@ -312,6 +312,10 @@ watch(
 </template>
 
 <style scoped>
+/* FxSpringCheck 作为行内第一个 flex 子项：不参与伸缩（对齐原 .cbx 的 flex:none） */
+.fx-row-check {
+  flex: none;
+}
 /* 受保护条目遮罩 */
 .cell-protected-mask {
   display: flex;

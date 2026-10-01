@@ -42,6 +42,7 @@ import AiSuggestPopup from '@/components/ai/AiSuggestPopup.vue'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { api } from '@/api/client'
+import FxSpringCheck from '@/components/fx/FxSpringCheck.vue'
 import FxGradualBlur from '@/components/fx/FxGradualBlur.vue'
 import FxGlitchText from '@/components/fx/FxGlitchText.vue'
 import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
@@ -604,10 +605,8 @@ onUnmounted(() => {
         />
         <!-- 原型 .batch-bar：批量选择模式吸附条 -->
         <div v-if="batchMode" class="batch-bar clip-batchbar">
-          <label>
-            <input type="checkbox" class="cbx" :checked="clip.allSelected.value" @change="clip.toggleSelectAll()" />{{
-              t('batch_select_all', '全选')
-            }}
+          <label @click="clip.toggleSelectAll()">
+            <FxSpringCheck class="fx-check" :checked="clip.allSelected.value" />{{ t('batch_select_all', '全选') }}
           </label>
           <span class="sel-info">{{ tf('batch_selected_n', '已选 {n} 项', { n: clip.selectedCount.value }) }}</span>
           <span class="clip-batchbar-grow" />
@@ -915,6 +914,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.fx-check {
+  flex: none;
+}
 .clipboard-page {
   display: flex;
   flex-direction: column;
