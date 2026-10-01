@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { ref, computed, watch, onMounted, reactive } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useTemplateStore } from '@/stores/templateStore'
@@ -137,11 +138,7 @@ async function confirmDelete() {
     <div class="page-inner">
       <!-- v2 原型页头：标题 + 副题 + 新建 -->
       <div class="page-head">
-        <div>
-          <div class="page-eyebrow">Template Library</div>
-          <div class="page-title page-title--big">{{ t('nav_templates') }}</div>
-          <div class="page-sub">{{ tf('page_sub_tpl', '带变量占位符的文本骨架 · 填充变量后一键渲染复制') }}</div>
-        </div>
+        <FxPageHeader eyebrow="Template Library" :title="t('nav_templates')" :subtitle="tf('page_sub_tpl', '带变量占位符的文本骨架 · 填充变量后一键渲染复制')" />
         <div class="page-acts">
           <div class="pl-search tpl-search">
             <Search :size="14" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useDevice } from '@/composables/useDevice'
@@ -118,11 +119,7 @@ async function handleDelete(id: string, name: string) {
   <div class="dev-page">
     <div class="page">
       <div class="page-head">
-        <div>
-          <div class="page-eyebrow">Device Mesh</div>
-          <div class="page-title page-title--big">{{ t('nav_devices') }}</div>
-          <div class="page-sub">{{ tf('page_sub_dev', '局域网端到端加密同步 · 配对即信任') }}</div>
-        </div>
+        <FxPageHeader eyebrow="Device Mesh" :title="t('nav_devices')" :subtitle="tf('page_sub_dev', '局域网端到端加密同步 · 配对即信任')" />
         <div class="page-acts">
           <button
             v-if="props.aiEnabled"

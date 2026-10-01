@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLogo from '@/components/AppLogo.vue'
 import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
@@ -188,12 +189,17 @@ async function openAdminConsole() {
     <!-- ===== Header（折叠开关已上移标题栏；折叠态点 logo 展开） ===== -->
     <div v-show="isCollapsed" class="sb-header sb-header--clickable" @click="emit('toggle')">
       <div class="sb-logo-wrap">
-        <!-- 折叠开关在标题栏已有一处；这里原本再画一个 PanelLeftOpen 提示图标，
-             与标题栏那个形成"两个地方都能折叠"的观感（用户反馈多此一举）。
-             折叠态下点 logo 仍可展开，提示改由 title 承担。 -->
+        <!-- 折叠开关在标题栏已有一处，这里不再重复画提示图标；
+             折叠态点整块 header 即可展开，视觉上只留品牌标识。 -->
+        <AppLogo :size="22" />
       </div>
     </div>
-    <div v-show="!isCollapsed" class="sb-header" />
+    <!-- 展开态：原来是个空 div（= 用户反馈的"左上角一块留白"），
+         现在用品牌标识 + 名称填充，与下方【系统】分组形成呼应的层级。 -->
+    <div v-show="!isCollapsed" class="sb-header">
+      <AppLogo :size="20" />
+      <span class="sb-brand-name">{{ t('app_name') }}</span>
+    </div>
 
     <!-- ===== Main Navigation ===== -->
     <nav class="sb-nav" :aria-label="t('nav_main')">
@@ -422,6 +428,13 @@ async function openAdminConsole() {
   padding: 0;
 }
 
+.sb-brand-name {
+  font-family: var(--font-display, inherit);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
 .sb-logo-wrap {
   display: flex;
   align-items: center;

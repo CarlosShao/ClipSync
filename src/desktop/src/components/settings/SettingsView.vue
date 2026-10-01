@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useMenuAccess } from '@/composables/useMenuAccess'
@@ -286,13 +287,11 @@ onUnmounted(() => rootRef.value?.removeEventListener('scroll', onSettingsScroll)
   <div ref="rootRef" class="settings-page">
     <div class="page">
       <div class="page-head">
-        <div>
-          <div class="page-eyebrow">Preferences</div>
-          <div class="page-title page-title--big">{{ activeSubPage ? subPageLabel : t('sg_title', '设置') }}</div>
-          <div class="page-sub">
-            {{ activeSubPage ? '' : t('page_sub_set', '偏好保存在本机 · 仅在当前设备生效') }}
-          </div>
-        </div>
+        <FxPageHeader
+          eyebrow="Preferences"
+          :title="activeSubPage ? subPageLabel : t('sg_title', '设置')"
+          :subtitle="activeSubPage ? '' : t('page_sub_set', '偏好保存在本机 · 仅在当前设备生效')"
+        />
         <div class="page-acts">
           <!-- 顶部全文搜索：扫已渲染的设置行，回车/点击结果 = 滚到所属分组 + 高亮该行 -->
           <div v-if="!activeSubPage" ref="searchWrapRef" class="set-search">

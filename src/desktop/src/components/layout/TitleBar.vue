@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppLogo from '@/components/AppLogo.vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ClipboardList, Search, Sparkles, Sun, Moon, Bell, Minus, Square, Copy, X, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
@@ -86,7 +87,7 @@ const isDark = computed(() => resolvedMode.value === 'dark')
 <template>
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-left" data-tauri-drag-region>
-      <span class="brand-mark" data-tauri-drag-region><ClipboardList :size="14" :stroke-width="2" /></span>
+      <span class="brand-mark" data-tauri-drag-region><AppLogo :size="16" /></span>
       <span class="brand-word" data-tauri-drag-region>ClipSync</span>
       <span class="tb-sep" data-tauri-drag-region />
       <span class="tb-crumb" data-tauri-drag-region>{{ crumbLabel }}</span>
