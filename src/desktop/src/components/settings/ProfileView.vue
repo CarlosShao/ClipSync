@@ -154,6 +154,7 @@ async function handleAvatarUpload(e: Event) {
   <div class="settings-view">
     <!-- 页头：与剪贴板 / 收藏 / 设备 / 模板库统一用 FxPageHeader（破折号 → eyebrow 逐字 → 标题逐字 → 副标题） -->
     <FxPageHeader
+      class="pf-head"
       eyebrow="Profile"
       :title="t('prof_t')"
       :subtitle="tf('page_sub_profile', '账号信息与套餐 · 头像、名称、邮箱可在此修改')"
@@ -442,5 +443,16 @@ async function handleAvatarUpload(e: Event) {
 .pf-grid {
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+
+/* ---- 纵向节奏：页头与首张卡之间必须有间距 ----
+   原来 FxPageHeader 直接放在页里，没有其它页面那层 .page-head 容器提供下边距，
+   于是副标题和卡片贴在一起（用户实测"一点边距没有"）。 */
+.pf-head {
+  margin-bottom: 18px;
+}
+/* 卡片之间与脚注的间距（脚注要更靠近内容，别飘走） */
+.pf-grid {
+  margin-bottom: 0;
 }
 </style>
