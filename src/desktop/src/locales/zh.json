@@ -1491,8 +1491,6 @@
   "ai_summary_float_loading": "正在生成摘要...",
   "ai_auto_summary_title": "复制后自动 AI 摘要",
   "ai_auto_summary_hint": "开启后每次复制文本会自动调用大模型生成摘要并弹出浮窗；相同内容 10 分钟内只调用一次。关闭时不产生任何模型调用。",
-  "ai_save_and_fetch_models": "保存并获取模型",
-  "ai_saved_fetching_models": "已保存该供应商，正在获取模型列表…",
   "ai_provider_models_count": "{first} 等 {n} 个模型",
   "ai_context_window_label": "上下文窗口 (tokens)",
   "ai_context_window_ph": "自动按模型：{model}",

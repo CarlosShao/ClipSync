@@ -406,11 +406,17 @@ export function getProviderModels(id: string) {
   return api<{ models: string[] }>('GET', `/api/ai/providers/${id}/models`)
 }
 
-// 注：这里原来还有一个 fetchProviderModels({provider, baseUrl, apiKey}) → POST /providers/fetch-models
-// 的「未保存预览」封装。服务端在 P0 安全加固（commit 4a67beb）后，该端点只认 providerId：
-// 只用库里已存的加密 apiKey 与 base_url，请求体里的明文 key / baseUrl 一律忽略。
-// 那个封装因此永远只会拿到 400（providerId is required），属于会骗人的死代码，已删除。
-// 模型列表统一走上面的 getProviderModels(id)，刷新前如需落库见 AIProviderSettings 的 persistForModelFetch。
+// 预览/刷新模型列表（不落地）：直接用表单里填的值打上游 /models，
+// 因此**不需要先保存供应商**就能看到可用模型。
+// 服务端会对 baseUrl 做与保存路径同一套 SSRF 校验（禁内网/环回、DNS 全解析逐个校验）。
+export function fetchProviderModels(input: {
+  provider: string
+  apiKey: string
+  baseUrl?: string
+  apiFormat?: string
+}) {
+  return api<{ models: string[] }>('POST', '/api/ai/providers/fetch-models', input)
+}
 
 // AI 用户偏好
 export function getSettings() {

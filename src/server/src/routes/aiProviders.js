@@ -296,27 +296,59 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
   }
 })
 
-// POST /api/ai/providers/fetch-models - 用已存供应商的加密密钥拉取模型列表（不落地）
-// 安全：不再从请求体接收明文 apiKey，统一按 providerId 取库中加密密钥解密后使用；
-// 且不再采信请求体 baseUrl，只使用库中 base_url（body baseUrl 被忽略，防止借此打内网）。
+// POST /api/ai/providers/fetch-models - 拉取供应商可用模型列表（不落地、不写库）
+//
+// 两种用法：
+//   1) { providerId }                          → 用库里已存的加密 key + base_url
+//      （编辑已保存的供应商、且没重新输 key 时走这条）
+//   2) { provider, apiKey, baseUrl, apiFormat } → 直接用表单里填的值预览
+//      （新增供应商、或刚改了 key / 地址时走这条：有 key 和 baseUrl 就该能直接看模型列表，
+//        不必先保存一条记录）
+//
+// 安全：模式 2 收到的 baseUrl 必须过 validateProviderBaseUrl —— 与保存路径（POST/PUT
+// /providers）**同一套 SSRF 校验**（禁内网/环回/链路本地/.local/.internal/.svc，DNS 全部
+// 解析结果逐个校验，解析失败 fail-closed）。因此放宽"必须已保存"并不会降低防护强度：
+// 这条路径能打到的地址，和"先存下来再拉"能打到的完全一致。
+// 明文 apiKey 仅在请求体内传输、用完即弃、不落库也不进日志，与 POST/PUT /providers 保存路径
+// 同等信任级别（key 本来就是靠请求体传给服务端加密入的库）。
 router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
   try {
-    const { providerId } = req.body || {}
+    const { providerId, provider, apiKey, baseUrl, apiFormat } = req.body || {}
+
+    // ---- 模式 2：未保存配置直连预览 ----
     if (!providerId) {
-      return res.status(400).json({ error: 'providerId is required', models: [] })
+      if (!provider || !getPreset(provider)) {
+        return res.status(400).json({ error: 'Invalid provider', models: [] })
+      }
+      const key = typeof apiKey === 'string' ? apiKey.trim() : ''
+      if (!key) {
+        return res.status(400).json({ error: 'apiKey is required', models: [] })
+      }
+      const preset = getPreset(provider)
+      const effectiveBaseUrl = (typeof baseUrl === 'string' && baseUrl.trim()) || preset.defaultBaseUrl || undefined
+      const vb = await validateProviderBaseUrl(effectiveBaseUrl)
+      if (!vb.ok) return res.status(400).json({ error: vb.error, models: [] })
+      const models = await fetchProviderModels({
+        provider,
+        baseUrl: effectiveBaseUrl,
+        apiKey: key,
+        apiFormat: normalizeApiFormat(apiFormat, provider === 'custom') || 'openai',
+      })
+      return res.json({ models })
     }
+
+    // ---- 模式 1：已保存供应商（用库里的加密 key / base_url）----
     const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
     if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found', models: [] })
     const row = result.rows[0]
     if (!row.api_key_encrypted) {
       return res.status(400).json({ error: 'No API key configured', models: [] })
     }
-    const apiKey = decrypt(row.api_key_encrypted)
-    // 只使用库中 base_url；不再采信请求体的 baseUrl 字段（校验无效，提示客户端忽略）。
-    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey, apiFormat: row.api_format })
-    res.json({ models, note: 'baseUrl 字段被忽略，仅使用该供应商已配置的 base_url' })
+    const apiKeyStored = decrypt(row.api_key_encrypted)
+    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey: apiKeyStored, apiFormat: row.api_format })
+    res.json({ models })
   } catch (err) {
-    logger.error('Fetch models (preview) error:', err)
+    logger.error('Fetch models error:', err)
     res.status(500).json({ error: 'Failed to fetch provider models' })
   }
 })
