@@ -5,6 +5,7 @@ import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useResizablePanel } from '@/composables/useResizablePanel'
 import Button from '@/components/ui/button/Button.vue'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
+import { vFxProximity } from '@/components/fx/fxProximity'
 import type { AiConversation, ConversationSearchHit } from '@/api/ai'
 import { searchConversationHistory } from '@/api/ai'
 import { highlightSearchSnippet } from '@/utils/htmlText'
@@ -258,7 +259,7 @@ function onDockFromFloat() {
           <div v-else-if="!conversations.length" class="ai-nav-empty">
             {{ t('ai_no_history', '暂无历史对话') }}
           </div>
-          <div v-else class="ai-nav-scroll">
+          <div v-else class="ai-nav-scroll" v-fx-proximity="{ selector: '.ai-nav-conv', radius: 90 }">
             <!-- 滑动选中胶囊：选中态从「瞬间跳过去」变成「180ms 滑过去」。
                  fill 是半透明洗色、压在行上面，所以对 DOM 顺序与行的定位都无要求；
                  原来 .ai-nav-conv.active 的静态 accent-bg 已撤掉，指示只留这一个。
@@ -692,6 +693,13 @@ function onDockFromFloat() {
 }
 .ai-nav-conv:hover {
   background: var(--bg-hover);
+}
+/* Line Sidebar 内核（v-fx-proximity）：指针靠近时行向右轻微滑动。
+   --fx-prox（0..1）由指令按"指针到行中心的距离 → smooth 衰减 → rAF 指数平滑"逐帧写回；
+   幅度取 6px 而非上游 30px —— 侧栏很窄，30px 会顶到文字换行。
+   刻意不加 transition：位移本身已是逐帧平滑，再叠一层 CSS 过渡会二次滞后。 */
+.ai-nav-conv {
+  transform: translateX(calc(var(--fx-prox, 0) * 6px));
 }
 /* 选中态：原来的 accent-bg 静态底已撤掉，改由 fx/FxSelectionRing 的滑动 fill 胶囊承担
    （静态底 + 滑动胶囊 = 两个指示器打架）。文字/图标变色（见下方 .active 规则）保留为状态。 */
