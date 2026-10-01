@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
+// 与剪贴板 / 收藏页统计卡同一配方（accent 13% 聚光）
+const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
 import { vFxReveal } from '@/components/fx/fxReveal'
 import StarBorder from '@/components/fx/StarBorder.vue'
 // fx/StarBorder 绕边流光（与剪贴板主 CTA 同一配方：accent 70% 混白，只在 2px 边缝里可见）
@@ -167,23 +170,24 @@ async function handleDelete(id: string, name: string) {
         @retry="runDiagnose"
       />
 
-      <!-- 统计面板（仅真实数据：在线数 / 总数 / 端到端加密） -->
-      <div class="panel dev-stats">
-        <div class="stat">
-          <span class="k">{{ t('dev_stat_online', '在线设备') }}</span>
-          <span class="v">{{ onlineCount }}</span>
-          <span class="d">{{ t('dev_stat_online_d', '心跳正常') }}</span>
-        </div>
-        <div class="stat dev-stat-sep">
-          <span class="k">{{ t('dev_stat_total', '总设备') }}</span>
-          <span class="v">{{ deviceList.length }}</span>
-          <span class="d">{{ t('dev_stat_total_d', '含离线设备') }}</span>
-        </div>
-        <div class="stat dev-stat-sep">
-          <span class="k">{{ t('dev_stat_e2e', '端到端加密') }}</span>
-          <span class="v dev-stat-text">{{ t('dev_stat_e2e_on', '已开启') }}</span>
-          <span class="d">{{ t('dev_stat_e2e_d', '密钥不出设备') }}</span>
-        </div>
+      <!-- 统计卡：与剪贴板 / 收藏页**同一形态** —— 三张独立卡片（原来是一张面板里三段贴在一起，
+           既不利于阅读，也让入场动效无从作用）。类名沿用 .clip-stats / .clip-stat，聚光与错峰入场同源。 -->
+      <div class="clip-stats reveal-stagger">
+        <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
+          <span class="clip-stat-k">{{ t('dev_stat_online', '在线设备') }}</span>
+          <span class="clip-stat-v">{{ onlineCount }}<em>{{ t('dev_count_unit', '台') }}</em></span>
+          <span class="clip-stat-d">{{ t('dev_stat_online_d', '心跳正常') }}</span>
+        </FxSpotlightCard>
+        <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
+          <span class="clip-stat-k">{{ t('dev_stat_total', '总设备') }}</span>
+          <span class="clip-stat-v">{{ deviceList.length }}<em>{{ t('dev_count_unit', '台') }}</em></span>
+          <span class="clip-stat-d">{{ t('dev_stat_total_d', '含离线设备') }}</span>
+        </FxSpotlightCard>
+        <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
+          <span class="clip-stat-k">{{ t('dev_stat_e2e', '端到端加密') }}</span>
+          <span class="clip-stat-v">{{ t('dev_stat_e2e_on', '已开启') }}</span>
+          <span class="clip-stat-d">{{ t('dev_stat_e2e_d', '密钥不出设备') }}</span>
+        </FxSpotlightCard>
       </div>
 
       <!-- 已配对设备 -->
