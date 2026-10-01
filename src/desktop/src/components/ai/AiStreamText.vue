@@ -20,7 +20,22 @@ import { sanitizeHtml } from '@/utils/html'
  *
  * 终态：done 置 true 后取消挂起的节流任务并立即做最终刷新，保证结尾 Markdown 完整.
  */
-const props = withDefaults(defineProps<{ text: string; done?: boolean }>(), { done: false })
+const props = withDefaults(
+  defineProps<{
+    text: string
+    done?: boolean
+    /**
+     * 流式期间的呈现方式：
+     *  - 'markdown'（默认，现状）：节流 marked.parse + v-html
+     *  - 'blurStream'（试验）：流式期间改渲染**纯文本**并逐词模糊淡入（fx/FxBlurText），
+     *    done 后仍走 markdown。为什么要换渲染方式：markdown 是整棵 innerHTML 节流重渲，
+     *    无法把词包成 span，DOM 观察也会被重渲不断打断 —— 逐词模糊在 v-html 管线里做不了。
+     *    代价：流式结束切回 markdown 时会有一次排版归位（内容不变）。
+     */
+    reveal?: 'markdown' | 'blurStream'
+  }>(),
+  { done: false, reveal: 'markdown' },
+)
 
 const RENDER_INTERVAL_MS = 100
 const CHUNK_FLUSH_CHARS = 200
@@ -187,8 +202,11 @@ onBeforeUnmount(cancelScheduled)
 </script>
 
 <template>
+  <div v-if="reveal === 'blurStream' && !done" class="ai-stream-text">
+    <FxBlurText :text="text" />
+  </div>
   <!-- eslint-disable-next-line vue/no-v-html -- html 只由 renderSlice() 写入：sanitizeHtml(marked.parse(...))，catch 分支也是 sanitizeHtml(prepared)，无任何绕过 DOMPurify 的赋值路径 -->
-  <div class="ai-stream-text" v-html="html"></div>
+  <div v-else class="ai-stream-text" v-html="html"></div>
 </template>
 
 <style scoped>

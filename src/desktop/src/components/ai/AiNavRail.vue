@@ -371,7 +371,10 @@ function onDockFromFloat() {
         >
           <Search :size="16" />
         </button>
-        <div class="ai-nav-rail-convs">
+        <div
+          class="ai-nav-rail-convs"
+          v-fx-proximity="{ selector: '.ai-nav-rail-btn', radius: 70 }"
+        >
           <button
             v-for="conv in conversations.slice(0, 9)"
             :key="conv.id"
@@ -700,6 +703,13 @@ function onDockFromFloat() {
    刻意不加 transition：位移本身已是逐帧平滑，再叠一层 CSS 过渡会二次滞后。 */
 .ai-nav-conv {
   transform: translateX(calc(var(--fx-prox, 0) * 6px));
+}
+/* icon 形态（48px 窄条）：会话图标按钮同样吃 v-fx-proximity。
+   注意侧栏有三种形态（expanded / icon / overlay），会话"行"只在非 icon 形态渲染 ——
+   之前只挂了 expanded/overlay 那一支，用户用的是 icon 形态所以看不到效果。
+   幅度 5px（窄条里 6px 已经很明显）。 */
+.ai-nav-rail-btn {
+  transform: translateX(calc(var(--fx-prox, 0) * 5px));
 }
 /* 选中态：原来的 accent-bg 静态底已撤掉，改由 fx/FxSelectionRing 的滑动 fill 胶囊承担
    （静态底 + 滑动胶囊 = 两个指示器打架）。文字/图标变色（见下方 .active 规则）保留为状态。 */
