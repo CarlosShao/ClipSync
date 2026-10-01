@@ -1789,7 +1789,6 @@ function cancelEditTags() {
           :display-text="summarizeAi.displayText.value"
           :streaming="summarizeAi.streaming.value"
           :error="summarizeAi.error.value"
-          reveal="blurStream"
           closable
           @close="closeSummarize"
           @retry="retrySummarize"

@@ -20,22 +20,7 @@ import { sanitizeHtml } from '@/utils/html'
  *
  * 终态：done 置 true 后取消挂起的节流任务并立即做最终刷新，保证结尾 Markdown 完整.
  */
-const props = withDefaults(
-  defineProps<{
-    text: string
-    done?: boolean
-    /**
-     * 流式期间的呈现方式：
-     *  - 'markdown'（默认，现状）：节流 marked.parse + v-html
-     *  - 'blurStream'（试验）：流式期间改渲染**纯文本**并逐词模糊淡入（fx/FxBlurText），
-     *    done 后仍走 markdown。为什么要换渲染方式：markdown 是整棵 innerHTML 节流重渲，
-     *    无法把词包成 span，DOM 观察也会被重渲不断打断 —— 逐词模糊在 v-html 管线里做不了。
-     *    代价：流式结束切回 markdown 时会有一次排版归位（内容不变）。
-     */
-    reveal?: 'markdown' | 'blurStream'
-  }>(),
-  { done: false, reveal: 'markdown' },
-)
+const props = withDefaults(defineProps<{ text: string; done?: boolean }>(), { done: false })
 
 const RENDER_INTERVAL_MS = 100
 const CHUNK_FLUSH_CHARS = 200
@@ -77,18 +62,9 @@ function fixIncompleteMarkdown(raw: string): string {
   return text
 }
 
-/**
- * blurStream 模式专用：当前**已揭示**的文本切片。
- * 必须用这个而不是 props.text —— 揭示节奏是由本组件上方的节流 + 追赶（catchupTarget）
- * 循环驱动的，直接喂原始全文就会出现"模型一次性返回 → 整段同时出现"（用户实测：
- * 比原来的打字机还差）。这里复刻同一份切片，逐词模糊才跟得上揭示节奏。
- */
-const revealText = ref('')
-
 function renderSlice(upto: number | null) {
   const raw = props.text || ''
   const slice = upto === null ? raw : raw.slice(0, upto)
-  revealText.value = slice
   if (!slice) {
     html.value = ''
     return
@@ -211,11 +187,8 @@ onBeforeUnmount(cancelScheduled)
 </script>
 
 <template>
-  <div v-if="reveal === 'blurStream' && !done" class="ai-stream-text">
-    <FxBlurText :text="revealText" />
-  </div>
   <!-- eslint-disable-next-line vue/no-v-html -- html 只由 renderSlice() 写入：sanitizeHtml(marked.parse(...))，catch 分支也是 sanitizeHtml(prepared)，无任何绕过 DOMPurify 的赋值路径 -->
-  <div v-else class="ai-stream-text" v-html="html"></div>
+  <div class="ai-stream-text" v-html="html"></div>
 </template>
 
 <style scoped>

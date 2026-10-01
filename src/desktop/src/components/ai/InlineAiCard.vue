@@ -17,8 +17,6 @@ const props = defineProps<{
   /** 打字机播出中（useInlineAi.streaming） */
   streaming?: boolean
   error?: string
-  /** 流式期间呈现方式，透传给 AiStreamText（'blurStream' = 逐词模糊淡入试验） */
-  reveal?: 'markdown' | 'blurStream'
   closable?: boolean
 }>()
 
@@ -73,16 +71,17 @@ function continueInChat() {
         :announce="loadingLabel"
         status="working"
         :grid="3"
-        pattern="ripple"
-        :cell-size="3"
-        :gap="3"
+        pattern="orbit"
+        :cell-size="5"
+        :gap="2"
         :font-size="12.5"
         :show-timer="false"
         color="var(--accent)"
+        glow
       />
     </div>
     <div v-else-if="status === 'loading'" class="iac-body markdown-body">
-      <AiStreamText :text="streamedText" :done="false" :reveal="reveal ?? 'markdown'" />
+      <AiStreamText :text="streamedText" :done="false" />
       <span class="iac-caret" aria-hidden="true" />
     </div>
 
@@ -100,7 +99,7 @@ function continueInChat() {
       <div class="iac-body markdown-body">
         <!-- body 插槽：结构化结果（如审查清单）可替换默认文本渲染；
              默认走 Markdown 预览（与 AI 侧栏同管线），不再裸显源码 -->
-        <slot name="body"><AiStreamText :text="text" :done="true" :reveal="reveal ?? 'markdown'" /></slot>
+        <slot name="body"><AiStreamText :text="text" :done="true" /></slot>
       </div>
       <div class="iac-acts">
         <!-- 写操作类（采纳等）由 actions 插槽注入，置于最左 -->
