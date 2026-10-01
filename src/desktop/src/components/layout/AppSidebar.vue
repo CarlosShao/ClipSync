@@ -897,27 +897,35 @@ async function openAdminConsole() {
     transform: none;
   }
 }
-/* ---- 左下角常驻区的**一次性**入场：进桌面端时同步胶囊先就位、用户 chip 紧随其后 ----
-   一次性动画（无 will-change / 无 fill-mode，避免图层常驻）；reduce-motion 下直接静态。 */
+/* ---- 左下角常驻区的**一次性**入场（第二版）----
+   第一版用户实测"太快、还有抖动"，原因两条：
+     ① 0.34s + 90ms 错峰太快，且用了 translateY —— 与页脚自身布局变动叠加会有抖动感；
+     ② 「升级胶囊」本身是 v-if 硬出现，刷新时数据到达那一下直接"啪"地冒出来。
+   现在：只做**纯淡入**（不动 transform，从根上消除抖动），放慢到 0.55s/0.62s，
+   错峰 120ms；并给升级胶囊补同一条淡入，避免它硬蹦出来。
+   依旧一次性、无 will-change / 无 fill-mode，reduce-motion 下全静态。 */
 @keyframes sb-foot-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 .sync-pill {
-  animation: sb-foot-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: sb-foot-in 0.55s cubic-bezier(0.33, 1, 0.68, 1) backwards;
 }
 .user-chip {
-  animation: sb-foot-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) 90ms backwards;
+  animation: sb-foot-in 0.62s cubic-bezier(0.33, 1, 0.68, 1) 120ms backwards;
+}
+/* 升级胶囊：本来是 v-if 硬出现（用户实测"刷新时明显看到它蹦出来"），补一条淡入 */
+.upgrade-chip {
+  animation: sb-foot-in 0.5s cubic-bezier(0.33, 1, 0.68, 1) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .sync-pill,
-  .user-chip {
+  .user-chip,
+  .upgrade-chip {
     animation: none;
   }
 }
