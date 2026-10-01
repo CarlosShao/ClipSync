@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vFxReveal } from '@/components/fx/fxReveal'
 import StarBorder from '@/components/fx/StarBorder.vue'
 // fx/StarBorder 绕边流光（与剪贴板主 CTA 同一配方：accent 70% 混白，只在 2px 边缝里可见）
 const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
@@ -229,6 +230,7 @@ async function handleDelete(id: string, name: string) {
               v-for="d in deviceList"
               :key="d.id"
               :data-ring-key="d.id"
+              v-fx-reveal
               class="clip-item dev-row"
               @mouseenter="hoveredDeviceKey = d.id"
             >

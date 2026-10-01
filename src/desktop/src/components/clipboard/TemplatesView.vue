@@ -395,12 +395,19 @@ async function confirmDelete() {
 .tpl-detail-body {
   flex: 1;
   min-height: 120px;
-  font-family: var(--font-content);
+  /* 代码区风格：模板正文本质是"带 {{变量}} 占位符的文本骨架"，用编辑器等宽字体 +
+     代码块外壳（底色/边框/圆角/内边距）比正文段落更贴切。变量高亮由
+     highlightTemplateVars() 负责，这里只管外壳。 */
+  font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
 }
 .tpl-detail-vars {
   display: flex;
