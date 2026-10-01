@@ -30,6 +30,7 @@ import { Trash2 as TrashIcon } from 'lucide-vue-next'
 import { getClipboardStats, type ClipboardStats } from '@/api/clipboard'
 import { useDevice } from '@/composables/useDevice'
 import CountUp from '@/components/fx/CountUp.vue'
+import FxRubberSegment from '@/components/fx/FxRubberSegment.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import StarBorder from '@/components/fx/StarBorder.vue'
 
@@ -96,6 +97,13 @@ const filterOptions = computed(() => [
   { value: 'images' as const, label: t('tab_images') },
   { value: 'links' as const, label: t('tab_links') },
   { value: 'files' as const, label: t('tab_files') },
+])
+
+// 视图切换分段项（Rubber Segment 的 items）：取值与 emit('set-view') 对齐
+const viewSegItems = computed(() => [
+  { value: 'timeline', label: t('view_timeline', '时间流') },
+  { value: 'fav', label: t('view_fav_only', '仅收藏') },
+  { value: 'archive', label: t('nav_archive') },
 ])
 
 const activeFilter = computed(() => clip.activeFilter.value)
@@ -283,32 +291,23 @@ function clearSearch() {
         {{ opt.label }}
       </button>
 
-      <div class="seg" role="tablist" :aria-label="t('nav_clipboard')">
-        <button
-          role="tab"
-          :class="{ active: view === 'timeline' }"
-          :aria-selected="view === 'timeline'"
-          @click="emit('set-view', 'timeline')"
-        >
-          {{ t('view_timeline', '时间流') }}
-        </button>
-        <button
-          role="tab"
-          :class="{ active: view === 'fav' }"
-          :aria-selected="view === 'fav'"
-          @click="emit('set-view', 'fav')"
-        >
-          {{ t('view_fav_only', '仅收藏') }}
-        </button>
-        <button
-          role="tab"
-          :class="{ active: view === 'archive' }"
-          :aria-selected="view === 'archive'"
-          @click="emit('set-view', 'archive')"
-        >
-          {{ t('nav_archive') }}
-        </button>
-      </div>
+      <!-- 视图切换：Rubber Segment（vue-bits Micro/RubberSegment）—— 指示块带橡皮筋拉伸/挤压，
+           拖拽与点击都能切换。原来 .seg 的静态 .active 白底已撤掉（指示器唯一化）。
+           配色对齐原 .seg 用的 token：track=--bg-hover / thumb=--bg-surface。 -->
+      <FxRubberSegment
+        class="clip-view-seg"
+        size="sm"
+        :radius="6"
+        :inset="2"
+        track-color="var(--bg-hover)"
+        thumb-color="var(--bg-surface)"
+        text-color="var(--text-secondary)"
+        active-text-color="var(--text-primary)"
+        :items="viewSegItems"
+        :value="view"
+        :aria-label="t('nav_clipboard')"
+        @change="(v: string) => emit('set-view', v as 'timeline' | 'fav' | 'archive')"
+      />
 
       <button
         type="button"
