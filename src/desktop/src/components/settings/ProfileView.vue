@@ -158,7 +158,8 @@ async function handleAvatarUpload(e: Event) {
       :title="t('prof_t')"
       :subtitle="tf('page_sub_profile', '账号信息与套餐 · 头像、名称、邮箱可在此修改')"
     />
-    <FxSpotlightCard v-fx-reveal class="profile-card" :spotlight-color="STAT_SPOT">
+    <div class="pf-grid">
+      <FxSpotlightCard v-fx-reveal class="profile-card" :spotlight-color="STAT_SPOT">
       <!-- Avatar section — shadcn Avatar -->
       <div class="avatar-wrap" :title="t('avatar_change') || '点击更换头像'" @click="triggerAvatarUpload">
         <Avatar class="avatar-shadcn">
@@ -234,7 +235,8 @@ async function handleAvatarUpload(e: Event) {
     </FxSpotlightCard>
 
     <!-- 套餐管理（升级/申请退款）：订阅页砍掉后，个人资料页是套餐管理唯一场所 -->
-    <PlanManagementCard v-if="showPlanCard" v-fx-reveal @open-modal="(type) => emit('open-modal', type)" />
+      <PlanManagementCard v-if="showPlanCard" v-fx-reveal @open-modal="(type) => emit('open-modal', type)" />
+    </div>
 
     <!-- Password change hint -->
     <div class="profile-hint" v-fx-reveal>
@@ -380,5 +382,53 @@ async function handleAvatarUpload(e: Event) {
 }
 .profile-hint :deep(svg) {
   color: var(--accent);
+}
+
+/* ---- 排版重构：两栏 + 配对收紧 + 提示条降级 ----
+   诊断（对着界面量的）：
+     ① .sg-row 用 justify-content: space-between，而卡片近 1000px 宽 ⇒ 「标签…值」被拉到两端，
+        眼睛要跨 ~800px 才能配对，四行下来是"上下 + 左右"双重扫视；
+     ② 三块内容全纵向堆在一个超宽单列里 ⇒ 套餐卡下方整块留白，页面显得散；
+     ③ 提示条铺满通栏 + 灰底 ⇒ 视觉权重高于内容，像"被禁用区域"，可它只是脚注。
+   做法：宽屏两栏（资料卡 1.6fr / 套餐卡 1fr），窄屏回落单列；资料行改"标签定宽 + 值左对齐"，
+   视线距离从 ~800px 收到 ~120px；提示条去掉底色降为脚注。数据与交互逻辑一行未改。 */
+.pf-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+@media (max-width: 1100px) {
+  .pf-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sg-row {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 11px 12px;
+  border-radius: 0;
+  /* 只在行间画线（首行不留线，末行由 :last-child 去掉） */
+  border-bottom: 1px solid var(--border-subtle);
+}
+.sg-row:last-child {
+  border-bottom: 0;
+}
+.sg-label {
+  flex: none;
+  width: 84px;
+}
+.sg-control {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.profile-hint {
+  margin-top: 12px;
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
 }
 </style>
