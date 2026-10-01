@@ -2,7 +2,6 @@
 import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 import { vFxReveal } from '@/components/fx/fxReveal'
-import { vFxTilt } from '@/components/fx/fxTilt'
 // 与剪贴板 / 收藏页 / 设备页统计卡同一配方（accent 13% 聚光）
 const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
 import { computed, ref } from 'vue'
@@ -161,7 +160,7 @@ async function handleAvatarUpload(e: Event) {
       :subtitle="tf('page_sub_profile', '账号信息与套餐 · 头像、名称、邮箱可在此修改')"
     />
     <div class="pf-grid">
-      <FxSpotlightCard v-fx-reveal v-fx-tilt="5" class="profile-card" :spotlight-color="STAT_SPOT">
+      <FxSpotlightCard v-fx-reveal class="profile-card" :spotlight-color="STAT_SPOT">
       <!-- Avatar section — shadcn Avatar -->
       <div class="avatar-wrap" :title="t('avatar_change') || '点击更换头像'" @click="triggerAvatarUpload">
         <Avatar class="avatar-shadcn">
