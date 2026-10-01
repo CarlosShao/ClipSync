@@ -1104,3 +1104,56 @@
   font-weight: 700;
   letter-spacing: -0.01em;
 }
+
+/* ---------- 统计卡（页头下方的四/三张数字卡）----------
+   原先这组规则只写在 ClipboardToolbar 的 `<style scoped>` 里，导致其它页面
+   就算写了 class="clip-stat" 也**拿不到任何样式**（收藏页/设备页曾因此渲染成裸文本）。
+   统计卡是三页共用的形态，提升为全局定义，各页只负责传入内容。 */
+.clip-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding-bottom: 16px;
+}
+/* 只有三张卡时用 3 列（设备页），否则第 4 列会空着 */
+.clip-stats--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.clip-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+.clip-stat-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.clip-stat-k svg {
+  color: var(--text-tertiary);
+}
+.clip-stat-v {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.clip-stat-v em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+.clip-stat-d {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}

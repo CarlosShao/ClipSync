@@ -172,7 +172,7 @@ async function handleDelete(id: string, name: string) {
 
       <!-- 统计卡：与剪贴板 / 收藏页**同一形态** —— 三张独立卡片（原来是一张面板里三段贴在一起，
            既不利于阅读，也让入场动效无从作用）。类名沿用 .clip-stats / .clip-stat，聚光与错峰入场同源。 -->
-      <div class="clip-stats reveal-stagger">
+      <div class="clip-stats clip-stats--3 reveal-stagger">
         <FxSpotlightCard class="clip-stat" :spotlight-color="STAT_SPOT">
           <span class="clip-stat-k">{{ t('dev_stat_online', '在线设备') }}</span>
           <span class="clip-stat-v">{{ onlineCount }}<em>{{ t('dev_count_unit', '台') }}</em></span>
