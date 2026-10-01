@@ -2,6 +2,9 @@
 import StarBorder from '@/components/fx/StarBorder.vue'
 // 与剪贴板 / 模板库 / 设备三处主 CTA 同一配方
 const CTA_GLOW = 'color-mix(in srgb, var(--accent) 70%, white)'
+// 卡片聚光（与统计卡 / 个人资料卡同一配方）
+const STAT_SPOT = 'color-mix(in srgb, var(--accent) 13%, transparent)'
+import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
 /**
  * 个人资料页「套餐管理」卡片（2026-09-19 用户裁定：套餐管理唯一场所）。
  *
@@ -291,7 +294,10 @@ function onRefundClick(o: RefundableOrder) {
 </script>
 
 <template>
-  <div class="pmc">
+  <!-- fx/SpotlightCard：光标跟随柔光（与统计卡 / 资料卡同一配方）。
+       注意光斑是 z-index:-1 + isolation 的夹层 ⇒ 位于「本卡 background 之上、内容之下」，
+       所以卡片自带的不透明底色不会把它盖掉。 -->
+  <FxSpotlightCard class="pmc" :spotlight-color="STAT_SPOT">
     <div class="pmc-head">
       <div class="pmc-title">{{ t('prof_plan_section') }}</div>
       <div class="pmc-plan">
@@ -376,7 +382,7 @@ function onRefundClick(o: RefundableOrder) {
         </div>
       </template>
     </ModalDialog>
-  </div>
+  </FxSpotlightCard>
 </template>
 
 <style scoped>
