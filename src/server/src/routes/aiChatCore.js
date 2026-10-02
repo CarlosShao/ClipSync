@@ -12,6 +12,8 @@
  */
 import { logger } from '../utils/logger.js'
 import { buildUpstreamChat, resolveFamily, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
+import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
+import { buildThinkingOptions } from '../utils/modelPresets.js'
 import { convertMessagesForAnthropic } from '../utils/messageConverter.js'
 import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { pool } from '../db/pool.js'
@@ -433,6 +435,16 @@ export async function runChatLoop({
   // 协议族：custom 供应商按 api_format 决定（openai/anthropic/responses），预设走内置 family。
   // 后续 buildUpstreamChat 用同一口径决定请求结构，这里决定用哪个流式解析器与 thinking 参数。
   const family = resolveFamily(providerRow.provider, providerRow.api_format)
+  // 按模型配置的**生效值**（用户覆盖行 ← 内置预设，见 utils/aiModelSettings.js）：
+  // 上下文窗口与「思考强度该下发哪个推理字段」都由它决定。读库失败自动回退预设（fail-open），
+  // 不会因为配置读取失败打断聊天主链路。
+  const modelSettings = await loadEffectiveModelSettings({
+    userId,
+    providerId: providerRow.id,
+    model: providerRow.model,
+  })
+  // 上下文窗口覆盖值：模型级覆盖 → provider 级（031）→ 内置表兜底
+  const ctxWindowOverride = resolveContextWindowOverride(providerRow.context_window, modelSettings)
   let currentMessages = [...messages]
   // 安全网计数器：防止模型"只说要调工具"却不 emit tool_calls 导致任务半途而废
   let continuationRetries = 0
@@ -470,11 +482,20 @@ export async function runChatLoop({
     }
     const chatOptions = { ...options }
 
-    // thinking 支持：仅 Anthropic 协议需要显式 thinking 参数（OpenAI 兼容族由 reasoning_content 自动下发）
-    if (thinkingEnabled && family === 'anthropic') {
-      chatOptions.thinking = true
-      chatOptions.thinkingStrength = thinkingStrength
-      chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
+    // ===== 思考强度 → 真正的推理参数（核心修复）=====
+    // 旧实现：`if (thinkingEnabled && family === 'anthropic')` —— 只有 Anthropic 协议才计算
+    // thinkingBudget，于是 LongCat / 阶跃 / MiMo / Agnes / 通义 等 OpenAI 兼容供应商的
+    // 「思考强度」**完全没有下发**（半假功能）。
+    // 新实现：由「该模型解析出的 reasoningProtocol」决定下发哪个字段（见 utils/aiProviders.js
+    // 三个协议分支）：openai_reasoning_effort / anthropic_thinking / output_config_effort /
+    // qwen_enable_thinking 才下发；'inherit' 沿用既有行为；'none' 或 reasoning_enabled=false
+    // 时一个字都不下发（安全底线：塞未知字段会被上游 400）。
+    if (thinkingEnabled) {
+      Object.assign(chatOptions, buildThinkingOptions({
+        settings: modelSettings,
+        enabled: thinkingEnabled,
+        strength: thinkingStrength,
+      }))
     }
 
     // 工具集：传入非空才挂工具 + tool_choice=auto；synthesis 传 [] 即物理禁用工具。
@@ -500,7 +521,7 @@ export async function runChatLoop({
     // 关键行为：压缩在后台异步执行（不 await），当前轮次继续按原 messages 流式输出，
     // 用户任务"无感"继续；压缩完成后把结果应用到后续轮次（见 for 循环开头）。
     if (allowCompress !== false && !compressInFlight) {
-      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
+      const ctxWindow = getContextWindow(providerRow.model, ctxWindowOverride)
       const estTokens = lastPromptTokens > 0 ? lastPromptTokens : estimateMessagesTokens(currentMessages)
       // 已经注入的前置摘要视作"已压缩"状态，不再次触发压缩（避免重复摘要）
       const hasPriorSummary = currentMessages.some(
@@ -583,7 +604,7 @@ export async function runChatLoop({
     // 下发 token 用量元信息（前端圆环展示上下文占用百分比）。
     // 取本轮 usage 的最新值；前端保留「最近一次」调用，即最能代表当前上下文大小的数值。
     if (response.usage) {
-      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
+      const ctxWindow = getContextWindow(providerRow.model, ctxWindowOverride)
       const u = response.usage
       const promptTokens = u.prompt_tokens || 0
       lastPromptTokens = promptTokens // 记录真实 prompt token，供下一轮压缩估计使用

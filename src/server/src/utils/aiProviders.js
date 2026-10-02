@@ -19,6 +19,8 @@ import { Readable } from 'node:stream'
 import { convertMessagesForAnthropic } from './messageConverter.js'
 // AN-03：ai_max_tokens 全链路统一钳制点（system_configs 5s TTL 缓存，fail-open 默认 4096）
 import { clampMaxTokens } from './aiRuntimeConfig.js'
+// 推理参数取值归一化（纯函数，无反向依赖，不会形成 import 环）
+import { resolveNumericBudget, resolveEffortString } from './modelPresets.js'
 
 /**
  * 协议族：
@@ -319,6 +321,10 @@ export const PROVIDER_PRESETS = {
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModel: 'qwen-plus',
     supportsCache: true,
+    // DashScope OpenAI 兼容模式对 qwen3 / qwq 系支持 enable_thinking + thinking_budget
+    // （依据：阿里云百炼「深度思考」文档）。只有该供应商的 openai 兼容分支才下发 thinking_budget，
+    // 其他兼容网关（不识别该字段）一律只发 enable_thinking，避免 400。
+    supportsThinkingBudget: true,
   },
   hunyuan: {
     provider: 'hunyuan',
@@ -555,18 +561,15 @@ const MODEL_CONTEXT_WINDOWS = {
 const DEFAULT_CONTEXT_WINDOW = 128000
 
 /**
- * 解析模型上下文窗口（token 数）。解析优先级：
- *   1. override（provider 上用户明确配置的 context_window，最权威）
- *   2. 精确匹配模型名 → 前缀匹配（带 `*` 的键）
- *   3. 从模型名解析 "128k" / "200k" / "1m" 等上下文标记
- *   4. DEFAULT_CONTEXT_WINDOW 兜底
+ * 查内置表（精确匹配 → 前缀匹配 → 模型名里的 128k/1m 标记）。
+ * 与 getContextWindow 的唯一区别：**查不到时返回 null 而不是兜底值**，
+ * 供「按模型配置」（utils/aiModelSettings.js）区分「内置已知」与「完全未知」：
+ * 未知时 API 如实返回 null，让用户在配置入口自己填，而不是拿 128000 假装知道。
  * @param {string} model 模型标识
- * @param {number} [override] provider 级显式上下文窗口（用户配置，最权威）
- * @returns {number} 上下文窗口 token 数
+ * @returns {number|null} 内置表命中值，未命中 null
  */
-export function getContextWindow(model, override) {
-  if (typeof override === 'number' && override > 0) return Math.floor(override)
-  if (!model) return DEFAULT_CONTEXT_WINDOW
+export function lookupBuiltinContextWindow(model) {
+  if (!model) return null
   const m = String(model).toLowerCase()
   if (MODEL_CONTEXT_WINDOWS[m]) return MODEL_CONTEXT_WINDOWS[m]
   for (const key of Object.keys(MODEL_CONTEXT_WINDOWS)) {
@@ -580,7 +583,22 @@ export function getContextWindow(model, override) {
     const unit = nameMatch[2] === 'k' ? 1000 : 1000000
     return n * unit
   }
-  return DEFAULT_CONTEXT_WINDOW
+  return null
+}
+
+/**
+ * 解析模型上下文窗口（token 数）。解析优先级：
+ *   1. override（provider 上用户明确配置的 context_window，最权威）
+ *   2. 精确匹配模型名 → 前缀匹配（带 `*` 的键）
+ *   3. 从模型名解析 "128k" / "200k" / "1m" 等上下文标记
+ *   4. DEFAULT_CONTEXT_WINDOW 兜底
+ * @param {string} model 模型标识
+ * @param {number} [override] provider 级显式上下文窗口（用户配置，最权威）
+ * @returns {number} 上下文窗口 token 数
+ */
+export function getContextWindow(model, override) {
+  if (typeof override === 'number' && override > 0) return Math.floor(override)
+  return lookupBuiltinContextWindow(model) ?? DEFAULT_CONTEXT_WINDOW
 }
 
 /**
@@ -760,14 +778,40 @@ export function buildUpstreamChat(cfg) {
       max_tokens: clampMaxTokens(options.maxTokens),
       stream,
     }
-    // 原生 Anthropic thinking 参数（OpenAI 兼容族不支持该字段，由 reasoning_content 自动下发）
-    if (options.thinking) {
-      const isStepExploreModel = /step-explore/i.test(model)
-      // Step Explore 文档明确说明不支持 thinking 参数，也不支持 output_config。
-      // 对于使用 custom 供应商 + step-explore 模型的场景，跳过 thinking 字段。
-      if (isStepExploreModel) {
-        // 不发送 thinking 或 output_config
-      } else if (preset.anthropicEffortField === 'output_config') {
+    // 推理参数下发（Anthropic 协议分支）——由「该模型解析出的 reasoningProtocol」决定，
+    // 不再只无条件看 options.thinking：
+    //   options.reasoning 由调用方按 ai_model_settings 生效协议构造
+    //   （utils/modelPresets.buildReasoningRequest，仅当协议非 inherit/none 且 reasoning_enabled
+    //    且用户思考开关打开时才存在），其 value 已按 low/medium/high 映射到该协议取值。
+    //   未传 options.reasoning 时**保持改造前的既有行为**（options.thinking → thinking / output_config），
+    //   保证老调用方零行为漂移。
+    const explicitReasoning =
+      options.reasoning && options.reasoning.protocol && options.reasoning.protocol !== 'inherit'
+        ? options.reasoning
+        : null
+    // Step Explore 官方文档明确说明不支持 thinking 参数，也不支持 output_config
+    // （见本文件既有注释与 aiProviders.js 预设 anthropicEffortField 说明）⇒ 这是一道**硬闸门**：
+    // 即便有人在按模型配置里给它显式指定了协议，也一个字都不下发（否则上游必然 400）。
+    const isStepExploreModel = /step-explore/i.test(model)
+    if (isStepExploreModel) {
+      // 不发送 thinking 或 output_config
+    } else if (explicitReasoning) {
+      if (explicitReasoning.protocol === 'anthropic_thinking') {
+        // 原生 Anthropic extended thinking（budget_tokens 必须是数字，等级映射见 modelPresets.BUDGET_LEVELS）
+        body.thinking = {
+          type: 'enabled',
+          budget_tokens: resolveNumericBudget(explicitReasoning.value, options.thinkingBudget || 4096),
+        }
+      } else if (explicitReasoning.protocol === 'output_config_effort') {
+        // Anthropic 兼容网关：推理强度字段为 output_config.effort（low/medium/high）
+        body.output_config = {
+          effort: resolveEffortString(explicitReasoning.value, options.thinkingStrength || 'medium'),
+        }
+      }
+      // 其余协议（'none' / 'openai_reasoning_effort' / 'qwen_enable_thinking'）在 Anthropic 协议上
+      // **没有**对应字段 —— 一个字都不下发（安全底线：给不支持的模型塞未知字段会 400）
+    } else if (options.thinking) {
+      if (preset.anthropicEffortField === 'output_config') {
         // 其他自定义 Anthropic 网关：推理强度字段为 output_config.effort（low/medium/high）
         const effort =
           options.thinkingStrength || options.thinkingEffort ||
@@ -781,7 +825,6 @@ export function buildUpstreamChat(cfg) {
       body.system = [{ type: 'text', text: systemMessages.map((m) => m.content).join('\n\n') }]
       // Step Explore 文档未列出 cache_control 字段，传了可能报 Unsupported parameter。
       // 对于使用 custom 供应商 + step-explore 模型的场景，也跳过 cache_control。
-      const isStepExploreModel = /step-explore/i.test(model)
       if (preset.supportsCache !== false && !isStepExploreModel) {
         body.system[0].cache_control = { type: 'ephemeral' }
       }
@@ -864,6 +907,14 @@ export function buildUpstreamChat(cfg) {
     if (typeof options.temperature === 'number') {
       body.temperature = options.temperature
     }
+    // 推理参数下发（Responses 协议分支）：OpenAI Responses API 的推理强度字段是
+    // `reasoning: { effort }`（不是 Chat Completions 的 reasoning_effort）。
+    // 只在模型协议明确为 openai_reasoning_effort 时下发；其余协议一律不下发。
+    if (options.reasoning?.protocol === 'openai_reasoning_effort') {
+      body.reasoning = {
+        effort: resolveEffortString(options.reasoning.value, options.thinkingStrength || 'medium'),
+      }
+    }
     if (systemMessages.length > 0) {
       body.instructions = systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n\n')
     }
@@ -914,6 +965,25 @@ export function buildUpstreamChat(cfg) {
   // 流式响应最后一个 chunk 会携带顶层 usage 对象，供前端展示上下文占用百分比。
   if (stream) {
     body.stream_options = { include_usage: true }
+  }
+  // ===== 推理参数下发（OpenAI 兼容协议分支）=====
+  // 修复的根因：改造前 thinking 只在 Anthropic 分支生效（见上方 anthropic 分支），
+  // 于是 LongCat / 阶跃 / MiMo / Agnes / 通义 等 OpenAI 兼容供应商的「思考强度」**从未下发**。
+  // 现在按该模型解析出的 reasoningProtocol 下发：
+  //   · openai_reasoning_effort → body.reasoning_effort = levels[strength]（o 系 / gpt-5）
+  //   · qwen_enable_thinking    → body.enable_thinking = true（+ 供应商支持时一并下发 thinking_budget）
+  //   · 其他（none / inherit / anthropic_thinking / output_config_effort）→ 一个字都不下发
+  //     （安全底线：OpenAI 兼容族塞 thinking / output_config 等未知字段会被上游 400 拒绝）
+  const reasoning = options.reasoning
+  if (reasoning && reasoning.protocol === 'openai_reasoning_effort') {
+    body.reasoning_effort = resolveEffortString(reasoning.value, options.thinkingStrength || 'medium')
+  } else if (reasoning && reasoning.protocol === 'qwen_enable_thinking') {
+    body.enable_thinking = true
+    // thinking_budget 只有明确声明支持的供应商（预设 supportsThinkingBudget，如 DashScope 通义）
+    // 才下发，避免给不识别该字段的兼容网关塞参数导致 400。
+    if (preset.supportsThinkingBudget === true) {
+      body.thinking_budget = resolveNumericBudget(reasoning.value, options.thinkingBudget || 4096)
+    }
   }
   return {
     url: `${resolvedBaseUrl}/chat/completions`,
@@ -994,4 +1064,5 @@ export default {
   messagesToResponsesInput,
   fetchProviderModels,
   safeUpstreamFetch,
+  lookupBuiltinContextWindow,
 }

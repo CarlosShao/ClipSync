@@ -1,0 +1,171 @@
+/**
+ * 按模型配置的「生效值」解析层（DB 覆盖 ← 内置预设 ← 内置上下文窗口表）。
+ *
+ * 单一事实来源分工：
+ *   - utils/modelPresets.js        纯常量预设（按模型名正则）
+ *   - 本文件                       读 ai_model_settings 覆盖行 + 合并 + 供路由/聊天链路复用
+ *   - routes/aiModelSettings.js    暴露 GET/PUT 配置入口
+ *   - utils/aiProviders.js         按协议把推理参数真正写进上游请求体
+ *
+ * 优先级（与迁移 081 注释一致）：
+ *   contextWindow: 用户覆盖行 → 预设 → aiProviders 内置 MODEL_CONTEXT_WINDOWS → null
+ *   maxOutput:     用户覆盖行 → 预设 → null（未知不编造）
+ *   模态/推理:      用户覆盖行 → 预设
+ *
+ * 健壮性：迁移未跑 / 查库失败时全部按「无覆盖行」处理（fail-open 到预设），
+ *   绝不让"读配置失败"把聊天主链路打断。
+ */
+import { pool } from '../db/pool.js'
+import { logger } from './logger.js'
+import { lookupBuiltinContextWindow } from './aiProviders.js'
+import {
+  resolveModelPreset,
+  normalizeReasoningLevels,
+  REASONING_PROTOCOLS,
+} from './modelPresets.js'
+
+/** 读取某用户某供应商某模型的覆盖行（不存在/表不存在/查库失败 → null） */
+export async function fetchModelSettingsRow(userId, providerId, model) {
+  if (!userId || !providerId || !model) return null
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM ai_model_settings
+        WHERE user_id = $1 AND provider_id = $2 AND model = $3
+        LIMIT 1`,
+      [userId, providerId, model],
+    )
+    return rows[0] || null
+  } catch (err) {
+    logger.warn('[aiModelSettings] read override row failed, fallback to preset:', err.message)
+    return null
+  }
+}
+
+/** 读取某用户某供应商的全部覆盖行（表不存在/查库失败 → []） */
+export async function fetchProviderOverrideRows(userId, providerId) {
+  if (!userId || !providerId) return []
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM ai_model_settings WHERE user_id = $1 AND provider_id = $2`,
+      [userId, providerId],
+    )
+    return rows
+  } catch (err) {
+    logger.warn('[aiModelSettings] read override rows failed:', err.message)
+    return []
+  }
+}
+
+const hasValue = (v) => v !== null && v !== undefined
+
+/**
+ * 合并「预设 ← 覆盖行」为生效值（纯函数，便于单测）。
+ * isPreset：命中了内置预设规则；isOverridden：存在用户覆盖行。
+ */
+export function mergeModelSettings(model, preset, row) {
+  const p = preset || resolveModelPreset(model)
+  const contextWindowFromRow = hasValue(row?.context_window) && Number.isFinite(Number(row.context_window))
+  const presetContextWindow = hasValue(p.contextWindow) ? Number(p.contextWindow) : null
+  const builtinContextWindow = lookupBuiltinContextWindow(model)
+  const contextWindow = contextWindowFromRow
+    ? Math.floor(Number(row.context_window))
+    : (presetContextWindow ?? (hasValue(builtinContextWindow) ? builtinContextWindow : null))
+
+  const maxOutputFromRow = hasValue(row?.max_output) && Number.isFinite(Number(row.max_output))
+  const maxOutput = maxOutputFromRow
+    ? Math.floor(Number(row.max_output))
+    : (hasValue(p.maxOutput) ? Number(p.maxOutput) : null)
+
+  const protocol = REASONING_PROTOCOLS.includes(row?.reasoning_protocol)
+    ? row.reasoning_protocol
+    : (REASONING_PROTOCOLS.includes(p.reasoningProtocol) ? p.reasoningProtocol : 'inherit')
+
+  // 等级映射：预设 ← 覆盖行（行内只保留 low/medium/high 的合法值）
+  const rowLevels = row ? normalizeReasoningLevels(row.reasoning_levels) : {}
+  const reasoningLevels = { ...(p.reasoningLevels || {}), ...rowLevels }
+
+  return {
+    model,
+    contextWindow,
+    contextWindowFromRow,
+    maxOutput,
+    maxOutputFromRow,
+    supportsText: row ? row.supports_text === true : p.supportsText === true,
+    supportsImage: row ? row.supports_image === true : p.supportsImage === true,
+    supportsVideo: row ? row.supports_video === true : p.supportsVideo === true,
+    supportsAudio: row ? row.supports_audio === true : p.supportsAudio === true,
+    reasoningEnabled: row ? row.reasoning_enabled === true : p.reasoningEnabled === true,
+    reasoningProtocol: protocol,
+    reasoningLevels,
+    isPreset: p.matched === true,
+    isOverridden: !!row,
+    presetRuleId: p.ruleId || null,
+    note: p.note || '',
+  }
+}
+
+/** 一步到位：读覆盖行 → 合并 → 生效值（聊天链路与路由共用） */
+export async function loadEffectiveModelSettings({ userId, providerId, model }) {
+  const preset = resolveModelPreset(model)
+  const row = await fetchModelSettingsRow(userId, providerId, model)
+  return mergeModelSettings(model, preset, row)
+}
+
+/**
+ * 解析某 provider 的「模型集合」= 当前 model + models(jsonb，刷新得到) + 用户选中模型
+ * （ai_settings.selected_models[providerId]）+ 已有覆盖行的模型（保证用户改过的不丢）。
+ * @returns {string[]} 去重后的模型名（保持稳定顺序）
+ */
+export function collectModelCandidates(providerRow, selectedModels, overrideRows = []) {
+  const out = []
+  const seen = new Set()
+  const push = (v) => {
+    if (typeof v !== 'string') return
+    const s = v.trim()
+    if (!s || s.length > 200 || seen.has(s)) return
+    seen.add(s)
+    out.push(s)
+  }
+
+  push(providerRow?.model)
+  const list = providerRow?.models
+  if (Array.isArray(list)) list.forEach(push)
+  else if (list && typeof list === 'object') {
+    // 兼容 { id: true } / { 0: 'model' } 等历史形态
+    Object.values(list).forEach((v) => push(typeof v === 'string' ? v : v?.id))
+  }
+
+  // selected_models: { [providerId]: model | model[] | { model } }
+  const sel = selectedModels && typeof selectedModels === 'object' ? selectedModels[providerRow?.id] : null
+  if (typeof sel === 'string') push(sel)
+  else if (Array.isArray(sel)) sel.forEach((v) => push(typeof v === 'string' ? v : v?.id))
+  else if (sel && typeof sel === 'object') {
+    push(sel.model)
+    push(sel.modelId)
+  }
+
+  for (const r of overrideRows || []) push(r?.model)
+
+  return out
+}
+
+/**
+ * 上下文窗口覆盖值优先级：**模型级用户覆盖行 → provider 级 context_window（031）→ 预设/内置**。
+ * 返回 null 时 getContextWindow 会走内置表 + DEFAULT_CONTEXT_WINDOW 兜底（保持旧行为）。
+ */
+export function resolveContextWindowOverride(providerOverride, settings) {
+  if (settings && settings.contextWindowFromRow && hasValue(settings.contextWindow)) {
+    return Math.floor(Number(settings.contextWindow))
+  }
+  if (typeof providerOverride === 'number' && providerOverride > 0) return Math.floor(providerOverride)
+  return hasValue(settings?.contextWindow) ? Math.floor(Number(settings.contextWindow)) : null
+}
+
+export default {
+  fetchModelSettingsRow,
+  fetchProviderOverrideRows,
+  mergeModelSettings,
+  loadEffectiveModelSettings,
+  collectModelCandidates,
+  resolveContextWindowOverride,
+}

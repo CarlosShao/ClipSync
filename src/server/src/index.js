@@ -67,6 +67,8 @@ import aiConversationsRoutes from './routes/aiConversations.js';
 import workflowRulesRoutes from './routes/workflowRules.js';
 import aiMemoriesRoutes from './routes/aiMemories.js';
 import aiSettingsRoutes from './routes/aiSettings.js';
+// 按模型配置（上下文窗口 / 多模态能力 / 推理协议与等级）：/api/ai/model-settings
+import aiModelSettingsRoutes from './routes/aiModelSettings.js';
 import { enableQueryMonitoring } from './utils/query-monitor.js';
 import { memoryMonitor } from './utils/db-retry.js';
 import adminRoutes from './routes/admin/index.js';
@@ -555,6 +557,14 @@ app.use('/api/ai/settings', authenticateToken, apiLimiter, csrfProtection, aiFla
   req.userId = req.user.userId;
   next();
 }, aiSettingsRoutes);
+
+// 按模型配置（需求：模型不只有名字 —— 上下文窗口/最大输出/多模态能力/推理协议与等级，
+// 全部按模型可配置且可改）：中间件组合与 /api/ai/settings 对齐。
+// 注意：/api/ai （上一处挂载）先于本行注册，其 router 不匹配 /model-settings 时自然落到这里。
+app.use('/api/ai/model-settings', authenticateToken, apiLimiter, csrfProtection, aiFlagGuard, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, aiModelSettingsRoutes);
 
 // 分享链接路由（免费功能）。公开取用 /public/:token 无登录，故鉴权在路由内逐条处理；
 // 此处仅挂 apiLimiter，csrf 对 GET/Bearer 自动放行。

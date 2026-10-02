@@ -18,6 +18,8 @@
  * 类供应商下收不到 dispatch_agents，会自动降级为单代理直答（等价于短路）。
  */
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
+import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
+import { buildThinkingOptions } from '../utils/modelPresets.js'
 import { logger } from '../utils/logger.js'
 import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { runChatLoop, openUpstreamStream, looksLikeToolIntent } from './aiChatCore.js'
@@ -124,16 +126,29 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
     ? (providerRow.api_format === 'anthropic' ? 'anthropic' : providerRow.api_format === 'responses' ? 'responses' : 'openai')
     : (preset?.family || 'openai')
 
+  // 按模型生效配置（覆盖行 ← 内置预设）：协调器与 runChatLoop 用同一口径，
+  // 否则「协调器轮次」与「子代理轮次」会对同一个模型下发不同的推理参数。
+  const modelSettings = await loadEffectiveModelSettings({
+    userId,
+    providerId: providerRow.id,
+    model: providerRow.model,
+  })
+  const ctxWindowOverride = resolveContextWindowOverride(providerRow.context_window, modelSettings)
+
   for (let round = 0; round < 5; round++) {
     const chatOptions = {
       tools,
       tool_choice: continuationRetries >= 2 ? (family === 'anthropic' ? 'any' : 'required') : 'auto',
     }
-    // 思考支持：与 runChatLoop 对齐，仅 Anthropic 协议需显式 thinking 参数
-    if (thinkingEnabled && preset?.family === 'anthropic') {
-      chatOptions.thinking = true
-      chatOptions.thinkingStrength = thinkingStrength
-      chatOptions.thinkingBudget = thinkingStrength === 'low' ? 1024 : thinkingStrength === 'high' ? 8192 : 4096
+    // 思考强度 → 真正的推理参数：由该模型解析出的 reasoningProtocol 决定（不再只看 preset.family），
+    // 与 runChatLoop 共用 buildThinkingOptions，保证两个轮次对同一模型下发一致（修复：OpenAI 兼容族
+    // 此前从不下发思考强度）。
+    if (thinkingEnabled) {
+      Object.assign(chatOptions, buildThinkingOptions({
+        settings: modelSettings,
+        enabled: thinkingEnabled,
+        strength: thinkingStrength,
+      }))
     }
 
     logger.info('[AI][orchestrator] tools count:', tools.length, 'continuationRetries:', continuationRetries, 'tool_choice:', chatOptions.tool_choice)
@@ -162,7 +177,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
 
     // 下发 token 用量元信息（与 runChatLoop 同格式），由编排层聚合后统一下发，保持主气泡圆环更新
     if (resp.usage) {
-      const ctxWindow = getContextWindow(providerRow.model, providerRow.context_window)
+      const ctxWindow = getContextWindow(providerRow.model, ctxWindowOverride)
       const u = resp.usage
       const promptTokens = u.prompt_tokens || 0
       const completionTokens = u.completion_tokens || 0
