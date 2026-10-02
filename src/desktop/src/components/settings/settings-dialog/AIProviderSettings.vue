@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
@@ -297,6 +297,26 @@ function onProviderChange(v: string) {
   }
 }
 
+/**
+ * 防线 ①（主路径）：**自动纠偏** —— 用户一旦填了 Base URL 或 API Key、而「供应商」还空着，
+ * 就说明他要配的是自己的网关（本地 one-api / vLLM / Ollama 或任何 OpenAI 兼容服务），
+ * 自动把 provider 置为 Custom（下拉里如实显示 Custom）。
+ *
+ * 用户实测（本轮缺陷）：新增供应商草稿态下「供应商」下拉是空的，点「刷新模型列表」时 payload 里
+ * provider='' ⇒ 服务端预设白名单直接 400「Invalid provider」，**根本没发出上游请求** ——
+ * 所以换 127.0.0.1:3800 还是 host.docker.internal:3800 表现完全一样，看着像网络问题，其实是这个空值。
+ *
+ * 只在 provider **为空**时纠偏 ⇒ 用户显式选过的预设永远不会被覆盖。
+ */
+watch(
+  [formProvider, formBaseUrl, formApiKey],
+  () => {
+    if (formProvider.value) return
+    if (formBaseUrl.value.trim() || formApiKey.value.trim()) formProvider.value = 'custom'
+  },
+  { immediate: true },
+)
+
 function resetForm() {
   editingId.value = null
   formOpen.value = false
@@ -367,6 +387,9 @@ function providerErrorText(res: ApiResponse<unknown>, fallback: string): string 
   const serverMessage = String(enriched.message || '').trim()
   if (SERVER_MESSAGE_FIRST_CODES.has(String(enriched.code || '')) && serverMessage) return serverMessage
   if (hasAiFailureMapping(enriched)) return describeAiFailure(enriched, tf)
+  // 未命中映射表：服务端的可读 message 优先于 error（后者可能是裸码/英文内部串，如
+  // "PROVIDER_NOT_FOUND"、"Invalid provider"）—— 保证界面上不出现裸码。
+  if (serverMessage) return serverMessage
   return tMsg(res.error) || fallback
 }
 
@@ -377,11 +400,22 @@ function providerErrorText(res: ApiResponse<unknown>, fallback: string): string 
 // 预览接口对 baseUrl 走与保存路径同一套 SSRF 校验（默认放行环回/私网/ULA 本地网关，
 // 仍禁云元数据/链路本地、组播/广播/保留段、非 http(s)、带用户信息等；DNS 全解析逐个校验），
 // 所以直连预览不会降低安全性。
-// 按钮可否点：新增时必须先有 key；编辑态即使没重输 key 也能刷新（用库里的 key）。
-const canRefreshModels = computed(() => !!editingId.value || formApiKey.value.trim().length > 0)
+// 按钮可否点：**provider 必填**（防线 ② —— 为空时不让点，配合自动纠偏从源头消掉这个坑）；
+// 新增态还必须有 key；编辑态即使没重输 key 也能刷新（用库里的 key）。
+const canRefreshModels = computed(
+  () => !!formProvider.value && (!!editingId.value || formApiKey.value.trim().length > 0),
+)
 
 async function refreshModels() {
   if (refreshingModels.value) return
+  // 防线 ②（兜底）：provider 为空时**一个请求都不发**。按钮本身已禁用（canRefreshModels），
+  // 这里再拦一层并给出"该选什么"的人话，而不是等服务端回裸码 Invalid provider。
+  if (!formProvider.value) {
+    const need = t('ai_refresh_need_provider', '请先选择供应商；自定义网关请选 Custom')
+    formError.value = need
+    modelsRefresh.value = { kind: 'error', text: need }
+    return
+  }
   const typedKey = formApiKey.value.trim()
   if (!typedKey && !editingId.value) {
     formError.value = t('ai_api_key_required')
@@ -404,7 +438,10 @@ async function refreshModels() {
     //    由服务端 message 原样给出），就近持久显示 + 可重试；服务端失败时不会覆盖已存列表。
     if (!res.ok || !res.data) {
       const reason = providerErrorText(res, t('ai_models_refresh_fail'))
-      const kept = Array.isArray(res.data?.models) ? res.data!.models.length : 0
+      // "已保留原列表 N 个"：优先用服务端回带的未改动列表（GET 路径会带）；草稿态预览失败时
+      // 服务端没有"已存列表"，但表单里的启用集合同样一个都没被清，用它的数量如实说明。
+      const serverKept = Array.isArray(res.data?.models) ? res.data!.models.length : 0
+      const kept = serverKept > 0 ? serverKept : formSelectedModels.value.length
       modelsRefresh.value = {
         kind: 'error',
         text:
@@ -734,6 +771,7 @@ onMounted(() => {
               variant="outline"
               class="min-w-[100px]"
               :disabled="refreshingModels || !canRefreshModels"
+              :title="!formProvider ? t('ai_refresh_need_provider', '请先选择供应商；自定义网关请选 Custom') : ''"
               @click="refreshModels"
             >
               <RefreshCw v-if="!refreshingModels" :size="12" />
@@ -742,6 +780,12 @@ onMounted(() => {
             <span class="ai-models-count">
               {{ tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.length }) }}
             </span>
+          </div>
+
+          <!-- 防线 ②：provider 为空时把"为什么点不了 + 该选什么"直接写在按钮下面，
+               而不是等用户点了才弹一句裸码「Invalid provider」（用户实测就是这么被带沟里的） -->
+          <div v-if="!formProvider" class="ai-refresh-need-provider">
+            {{ t('ai_refresh_need_provider', '请先选择供应商；自定义网关请选 Custom') }}
           </div>
 
           <!-- 刷新结果**持久**提示（就近显示，不依赖一闪而过的 toast）：用户实测反馈"toast 弹了已刷新，
@@ -1518,6 +1562,13 @@ onMounted(() => {
   color: var(--text-secondary);
 }
 
+/* 防线 ②：provider 为空时按钮下方的就近提示（"为什么点不了 + 该选什么"） */
+.ai-refresh-need-provider {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--warning);
+}
 /* ===== 刷新模型列表：结果就地持久显示 =====
  * 用户实测："toast 说刷新成功，但一个模型都没刷出来"。toast 一闪而过，失败/空列表必须在按钮
  * 下方留得住；失败时给"重试"。三态配色：成功=次要文字、空列表=警告色、失败=危险色。 */

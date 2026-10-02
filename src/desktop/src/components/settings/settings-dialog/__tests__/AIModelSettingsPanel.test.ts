@@ -1020,12 +1020,247 @@ describe('AIProviderSettings — 刷新模型列表三态（不再假成功）',
   })
 })
 
+/* ===================== ㉕-㉚ 供应商为空：不再把用户带沟里 =====================
+ * 用户实测：在「新增供应商」草稿态点「刷新模型列表」→ 弹裸英文 `Invalid provider`，且换成
+ * 127.0.0.1:3800 / host.docker.internal:3800 表现一模一样（看着像网络问题）。
+ * 根因：草稿态「供应商」下拉为空 ⇒ payload.provider='' ⇒ 服务端预设白名单 400，**根本没发上游请求**。
+ * 两个防线：① 填了 Base URL/API Key 就自动纠偏成 Custom（主路径）；② provider 为空时按钮禁用 + 就近提示。 */
+
+describe('AIProviderSettings — 供应商为空（草稿态）不再被带沟里', () => {
+  const statusEl = () => document.querySelector<HTMLElement>('.ai-refresh-status')
+  const statusText = () => statusEl()?.textContent || ''
+  const inputByPh = (ph: string) => document.querySelector<HTMLInputElement>(`input[placeholder="${ph}"]`)
+  const triggerText = () => document.querySelector('.custom-select-trigger-text')?.textContent || ''
+  const refreshBtn = () =>
+    Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+
+  const SETTINGS = {
+    defaultProviderId: PROVIDER_ID,
+    defaultModel: 'gpt-4o-mini',
+    selectedModels: {},
+    defaultMode: 'ask',
+    thinkingEnabled: false,
+    thinkingStrength: 'medium',
+    memoryEnabled: false,
+    customSystemPrompt: '',
+    searchProvider: '',
+    searchBaseUrl: '',
+    searchHasKey: false,
+  }
+  const PRESETS = [
+    { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+    {
+      provider: 'longcat',
+      label: 'LongCat',
+      family: 'openai',
+      defaultBaseUrl: 'https://api.longcat.chat/openai',
+      defaultModel: 'LongCat-Flash-Chat',
+    },
+  ]
+
+  function wire(providers: unknown[]) {
+    mocks.getProviders.mockResolvedValue({ ok: true, status: 200, data: { items: providers, count: providers.length } })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    installApi([chatOn(), chatOff()])
+  }
+
+  /** 草稿态（新增供应商）：列表为空，点「添加供应商」展开表单 */
+  async function mountDraft() {
+    mocks.fetchProviderModels.mockReset()
+    wire([])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    buttonByLabel(t('ai_add_provider')).click()
+    await flush()
+    return m
+  }
+
+  /** 编辑态：把已有供应商（可覆盖字段）拉进表单 */
+  async function mountEditWith(overrides: Record<string, unknown> = {}) {
+    mocks.fetchProviderModels.mockReset()
+    wire([{ ...PROVIDER, ...overrides }])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    return m
+  }
+
+  it('㉕ 草稿态填了 Base URL → 自动纠偏成 Custom（下拉如实显示），刷新 payload provider=custom', async () => {
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: ['local-1'], count: 1, upstreamEmpty: false, added: 1, previousCount: 0 },
+    })
+    const m = await mountDraft()
+
+    // 起点：下拉是空占位
+    expect(triggerText()).toContain(t('ai_select_provider'))
+
+    // 用户只填了 Base URL（还没选供应商）—— 这正是被带沟里的那一步
+    await setValue(inputByPh(t('ai_base_url_ph'))!, 'http://127.0.0.1:3800/v1')
+    await flush()
+    // 防线 ①：自动纠偏，并在下拉里如实显示 Custom
+    expect(triggerText()).toContain('Custom')
+
+    // 有 key 才能刷（草稿态）
+    await setValue(inputByPh(t('ai_api_key_ph'))!, 'sk-local')
+    await flush()
+    const btn = refreshBtn()
+    expect(btn.disabled).toBe(false)
+    btn.click()
+    await flush()
+
+    expect(mocks.fetchProviderModels).toHaveBeenCalledTimes(1)
+    const payload = mocks.fetchProviderModels.mock.calls[0][0] as { provider: string; baseUrl: string; apiKey: string }
+    expect(payload.provider).toBe('custom') // ★ 以前这里是空串 ⇒ 服务端 400 Invalid provider
+    expect(payload.baseUrl).toBe('http://127.0.0.1:3800/v1')
+    expect(payload.apiKey).toBe('sk-local')
+    m.unmount()
+  })
+
+  it('㉖ 用户显式选过的预设不被纠偏覆盖（编辑 LongCat 后改地址 → 仍是 longcat）', async () => {
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: ['x'], count: 1, upstreamEmpty: false },
+    })
+    const m = await mountEditWith({
+      provider: 'longcat',
+      name: 'LongCat 供应商',
+      base_url: 'https://api.longcat.chat/openai',
+    })
+
+    expect(triggerText()).toContain('LongCat')
+    // 改地址 + 重输 key（都会触发 watcher 的依赖变化）—— 不得被覆盖成 custom
+    await setValue(inputByPh(t('ai_base_url_ph'))!, 'http://192.168.1.10:8000/v1')
+    await setValue(inputByPh(t('ai_api_key_keep'))!, 'sk-longcat')
+    await flush()
+    expect(triggerText()).toContain('LongCat')
+
+    refreshBtn().click()
+    await flush()
+    const payload = mocks.fetchProviderModels.mock.calls[0][0] as { provider: string }
+    expect(payload.provider).toBe('longcat')
+    m.unmount()
+  })
+
+  it('㉗ 草稿态什么都没填 → 刷新按钮禁用 + 就近提示「请先选择供应商…（Custom）」，点了也不发请求', async () => {
+    const m = await mountDraft()
+    const btn = refreshBtn()
+    // 防线 ②：从源头不让点
+    expect(btn.disabled).toBe(true)
+    expect(btn.getAttribute('title')).toBe(t('ai_refresh_need_provider'))
+    expect(document.querySelector('.ai-refresh-need-provider')?.textContent).toContain('Custom')
+
+    btn.click()
+    await flush()
+    expect(mocks.fetchProviderModels).not.toHaveBeenCalled()
+    expect(mocks.getProviderModels).not.toHaveBeenCalled()
+    m.unmount()
+  })
+
+  it('㉘ 服务端 INVALID_PROVIDER → 中文人话（服务端 message 优先），界面不再出现裸英文', async () => {
+    const serverMessage = '请先选择供应商；自定义/本地网关请选 Custom'
+    mocks.getProviderModels.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'Invalid provider',
+      data: { error: 'Invalid provider', code: 'INVALID_PROVIDER', message: serverMessage, models: [] },
+    })
+    const m = await mountEditWith()
+    refreshBtn().click()
+    await flush()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(serverMessage, 'error')
+    expect(text()).not.toContain('Invalid provider')
+    expect(statusText()).toContain(serverMessage)
+    m.unmount()
+  })
+
+  it('㉘b 服务端没带 message 时用映射表兜底（中文），仍不是裸码', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'Invalid provider',
+      data: { code: 'INVALID_PROVIDER', error: 'Invalid provider' },
+    })
+    const m = await mountEditWith()
+    refreshBtn().click()
+    await flush()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      tf('ai_fail_invalid_provider', '请先选择供应商；自定义/本地网关请选 Custom。'),
+      'error',
+    )
+    expect(text()).not.toContain('Invalid provider')
+    m.unmount()
+  })
+
+  it('㉙ INVALID_PROVIDER 失败态：模型列表一个都没少（含"已保留原列表 N 个"）+ 可就地重试', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: 'Invalid provider',
+      data: {
+        code: 'INVALID_PROVIDER',
+        message: '请先选择供应商；自定义/本地网关请选 Custom',
+        models: ['gpt-4o-mini'],
+        modelsUnchanged: true,
+      },
+    })
+    const m = await mountEditWith()
+    const chipsBefore = document.querySelectorAll('.aim-chip').length
+    expect(chipsBefore).toBe(2)
+
+    refreshBtn().click()
+    await flush()
+
+    // 失败不清列表：模型库胶囊数量与"已启用"计数都没变
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(chipsBefore)
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 1 }))
+    expect(statusEl()!.className).toContain('ai-refresh-status--error')
+    expect(statusText()).toContain('1') // 已保留原列表 1 个模型
+    expect(document.querySelector('.ai-refresh-status-retry')).toBeTruthy()
+    m.unmount()
+  })
+
+  it('㉚ 同类入口（自检 probe）也不显示裸码：服务端 message 优先', async () => {
+    const m = mountPanel({ items: [chatOn()] })
+    await flush()
+    const base = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation(async (method: string, path: string, body: unknown) =>
+      method === 'POST'
+        ? {
+            ok: false,
+            status: 404,
+            error: 'PROVIDER_NOT_FOUND',
+            data: { error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' },
+          }
+        : base(method, path, body),
+    )
+
+    rowAction('gpt-4o-mini', 'probe')!.click()
+    await flush()
+
+    const probe = row('gpt-4o-mini')!.querySelector('.aim-probe--fail')
+    expect(probe).toBeTruthy()
+    expect(probe!.textContent).toContain('供应商不存在')
+    expect(probe!.textContent).not.toContain('PROVIDER_NOT_FOUND')
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()
   mocks.getProviders.mockReset()
   mocks.getPresets.mockReset()
   mocks.getProviderModels.mockReset()
+  mocks.fetchProviderModels.mockReset()
   mocks.getSettings.mockReset()
   mocks.can.mockReset()
   mocks.can.mockReturnValue(true)

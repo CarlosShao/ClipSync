@@ -477,4 +477,29 @@ describe('D. POST /api/ai/providers/fetch-models —— 与刷新同一套失败
     expect(ok.body.models).toEqual(['local-1'])
     expect(ok.body.upstreamEmpty).toBe(false)
   })
+
+  it('模式 2：provider=custom 时**确实去连了上游**（不会被预设白名单拦掉）', async () => {
+    const fn = fetchReturning(fakeResponse(200, { data: [{ id: 'm-1' }, { id: 'm-2' }] }))
+    setModelsFetchImpl(fn)
+    const res = await preview({ provider: 'custom', apiKey: 'sk-x', baseUrl: 'http://127.0.0.1:3800/v1' })
+    expect(res.status, JSON.stringify(res.body)).toBe(200)
+    expect(fn.calls).toHaveLength(1) // 真的打到了上游
+    expect(fn.calls[0].url).toBe('http://127.0.0.1:3800/v1/models')
+    expect(fn.calls[0].options.headers.Authorization).toBe('Bearer sk-x')
+  })
+
+  it('模式 2：provider 为空/未知 → 400 + 可操作文案，且**一个上游请求都不发**（本轮用户实测的坑）', async () => {
+    const fn = fetchReturning(fakeResponse(200, { data: [{ id: 'm-1' }] }))
+    setModelsFetchImpl(fn)
+    // 草稿态「供应商」下拉为空时前端会发 provider: ''（也可能是 undefined / 不在预设表里的值）
+    for (const bad of ['', undefined, 'not-a-preset']) {
+      const res = await preview({ provider: bad, apiKey: 'sk-x', baseUrl: 'http://127.0.0.1:3800/v1' })
+      expect(res.status, String(bad)).toBe(400)
+      expect(res.body.error, String(bad)).toBe('Invalid provider') // 沿用既有 error 值
+      expect(res.body.code, String(bad)).toBe('INVALID_PROVIDER')
+      expect(String(res.body.message), String(bad)).toContain('Custom')
+    }
+    // ★ 根因：地址填 127.0.0.1 还是 host.docker.internal 表现一样，就是因为根本没走到上游
+    expect(fn.calls).toHaveLength(0)
+  })
 })

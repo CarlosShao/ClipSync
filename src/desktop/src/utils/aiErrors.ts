@@ -148,6 +148,15 @@ const REASON: Record<string, { key: string; zh: string; en: string }> = {
     zh: '该供应商没有配置 Base URL，无法拉取模型列表。',
     en: 'This provider has no Base URL configured, so the model list cannot be fetched.',
   },
+  // 供应商预设为空 / 不在预设白名单（服务端 code=INVALID_PROVIDER；error 仍是英文 'Invalid provider'）。
+  // 用户实测：新增供应商草稿态下「供应商」下拉为空 → 刷新直接 400，换 127.0.0.1 / host.docker.internal
+  // 表现一模一样（看着像网络故障，其实根本没发出上游请求）。
+  // 注意：服务端各端点会带自己的 message（供应商表单 / 搜索源），见 SERVER_MESSAGE_FIRST_CODES。
+  INVALID_PROVIDER: {
+    key: 'ai_fail_invalid_provider',
+    zh: '请先选择供应商；自定义/本地网关请选 Custom。',
+    en: 'Select a provider first; choose Custom for your own or local gateway.',
+  },
   // 搜索源（SearXNG 等）测试失败：服务端 code=SEARCH_FAILED（地址策略拒绝时会给 ai_base_url_* 码）
   SEARCH_FAILED: {
     key: 'ai_fail_search_failed',
@@ -162,10 +171,16 @@ export function hasAiFailureMapping(data: AiFailurePayload | null | undefined): 
 }
 
 /**
- * 这些 code 的文案由**服务端**按真实参数生成（例如容器回环提示里带真实端口与可照做的替换地址），
- * UI 应优先原样展示响应体里的 `message`；只有服务端没带 message 时才回退到 REASON 的通用文案。
+ * 这些 code 的文案由**服务端**按真实参数生成，UI 应优先原样展示响应体里的 `message`；
+ * 只有服务端没带 message 时才回退到 REASON 的通用文案。
+ * - ai_base_url_loopback_in_container：message 里带真实端口与可照做的替换地址；
+ * - INVALID_PROVIDER：同一个码在**供应商表单**（请先选择供应商…）与**搜索源**（请选择搜索源）
+ *   两个端点语义不同，用服务端的分端 message 比一张通用表更准确。
  */
-export const SERVER_MESSAGE_FIRST_CODES: ReadonlySet<string> = new Set(['ai_base_url_loopback_in_container'])
+export const SERVER_MESSAGE_FIRST_CODES: ReadonlySet<string> = new Set([
+  'ai_base_url_loopback_in_container',
+  'INVALID_PROVIDER',
+])
 
 /**
  * 把服务端失败响应翻译成一句可行动的话。

@@ -105,7 +105,14 @@ router.post('/providers', apiLimiter, async (req, res) => {
   try {
     const { provider, name, apiKey, baseUrl, model, models, isDefault, contextWindow, apiFormat } = req.body || {}
     if (!provider || !getPreset(provider)) {
-      return res.status(400).json({ error: 'Invalid provider' })
+      // 用户实测反馈：新增供应商草稿态下「供应商」下拉为空就点保存/刷新，只看到裸英文
+      // 「Invalid provider」，完全不知道下一步该干什么（自定义网关应当选 Custom）。
+      // error 原值保持不变（既有契约/测试），另补可操作 message 与稳定 code 供前端映射。
+      return res.status(400).json({
+        error: 'Invalid provider',
+        code: 'INVALID_PROVIDER',
+        message: '请选择供应商；自定义/本地网关请选 Custom',
+      })
     }
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
       return res.status(400).json({ error: 'Name is required' })
@@ -383,7 +390,14 @@ router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
     // ---- 模式 2：未保存配置直连预览 ----
     if (!providerId) {
       if (!provider || !getPreset(provider)) {
-        return res.status(400).json({ error: 'Invalid provider', models: [] })
+        // 根因提示（本轮用户实测）：provider 取自表单「供应商」下拉，草稿态为空 ⇒ 这里直接 400，
+        // **根本没发出上游请求**，所以换 127.0.0.1 / host.docker.internal 表现一模一样（与网络无关）。
+        return res.status(400).json({
+          error: 'Invalid provider',
+          code: 'INVALID_PROVIDER',
+          message: '请先选择供应商；自定义/本地网关请选 Custom',
+          models: [],
+        })
       }
       const key = typeof apiKey === 'string' ? apiKey.trim() : ''
       if (!key) {

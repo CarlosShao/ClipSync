@@ -177,7 +177,9 @@ router.post('/search-test', apiLimiter, async (req, res) => {
   try {
     const { provider, apiKey, baseUrl } = req.body || {}
     if (!provider || !SEARCH_PROVIDERS.includes(provider)) {
-      return res.status(400).json({ error: 'INVALID_PROVIDER', message: '请选择搜索源' })
+      // error 值保持不变（既有契约）；补稳定 code 供前端做码→人话映射。
+      // message 是**搜索源**场景的专用文案：桌面端的映射表只在服务端没给 message 时才兜底。
+      return res.status(400).json({ error: 'INVALID_PROVIDER', code: 'INVALID_PROVIDER', message: '请选择搜索源' })
     }
     let key = typeof apiKey === 'string' ? apiKey : ''
     if (key === '__keep__' || key === '') {

@@ -95,6 +95,16 @@ const items = ref<ModelSettingItem[]>([])
 const loading = ref(false)
 /** 非空 = 接口不可用/读取失败（如实展示，不伪造预设值） */
 const loadError = ref('')
+
+/**
+ * 失败文案：**服务端的可读 message 优先**，再退回 error / HTTP 状态。
+ * 服务端 model-settings / probe 这条线用的是 `{ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' }`
+ * 形状 —— 直接渲染 res.error 会把裸码（PROVIDER_NOT_FOUND / NO_API_KEY / INVALID_MODEL）甩给用户。
+ */
+function apiErrorText(res: { error?: string; status: number; data?: unknown }, fallback: string): string {
+  const msg = String((res.data as { message?: string } | undefined)?.message || '').trim()
+  return msg || res.error || fallback
+}
 /** 服务端未下发 v3 字段（enabled/alias/sortOrder）→ 顶部如实提示 */
 const v3Missing = ref(false)
 
@@ -250,7 +260,7 @@ async function load(opts: { announceNew?: boolean } = {}) {
       // 首次加载完成后把"真实启用集合"同步给父组件（服务端的 enabled 是权威来源）
       syncEnabledToParent(enabledModels.value)
     } else {
-      loadError.value = res.error || `HTTP ${res.status}`
+      loadError.value = apiErrorText(res, `HTTP ${res.status}`)
     }
   } catch (e) {
     loadError.value = String((e as Error)?.message || e)
@@ -411,7 +421,7 @@ async function patchModel(model: string, patch: ModelSettingPatch, okMsg?: strin
       if (okMsg) toast.show(okMsg, 'success')
       return true
     }
-    toast.show(res.error || t('ai_model_patch_fail', '保存失败'), 'error')
+    toast.show(apiErrorText(res, t('ai_model_patch_fail', '保存失败')), 'error')
     return false
   } catch (e) {
     toast.show(String((e as Error)?.message || e), 'error')
@@ -439,7 +449,7 @@ async function setEnabled(model: string, next: boolean): Promise<boolean> {
       return true
     }
     rollbackEnabled(model, prev)
-    toast.show(res.error || t('ai_model_toggle_fail', '启用状态保存失败，已还原'), 'error')
+    toast.show(apiErrorText(res, t('ai_model_toggle_fail', '启用状态保存失败，已还原')), 'error')
     return false
   } catch (e) {
     rollbackEnabled(model, prev)
@@ -540,7 +550,7 @@ async function runProbe(model: string) {
     } else {
       probeResults.value = {
         ...probeResults.value,
-        [model]: { ok: false, error: res.error || `HTTP ${res.status}` },
+        [model]: { ok: false, error: apiErrorText(res, `HTTP ${res.status}`) },
       }
     }
   } catch (e) {

@@ -56,16 +56,30 @@ afterEach(() => {
 })
 
 describe('未保存预览：参数校验', () => {
-  it('缺 provider → 400 Invalid provider', async () => {
+  it('缺 provider → 400 Invalid provider（沿用原 error 值）+ 可操作 message + 稳定 code', async () => {
     const res = await preview({ ...BASE, provider: '' })
     expect(res.status).toBe(400)
-    expect(res.body.error).toBe('Invalid provider')
+    expect(res.body.error).toBe('Invalid provider') // 既有契约值不动
+    expect(res.body.code).toBe('INVALID_PROVIDER') // 稳定码：桌面端据此映射人话
+    // 用户实测：只有裸英文 "Invalid provider" 时完全不知道下一步该干什么（自定义网关要选 Custom）
+    expect(String(res.body.message)).toContain('Custom')
+    expect(res.body.message).not.toBe(res.body.error)
   })
 
   it('未知 provider → 400（不能借 provider 字段绕开预设表）', async () => {
     const res = await preview({ ...BASE, provider: 'not-a-preset' })
     expect(res.status).toBe(400)
     expect(res.body.error).toBe('Invalid provider')
+    expect(res.body.code).toBe('INVALID_PROVIDER')
+    expect(String(res.body.message)).toContain('Custom')
+  })
+
+  it('保存路径（POST /providers）同口径：补 message + code，error 原值不变', async () => {
+    const res = await save({ provider: 'not-a-preset', name: 'bad-preset', baseUrl: 'http://127.0.0.1:3800/v1', models: ['m'] })
+    expect(res.status).toBe(400)
+    expect(res.body.error).toBe('Invalid provider')
+    expect(res.body.code).toBe('INVALID_PROVIDER')
+    expect(String(res.body.message)).toContain('Custom')
   })
 
   it('缺 apiKey → 400 apiKey is required（有 key 才能问上游）', async () => {
