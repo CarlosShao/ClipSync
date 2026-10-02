@@ -132,6 +132,55 @@ const putBodies = () =>
   mocks.api.mock.calls.filter((c) => c[0] === 'PUT').map((c) => c[2] as { model: string; patch: Raw })
 const modelSettingCalls = () =>
   mocks.api.mock.calls.filter((c) => String(c[1] || '').startsWith('/api/ai/model-settings'))
+/** 所有写请求（任何 PUT 端点）——"刷新零写入"这类断言只看它 */
+const writeCalls = () => mocks.api.mock.calls.filter((c) => c[0] === 'PUT')
+/** PUT /api/ai/model-settings/batch 的请求体（批量启用/停用走这条） */
+const batchPayloads = () =>
+  mocks.api.mock.calls
+    .filter((c) => String(c[1]) === '/api/ai/model-settings/batch')
+    .map((c) => c[2] as { providerId: string; items: Array<{ model: string; patch: Raw }> })
+
+/**
+ * 迷你服务端（带状态）：GET 返回 live；单条 PUT / batch 把 patch 真的合并进 live 再返回。
+ * 批量操作成功后组件会重新拉取一次，所以 mock 必须"记得住"写入，才能验证界面与库一致。
+ */
+function installLiveApi(live: Raw[], opts: { batchFails?: boolean } = {}) {
+  mocks.api.mockImplementation(async (method: string, path: string, body: Raw) => {
+    const p = String(path)
+    if (method === 'GET' && p.startsWith('/api/ai/model-settings?')) {
+      return { ok: true, status: 200, data: { items: live } }
+    }
+    if (method === 'POST' && p === '/api/ai/model-settings/probe') {
+      return { ok: true, status: 200, data: { ok: true, latencyMs: 5, supportsReasoningParam: 'unknown' } }
+    }
+    if (method === 'PUT' && p === '/api/ai/model-settings/batch') {
+      if (opts.batchFails) return { ok: false, status: 500, error: 'batch boom' }
+      const items = (body.items ?? []) as Array<{ model: string; patch: Raw }>
+      const out: Raw[] = []
+      for (const it of items) {
+        const idx = live.findIndex((x) => x.model === it.model)
+        if (idx < 0) continue
+        const merged: Raw = { ...live[idx] }
+        for (const [k, v] of Object.entries(it.patch)) {
+          if (v !== null) merged[k] = v
+        }
+        merged.isOverridden = true
+        live[idx] = merged
+        out.push(merged)
+      }
+      return { ok: true, status: 200, data: { ok: true, updated: out.length, items: out } }
+    }
+    if (method === 'PUT' && p === '/api/ai/model-settings') {
+      const idx = live.findIndex((x) => x.model === body.model)
+      if (idx < 0) return { ok: true, status: 200, data: { ok: true, item: { model: body.model } } }
+      const merged: Raw = { ...live[idx], ...(body.patch ?? {}) }
+      merged.isOverridden = true
+      live[idx] = merged
+      return { ok: true, status: 200, data: { ok: true, item: merged } }
+    }
+    return { ok: true, status: 200, data: {} }
+  })
+}
 
 async function flush(rounds = 5) {
   for (let i = 0; i < rounds; i++) {
@@ -314,10 +363,10 @@ describe('模型库 — 单排胶囊与启用状态', () => {
   })
 })
 
-/* ===================== ④ 建议条 ===================== */
+/* ===================== ④ 建议条（刷新只读！） ===================== */
 
-describe('模型库 — 刷新后一次性智能建议', () => {
-  it('④ 文案正确；默认只勾选对话模型；三个动作的 PUT 集合正确；关闭后本会话不再出现', async () => {
+describe('模型库 — 刷新后一次性建议（刷新零写入）', () => {
+  it('④ 刷新只读：零 PUT；文案写明「尚未启用」；三个动作只有被点击才写库；关闭后本会话不再出现', async () => {
     const before = [chatOn()]
     const after = [
       chatOn(),
@@ -327,48 +376,56 @@ describe('模型库 — 刷新后一次性智能建议', () => {
     ]
     mocks.api.mockResolvedValueOnce({ ok: true, status: 200, data: { items: before } })
     const m = mountPanel({ models: ['gpt-4o-mini'] })
-    installApi(after) // 第 2 次 GET（刷新后）返回新模型
+    // 覆盖成"带状态的迷你服务端"：第 2 次 GET（刷新后）返回 live，且批量写入会真的改 live
+    installLiveApi(after)
     await flush()
 
-    // 刷新（父组件把 refreshSeq +1）
+    // 刷新（父组件把 refreshSeq +1）—— 只更新"上游有哪些模型"，**一个写请求都不许发**
     await m.setRefreshSeq(1)
 
-    // 建议条文案：N=3 个新模型，M=1 个适合对话，K=2 个音频/图像
-    expect(text()).toContain(tf('ai_model_suggest_text', 'x', { n: 3, m: 1, k: 2 }))
-    // 智能默认值：新对话模型默认勾选（PUT enabled=true），非对话一个都不启用
-    expect(putBodies()).toEqual([{ providerId: PROVIDER_ID, model: 'o3-mini', patch: { enabled: true } }])
-    expect(chipOn('o3-mini')).toBe(true)
+    expect(putBodies()).toEqual([])
+    expect(mocks.api.mock.calls.filter((c) => c[0] === 'PUT')).toEqual([])
 
-    // [全部启用] → 把新批次里两个非对话模型也启用
-    mocks.api.mockClear()
+    // 建议条文案：N=3 个新模型，M=1 个适合对话（**尚未启用**），K=2 个音频/图像
+    expect(text()).toContain(tf('ai_model_suggest_text', 'x', { n: 3, m: 1, k: 2 }))
+    // 新模型一个都没被自动启用
+    expect(chipOn('o3-mini')).toBe(false)
+    expect(chipOn('tts-1')).toBe(false)
+
+    // [全部启用] → 只有点了才写库（这批 3 个新模型全启用）
     buttonByAction('suggest-all')!.click()
     await flush()
+    expect(batchPayloads()).toHaveLength(1)
     expect(
-      putBodies()
-        .map((b) => b.model)
+      batchPayloads()[0]
+        .items.map((i) => i.model)
         .sort(),
-    ).toEqual(['gpt-image-1', 'tts-1'])
-    expect(putBodies().every((b) => b.patch.enabled === true)).toBe(true)
+    ).toEqual(['gpt-image-1', 'o3-mini', 'tts-1'])
+    expect(batchPayloads()[0].items.every((i) => i.patch.enabled === true)).toBe(true)
 
-    // [只启用对话模型] → 再把它们停用（重新应用默认）
+    // [只启用对话模型] → 把新批次里两个非对话模型停用（对话那个已是 true ⇒ 跳过，不做无谓写入）
     mocks.api.mockClear()
     buttonByAction('suggest-chat')!.click()
     await flush()
+    expect(batchPayloads()).toHaveLength(1)
     expect(
-      putBodies()
-        .map((b) => b.model)
+      batchPayloads()[0]
+        .items.map((i) => i.model)
         .sort(),
     ).toEqual(['gpt-image-1', 'tts-1'])
-    expect(putBodies().every((b) => b.patch.enabled === false)).toBe(true)
+    expect(batchPayloads()[0].items.every((i) => i.patch.enabled === false)).toBe(true)
 
-    // [我自己选] → 收起且本会话不再提示
+    // [我自己选] → 零请求、收起、本会话不再提示
+    mocks.api.mockClear()
     buttonByAction('suggest-manual')!.click()
     await flush()
+    expect(writeCalls()).toEqual([])
     expect(buttonByAction('suggest-all')).toBeNull()
 
     mocks.api.mockClear()
     await m.setRefreshSeq(2)
     expect(buttonByAction('suggest-all')).toBeNull()
+    expect(writeCalls()).toEqual([])
 
     m.unmount()
   })
@@ -1718,6 +1775,179 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     expect(plainModelSettingsCalls()).toEqual([])
     expect(resolveCalls().length).toBeGreaterThan(0)
     expect(batchCalls()).toEqual([]) // 保存前一次都不写
+
+    m.unmount()
+  })
+})
+
+/* ===================== 刷新只读 + 批量操作（本轮紧急修复） ===================== */
+
+describe('AIProviderSettings — 刷新零写入 + 批量启用/停用', () => {
+  const SETTINGS = {
+    defaultProviderId: PROVIDER_ID,
+    defaultModel: 'gpt-4o-mini',
+    selectedModels: {},
+    defaultMode: 'ask',
+    thinkingEnabled: false,
+    thinkingStrength: 'medium',
+    memoryEnabled: false,
+    customSystemPrompt: '',
+    searchProvider: '',
+    searchBaseUrl: '',
+    searchHasKey: false,
+  }
+  const PRESETS = [
+    { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+  ]
+  const buttonByActionAny = (action: string) => document.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)
+
+  /** 打开一个已保存供应商的编辑态（带 live 状态的服务端） */
+  async function mountSaved(live: Raw[], opts: { batchFails?: boolean } = {}) {
+    installLiveApi(live, opts)
+    mocks.getProviders.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [{ ...PROVIDER, models: live.map((i) => i.model) }], count: 1 },
+    })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    return m
+  }
+
+  const refreshBtn = () =>
+    Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+
+  it('㊷ 【关键】编辑已保存供应商刷新 169 个 ⇒ 刷新零 PUT、启用数不变、芯片不变成全选', async () => {
+    const keep = ['keep-1', 'keep-2', 'keep-3']
+    const fresh = Array.from({ length: 166 }, (_, i) => `up-${i + 1}`)
+    const live: Raw[] = keep.map((m) => chatOn({ model: m, enabled: true }))
+    // 上游返回 169 个：其中 3 个是已知的 keep-*，166 个是新模型（默认未启用）
+    mocks.getProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: [...keep, ...fresh], count: 169, upstreamEmpty: false, added: 166, previousCount: 3 },
+    })
+    const m = await mountSaved(live)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(3)
+
+    // 服务端把刷新出的模型写进 provider.models（默认**未启用**）⇒ 面板重新拉取时能看到它们
+    live.push(...fresh.map((n) => chatOn({ model: n, enabled: false })))
+    mocks.api.mockClear()
+    refreshBtn().click()
+    await flush(8)
+
+    // ★ 本轮核心：刷新必须是只读的 —— 一个写请求都没有
+    expect(writeCalls()).toEqual([])
+    expect(batchPayloads()).toEqual([])
+    // 启用数仍是 3；169 个芯片里只有原来那 3 个是选中态（绝不全选）
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 3 }))
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(3)
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(169)
+    // 建议条出现，并写明"尚未启用"（纯建议，点按钮才会写库）
+    expect(buttonByActionAny('suggest-all')).toBeTruthy()
+    expect(text()).toContain(tf('ai_model_suggest_text', 'x', { n: 166, m: 166, k: 0 }))
+
+    m.unmount()
+  })
+
+  it('㊸ 工具栏 [只启用对话模型]：只写"需要变更"的那些（对话置 true、非对话置 false）', async () => {
+    const live: Raw[] = [
+      chatOn({ model: 'chat-off', enabled: false }),
+      chatOn({ model: 'chat-on', enabled: true }),
+      nonChat('tts-1', 'audio', { enabled: true }),
+      nonChat('img-1', 'image', { enabled: false }),
+    ]
+    const m = await mountSaved(live)
+
+    buttonByActionAny('bulk-chat-only')!.click()
+    await flush(8)
+
+    expect(batchPayloads()).toHaveLength(1)
+    expect(
+      batchPayloads()[0]
+        .items.map((i) => ({ model: i.model, enabled: i.patch.enabled }))
+        .sort((a, b) => String(a.model).localeCompare(String(b.model))),
+    ).toEqual([
+      { model: 'chat-off', enabled: true }, // 对话模型 → 启用
+      { model: 'tts-1', enabled: false }, // 非对话且当前启用 → 停用
+    ])
+    // 已经是对的状态（chat-on / img-1）不做无谓写入
+
+    m.unmount()
+  })
+
+  it('㊹ [全部启用] 超过 30 个 ⇒ 先二次确认（写明数量），确认后才发 /batch', async () => {
+    const live: Raw[] = Array.from({ length: 40 }, (_, i) => chatOn({ model: `up-${i + 1}`, enabled: false }))
+    const m = await mountSaved(live)
+
+    buttonByActionAny('bulk-enable-all')!.click()
+    await flush()
+    // 未确认：一个写请求都没有
+    expect(writeCalls()).toEqual([])
+    const confirm = document.querySelector<HTMLElement>('.aim-bulk-confirm')!
+    expect(confirm).toBeTruthy()
+    expect(confirm.textContent).toContain(tf('ai_bulk_confirm_enable', 'x', { n: 40 }))
+    expect(confirm.textContent).toContain('40')
+
+    buttonByActionAny('bulk-confirm')!.click()
+    await flush(8)
+    expect(batchPayloads()).toHaveLength(1)
+    expect(batchPayloads()[0].items).toHaveLength(40)
+    expect(batchPayloads()[0].items.every((i) => i.patch.enabled === true)).toBe(true)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(40)
+
+    m.unmount()
+  })
+
+  it('㊺ [全部停用]：确认框写明影响数量，确认后 /batch 把所有已启用模型置 false', async () => {
+    const live: Raw[] = Array.from({ length: 5 }, (_, i) => chatOn({ model: `keep-${i + 1}`, enabled: true }))
+    const m = await mountSaved(live)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(5)
+
+    buttonByActionAny('bulk-disable-all')!.click()
+    await flush()
+    expect(writeCalls()).toEqual([]) // 未确认不写
+    const confirm = document.querySelector<HTMLElement>('.aim-bulk-confirm')!
+    // 整句断言（词典文案里明确写了"配置与自定义值不会丢，只是停用"），并核对影响数量
+    expect(confirm.textContent).toContain(tf('ai_bulk_confirm_disable', 'x', { n: 5 }))
+    expect(confirm.textContent).toContain('5')
+
+    buttonByActionAny('bulk-confirm')!.click()
+    await flush(8)
+    expect(batchPayloads()).toHaveLength(1)
+    expect(batchPayloads()[0].items).toHaveLength(5)
+    expect(batchPayloads()[0].items.every((i) => i.patch.enabled === false)).toBe(true)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(0)
+
+    m.unmount()
+  })
+
+  it('㊻ 批量失败 ⇒ 明确报错 + 重新拉取（界面与库一致），绝不谎报成功', async () => {
+    const live: Raw[] = Array.from({ length: 5 }, (_, i) => chatOn({ model: `keep-${i + 1}`, enabled: true }))
+    const m = await mountSaved(live, { batchFails: true })
+    const getsBefore = modelSettingCalls().filter((c) => c[0] === 'GET').length
+
+    buttonByActionAny('bulk-disable-all')!.click()
+    await flush()
+    buttonByActionAny('bulk-confirm')!.click()
+    await flush(8)
+
+    // 错误反馈（带原因 + 已写入条数）
+    const result = document.querySelector<HTMLElement>('[data-action="bulk-result"]')!
+    expect(result.className).toContain('aim-bulk-result--error')
+    expect(result.textContent).toContain(tf('ai_bulk_fail', 'x', { n: 0, reason: 'batch boom' }))
+    expect(mocks.showToast).toHaveBeenCalledWith(expect.stringContaining('batch boom'), 'error')
+    // 不谎报成功
+    expect(mocks.showToast).not.toHaveBeenCalledWith(expect.stringContaining('已更新'), 'success')
+    // 重新拉取：GET 次数 +1，且界面回到"库里真实的 5 个已启用"
+    expect(modelSettingCalls().filter((c) => c[0] === 'GET').length).toBe(getsBefore + 1)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(5)
 
     m.unmount()
   })

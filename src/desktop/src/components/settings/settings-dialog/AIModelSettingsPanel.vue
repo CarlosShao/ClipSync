@@ -49,6 +49,7 @@ import {
   ALIAS_MAX_LEN,
   APPLICABILITY_LABELS,
   APPLICABILITY_LABEL_KEYS,
+  BATCH_MAX_ITEMS,
   CONTEXT_WINDOW_MAX,
   CONTEXT_WINDOW_MIN,
   MAX_OUTPUT_MAX,
@@ -68,6 +69,7 @@ import {
   probeModelSetting,
   probeStateOf,
   putModelSetting,
+  putModelSettingsBatch,
   resolveModelSettings,
   restoreFieldPatch,
   type ModelApplicability,
@@ -475,7 +477,8 @@ async function load(opts: { announceNew?: boolean } = {}) {
       items.value = normalized
       v3Missing.value = normalized.length > 0 && !normalized.some((i) => i.enabledFromServer)
       if (opts.announceNew) {
-        await announceAndApplyDefault(normalized)
+        // 只读：刷新只更新"上游有哪些模型"，绝不改任何 enabled / selected_models / 模型配置
+        announceNewModels(normalized)
       } else {
         for (const i of normalized) knownModels.add(i.model)
       }
@@ -493,11 +496,16 @@ async function load(opts: { announceNew?: boolean } = {}) {
 }
 
 /**
- * 刷新后的智能默认值：新发现的**对话**模型默认勾选（enabled=true），
- * 音频/图像/嵌入等非对话模型默认不启用（折叠在「不适用对话」组里）。
- * 用户点的是「刷新模型列表」，这就是他要的默认行为；建议条随后让他改成"全部启用"或"我自己选"。
+ * 刷新后**只**给出一次性建议 —— 绝不写库。
+ *
+ * 历史教训（用户实测炸过）：v3 曾把方案里的「M 个适合对话（已勾选）」**照字面实现**成
+ * "刷新后自动把新发现的对话模型置 enabled=true"。那会真的写库（ai_model_settings.enabled /
+ * ai_settings.selected_models）：用户编辑已保存供应商、刷新出 169 个模型，瞬间全变选中态，
+ * 只能一个个点回去、最后删掉整个供应商。
+ * 现在的契约：**刷新 = 只读**。这里只做两件事 —— 记住"哪些是新的"、把建议条显示出来；
+ * 任何 enabled 变更都必须由用户点按钮触发（见 requestBulk / applySuggestion*）。
  */
-async function announceAndApplyDefault(normalized: ModelSettingItem[]) {
+function announceNewModels(normalized: ModelSettingItem[]) {
   const fresh = normalized.filter((i) => !knownModels.has(i.model))
   for (const i of normalized) knownModels.add(i.model)
   if (fresh.length === 0) return
@@ -510,10 +518,6 @@ async function announceAndApplyDefault(normalized: ModelSettingItem[]) {
       nonChat: freshNonChat.map((i) => i.model),
     }
   }
-  // freshChat 是"条目"不是"模型名"，这里必须取 .model（曾因直接当字符串用而静默抛错，被 load 的 catch 吞掉）
-  for (const item of freshChat) {
-    if (!isEnabledByModel(item.model)) await setEnabled(item.model, true)
-  }
 }
 
 function isEnabledByModel(model: string): boolean {
@@ -521,32 +525,174 @@ function isEnabledByModel(model: string): boolean {
   return isEnabled(item)
 }
 
-/** 建议条：[只启用对话模型] = 重新应用默认（对话启用、非对话停用） */
+/** 建议条：[只启用对话模型] —— 仅当用户点按钮时才写库（走批量批口） */
 async function applySuggestionChatOnly() {
   const s = suggestion.value
   if (!s) return
-  await applyEnabledBatch(s.chat, true)
-  await applyEnabledBatch(s.nonChat, false)
+  const targets = [
+    ...s.chat.map((m) => ({ model: m, enabled: true })),
+    ...s.nonChat.map((m) => ({ model: m, enabled: false })),
+  ]
+  await requestBulk('chatOnly', targets)
 }
 
-/** 建议条：[全部启用] = 新模型全部启用（含音频/图像/嵌入） */
+/** 建议条：[全部启用] —— 数量大时二次确认（见 BULK_CONFIRM_THRESHOLD） */
 async function applySuggestionAll() {
   const s = suggestion.value
   if (!s) return
-  await applyEnabledBatch(s.all, true)
+  await requestBulk(
+    'enableAll',
+    s.all.map((m) => ({ model: m, enabled: true })),
+  )
 }
 
-/** 建议条：[我自己选] / 关闭 = 保留当前勾选，不再自动调整；本会话不再提示 */
+/** 建议条：[我自己选] / 关闭 = **什么都不改**（零请求），只收起建议条；本会话不再提示 */
 function dismissSuggestion() {
   suggestion.value = null
   persistSuggestionDismissed()
 }
 
-async function applyEnabledBatch(models: string[], next: boolean) {
-  for (const m of models) {
-    if (isEnabledByModel(m) === next) continue
-    await setEnabled(m, next)
+/* ===================== 批量启用/停用（把"误启用"一键救回来）=====================
+ * 全部走 PUT /api/ai/model-settings/batch（一次 ≤200 条、事务；超限分片），
+ * 带 loading + 结果反馈；失败**绝不假成功**，并重新拉取一次让界面与服务端一致。
+ */
+
+type BulkKind = 'disableAll' | 'chatOnly' | 'enableAll'
+interface BulkTarget {
+  model: string
+  enabled: boolean
+}
+/** 一次要"启用"超过这么多模型时，先二次确认（保护用户，别再来一次 169 个全选） */
+const BULK_CONFIRM_THRESHOLD = 30
+
+const bulkBusy = ref(false)
+const bulkResult = ref<{ kind: 'success' | 'error'; text: string } | null>(null)
+const bulkConfirm = ref<{ kind: BulkKind; items: BulkTarget[]; enabling: number; disabling: number } | null>(null)
+
+/** 当前 provider 下按策略算出"需要变更"的目标（已经是目标状态的模型跳过，不做无谓写入） */
+function bulkTargets(kind: BulkKind): BulkTarget[] {
+  const out: BulkTarget[] = []
+  for (const it of allItems.value) {
+    const now = isEnabled(it)
+    let want: boolean
+    if (kind === 'disableAll') want = false
+    else if (kind === 'enableAll') want = true
+    else want = isChatApplicable(it)
+    if (want === now) continue
+    out.push({ model: it.model, enabled: want })
   }
+  return out
+}
+
+function bulkConfirmText(kind: BulkKind, enabling: number, disabling: number): string {
+  if (kind === 'disableAll') {
+    return tf('ai_bulk_confirm_disable', '将为 {n} 个模型停用：配置与自定义值都不会丢，只是停用，可随时再启用。', {
+      n: disabling,
+    })
+  }
+  if (kind === 'chatOnly') {
+    return tf('ai_bulk_confirm_chat', '将启用 {on} 个对话模型、停用 {off} 个非对话模型。', {
+      on: enabling,
+      off: disabling,
+    })
+  }
+  return tf('ai_bulk_confirm_enable', '将为 {n} 个模型启用配置。', { n: enabling })
+}
+
+/** 入口：算目标 → 需要确认就先挂确认条 → 否则直接执行 */
+async function requestBulk(kind: BulkKind, targets?: BulkTarget[]) {
+  if (bulkBusy.value) return
+  const items = (targets ?? bulkTargets(kind)).filter((t) => isEnabledByModel(t.model) !== t.enabled)
+  if (items.length === 0) {
+    bulkResult.value = { kind: 'success', text: t('ai_bulk_noop', '没有需要变更的模型') }
+    toast.show(bulkResult.value.text, 'success')
+    return
+  }
+  const enabling = items.filter((t) => t.enabled).length
+  const disabling = items.length - enabling
+  // 破坏性批量（全部停用）一律确认；任何"要启用 >30 个"的批量也都确认
+  if (kind === 'disableAll' || enabling > BULK_CONFIRM_THRESHOLD) {
+    bulkConfirm.value = { kind, items, enabling, disabling }
+    return
+  }
+  await executeBulk(kind, items, enabling, disabling)
+}
+
+function cancelBulk() {
+  bulkConfirm.value = null
+}
+
+async function confirmBulk() {
+  const c = bulkConfirm.value
+  if (!c) return
+  bulkConfirm.value = null
+  await executeBulk(c.kind, c.items, c.enabling, c.disabling)
+}
+
+/** 真正执行：分片 batch + loading + 结果反馈；成功/失败都重新拉取一次以与服务端对齐 */
+async function executeBulk(kind: BulkKind, items: BulkTarget[], enabling: number, disabling: number) {
+  bulkBusy.value = true
+  bulkResult.value = null
+  let written = 0
+  try {
+    for (let i = 0; i < items.length; i += BATCH_MAX_ITEMS) {
+      const chunk = items.slice(i, i + BATCH_MAX_ITEMS)
+      const res = await putModelSettingsBatch(
+        props.providerId || '',
+        chunk.map((t) => ({ model: t.model, patch: { enabled: t.enabled } })),
+      )
+      if (!res.ok) {
+        // 如实报错（含已写入的条数），并重新拉取 —— 绝不留下"看着成功其实没写"
+        const reason = apiErrorText(res, t('ai_bulk_fail_default', '批量操作失败'))
+        bulkResult.value = {
+          kind: 'error',
+          text: tf('ai_bulk_fail', '批量操作失败（已写入 {n} 条）：{reason}', { n: written, reason }),
+        }
+        toast.show(bulkResult.value.text, 'error')
+        await load()
+        return
+      }
+      written += chunk.length
+    }
+    bulkResult.value = {
+      kind: 'success',
+      text: tf('ai_bulk_ok', '已更新 {n} 个模型（{what}）', {
+        n: written,
+        what: bulkKindText(kind, enabling, disabling),
+      }),
+    }
+    toast.show(bulkResult.value.text, 'success')
+    await load()
+  } catch (e) {
+    const reason = (e as Error)?.message || String(e)
+    bulkResult.value = {
+      kind: 'error',
+      text: tf('ai_bulk_fail', '批量操作失败（已写入 {n} 条）：{reason}', { n: written, reason }),
+    }
+    toast.show(bulkResult.value.text, 'error')
+    await load()
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+function bulkKindText(kind: BulkKind, enabling: number, disabling: number): string {
+  if (kind === 'disableAll') return tf('ai_bulk_what_disable', '停用 {n} 个', { n: disabling })
+  if (kind === 'chatOnly') {
+    return tf('ai_bulk_what_chat', '对话模型启用 {on} 个 / 其余停用 {off} 个', { on: enabling, off: disabling })
+  }
+  return tf('ai_bulk_what_enable', '启用 {n} 个', { n: enabling })
+}
+
+/** 工具栏三个批量按钮 */
+async function bulkDisableAll() {
+  await requestBulk('disableAll')
+}
+async function bulkChatOnly() {
+  await requestBulk('chatOnly')
+}
+async function bulkEnableAll() {
+  await requestBulk('enableAll')
 }
 
 /* ===================== 写操作 ===================== */
@@ -1401,7 +1547,7 @@ watch(
         </div>
       </div>
 
-      <!-- 搜索 / 筛选 -->
+      <!-- 搜索 / 筛选 + 批量启用/停用（把"误启用"一键救回来） -->
       <div class="aim-toolbar">
         <Input v-model="search" class="aim-search" :placeholder="t('ai_model_search_ph', '搜索模型名 / 别名')" />
         <button
@@ -1424,6 +1570,64 @@ watch(
         </button>
       </div>
 
+      <!-- 批量操作：只在这里（用户主动点）才会写库；刷新永远不会写 -->
+      <div class="aim-bulk">
+        <button
+          type="button"
+          class="aim-filter"
+          data-action="bulk-disable-all"
+          :disabled="bulkBusy || enabledCount === 0"
+          :title="t('ai_bulk_disable_h', '把当前供应商下所有已启用模型停用（配置不会丢）')"
+          @click="bulkDisableAll"
+        >
+          {{ t('ai_bulk_disable_all', '全部停用') }}
+        </button>
+        <button
+          type="button"
+          class="aim-filter"
+          data-action="bulk-chat-only"
+          :disabled="bulkBusy"
+          :title="t('ai_bulk_chat_h', '只启用适合对话的模型，其余全部停用')"
+          @click="bulkChatOnly"
+        >
+          {{ t('ai_model_suggest_chat_only', '只启用对话模型') }}
+        </button>
+        <button
+          type="button"
+          class="aim-filter"
+          data-action="bulk-enable-all"
+          :disabled="bulkBusy"
+          :title="t('ai_bulk_enable_h', '启用当前供应商下全部模型（数量大时会先二次确认）')"
+          @click="bulkEnableAll"
+        >
+          {{ t('ai_model_suggest_all', '全部启用') }}
+        </button>
+        <span v-if="bulkBusy" class="aim-bulk-running">{{ t('ai_bulk_running', '正在写入…') }}</span>
+      </div>
+
+      <!-- 二次确认（破坏性批量 / 一次启用过多）：写明影响数量；确认前一个请求都不发 -->
+      <div v-if="bulkConfirm" class="aim-bulk-confirm">
+        <span class="aim-bulk-confirm-text">
+          {{ bulkConfirmText(bulkConfirm.kind, bulkConfirm.enabling, bulkConfirm.disabling) }}
+        </span>
+        <button type="button" class="aim-mini" data-action="bulk-confirm" :disabled="bulkBusy" @click="confirmBulk">
+          {{ t('ai_bulk_confirm_ok', '确认执行') }}
+        </button>
+        <button type="button" class="aim-mini" data-action="bulk-cancel" :disabled="bulkBusy" @click="cancelBulk">
+          {{ t('cancel_btn', '取消') }}
+        </button>
+      </div>
+
+      <!-- 批量结果（成功 N 条 / 失败原因），不谎报成功 -->
+      <div
+        v-if="bulkResult"
+        class="aim-bulk-result"
+        :class="`aim-bulk-result--${bulkResult.kind}`"
+        data-action="bulk-result"
+      >
+        {{ bulkResult.text }}
+      </div>
+
       <div v-if="loading" class="aim-cfg-note">{{ t('ai_model_cfg_loading', '正在读取预设配置…') }}</div>
       <div v-else-if="loadError" class="aim-cfg-note aim-cfg-note--warn">
         <span>{{
@@ -1440,13 +1644,14 @@ watch(
         }}
       </div>
 
-      <!-- 刷新后一次性智能建议条（非阻断） -->
+      <!-- 刷新后的一次性**纯建议**（非阻断）：刷新只读，这里一个请求都不会发；
+           只有点下面的按钮才会写库 -->
       <div v-if="suggestion" class="aim-suggest">
         <div class="aim-suggest-text">
           {{
             tf(
               'ai_model_suggest_text',
-              '发现 {n} 个新模型：{m} 个适合对话（已勾选）· {k} 个为音频/图像/嵌入（已折叠）',
+              '发现 {n} 个新模型：{m} 个适合对话（尚未启用）· {k} 个为音频/图像/嵌入（已折叠）',
               {
                 n: suggestion.all.length,
                 m: suggestion.chat.length,
@@ -1456,20 +1661,38 @@ watch(
           }}
         </div>
         <div class="aim-suggest-actions">
-          <button type="button" class="aim-mini" data-action="suggest-chat" @click="applySuggestionChatOnly">
+          <button
+            type="button"
+            class="aim-mini"
+            data-action="suggest-chat"
+            :disabled="bulkBusy"
+            @click="applySuggestionChatOnly"
+          >
             {{ t('ai_model_suggest_chat_only', '只启用对话模型') }}
           </button>
-          <button type="button" class="aim-mini" data-action="suggest-all" @click="applySuggestionAll">
+          <button
+            type="button"
+            class="aim-mini"
+            data-action="suggest-all"
+            :disabled="bulkBusy"
+            @click="applySuggestionAll"
+          >
             {{ t('ai_model_suggest_all', '全部启用') }}
           </button>
-          <button type="button" class="aim-mini" data-action="suggest-manual" @click="dismissSuggestion">
+          <button
+            type="button"
+            class="aim-mini"
+            data-action="suggest-manual"
+            :disabled="bulkBusy"
+            @click="dismissSuggestion"
+          >
             {{ t('ai_model_suggest_manual', '我自己选') }}
           </button>
           <button
             type="button"
             class="aim-icon aim-suggest-x"
             data-action="suggest-close"
-            :title="t('ai_model_suggest_dismiss_h', '收起建议（本会话不再提示，已勾选的保持现状）')"
+            :title="t('ai_model_suggest_dismiss_h', '收起建议（本会话不再提示，什么都不会改）')"
             @click="dismissSuggestion"
           >
             <X :size="13" />
@@ -2065,6 +2288,56 @@ html.reduce-motion .aim-draft-card {
   background: var(--accent-bg);
   border-color: var(--accent);
   color: var(--accent);
+}
+.aim-filter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 批量启用/停用（只有点这里才会写库） */
+.aim-bulk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.aim-bulk-running {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+.aim-bulk-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.aim-bulk-confirm-text {
+  flex: 1;
+  min-width: 220px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.aim-bulk-result {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.aim-bulk-result--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.aim-bulk-result--error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
 }
 
 /* 建议条 */
