@@ -8,7 +8,7 @@
 //    选 XHigh 后的 payload 是 thinkingStrength='xhigh'（PUT /api/ai/settings）。
 //    本文件把界面语言固定成中文 → 顺带证明这些档位**不走 i18n 翻译**（中英 locale 写的是同一份英文）。
 // ② AI 侧栏（AiChatComposer）思考等级选择器：同样 5 档英文 + 保留「关闭思考」，选 Max 外抛 'max'，
-//    并把回流值渲染回触发按钮（代理 / 模型两个下拉原样不动）。
+//    并把回流值渲染回触发按钮；同一行的「模式（问答/代理）」「模型」两个下拉仍可用（未被改坏）。
 // ③ 持久化：normalize 放行 xhigh / max 且脏值兜底 medium；localStorage 瞬时回退 round-trip；
 //    saveSettings 把 'max' 原样写进 PUT body。
 //
@@ -48,6 +48,7 @@ import { createApp, h, nextTick, ref, type Component } from 'vue'
 import AIProviderSettings from '../settings/settings-dialog/AIProviderSettings.vue'
 import AiChatComposer from '../ai/AiChatComposer.vue'
 import { getSettings, saveSettings } from '@/api/ai'
+import { useI18n } from '@/composables/useI18n'
 import {
   THINKING_STRENGTHS,
   THINKING_STRENGTH_LABELS,
@@ -58,6 +59,8 @@ import {
 } from '@/utils/aiThinking'
 
 const PROVIDER_ID = '11111111-2222-3333-4444-555555555555'
+
+const { t } = useI18n()
 
 /* ===================== 工具 ===================== */
 
@@ -135,9 +138,9 @@ describe('思考强度（AI 侧栏 AiChatComposer）', () => {
         h(AiChatComposer as Component, {
           disabled: false,
           isStreaming: false,
-          providers: [],
-          selectedProviderId: '',
-          selectedModel: '',
+          providers: [PROVIDER],
+          selectedProviderId: PROVIDER_ID,
+          selectedModel: 'gpt-4o-mini',
           thinkingEnabled: true,
           thinkingStrength: strength.value,
           mode: 'ask',
@@ -168,9 +171,27 @@ describe('思考强度（AI 侧栏 AiChatComposer）', () => {
     await flush()
 
     expect(emitted).toEqual(['max'])
-    // 回流后触发按钮变成 Max（选择器关掉 Popover、代理/模型两个下拉不受影响）
+    // 回流后触发按钮变成 Max（选择器关掉 Popover）
     expect(trimmed(document.querySelector('.ai-tag-btn'))).toContain('Max')
     expect(document.querySelector('.ai-popup')).toBeNull()
+
+    // 旁边的「模式（问答/代理）」与「模型」两个下拉原样可用，没有被本次改动弄坏
+    const tagButtons = () => Array.from(document.querySelectorAll<HTMLButtonElement>('.ai-tag-btn'))
+    tagButtons()[1].click()
+    await flush()
+    const modeLabels = Array.from(document.querySelector('.ai-popup')?.querySelectorAll('button') || []).map((b) =>
+      trimmed(b),
+    )
+    expect(modeLabels).toEqual([t('ai_mode_ask'), t('ai_mode_agent')])
+    tagButtons()[1].click()
+    await flush()
+    expect(document.querySelector('.ai-popup')).toBeNull()
+
+    tagButtons()[2].click()
+    await flush()
+    const modelPopup = document.querySelector('.ai-popup') as HTMLElement
+    expect(modelPopup).not.toBeNull()
+    expect(trimmed(modelPopup)).toContain('gpt-4o-mini')
 
     m.unmount()
   })
