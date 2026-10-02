@@ -1182,70 +1182,62 @@ html.app-font-kai body samp {
   color: var(--accent, #4f6bed);
 }
 
-/* ===== Sonner toast 皮肤（唯一来源，覆盖本文件上方的旧 sonner 段与 styles/sonner-theme.css）=====
-   换皮动机（用户）："皮肤实在太丑了，跟系统反差太大"。
-   反差的两个来源：① <Toaster :rich-colors="true"> 的饱和绿/红底色；
-                   ② 本项目曾有两套皮肤（本文件上方 + styles/sonner-theme.css）互相打架。
-   现统一为一份，全部走 design token：底色/边框/圆角/阴影与卡片一致，
-   **语义只用「左侧 3px 色条 + 图标着色」表达**，不再有整块饱和底。
-   选择器同时带 [data-styled] 并用 !important，确保压过旧段（旧段选择器更具体）。 */
+/* ===== Sonner toast：回归 shadcn-vue 官方做法（只做变量映射，外观交还 vue-sonner 原生）=====
+   背景（诊断过程，值得留给后人）：
+     · 本项目底座**就是 shadcn-vue 的 Sonner**（vue-sonner），官网那套好看的效果 = vue-sonner 原生样式；
+     · 但项目里叠了**两层自定义皮肤**把它盖掉了 ——
+         styles/sonner-theme.css（整段建在 [data-rich-colors='true'] 上）
+         globals.css 上方的 "Clearline toast" 段（选择器更具体，实际生效）
+       ⇒ 观感是"被改造过的四不像"；我上一版又叠了第三层，还加了 overflow:hidden 把关闭按钮裁掉。
+   现在照 shadcn-vue 官方组件（components/ui/sonner）的做法：
+     ① 在 toaster 上定义官方变量（--normal-* / --success-* / --error-* / --warning-* / --info-*）
+        映射到本项目 token；② 只补少量 geometry 断言，把被旧皮肤改坏的形状拉回原生。
+   官方变量名见 vue-sonner 文档；未定义的变量会退回 Sonner 内置值 —— 这正是我们要的"原生"。 */
+[data-sonner-toaster] {
+  --normal-bg: var(--bg-surface);
+  --normal-text: var(--text-primary);
+  --normal-border: var(--border-default);
+  --success-bg: var(--bg-surface);
+  --success-text: var(--text-primary);
+  --success-border: var(--success, #22c55e);
+  --error-bg: var(--bg-surface);
+  --error-text: var(--text-primary);
+  --error-border: var(--danger);
+  --warning-bg: var(--bg-surface);
+  --warning-text: var(--text-primary);
+  --warning-border: var(--warning);
+  --info-bg: var(--bg-surface);
+  --info-text: var(--text-primary);
+  --info-border: var(--accent);
+}
+/* geometry 复位：只把旧皮肤动过的形状拉回原生（其余一律不碰） */
 [data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
-  position: relative !important;
-  background: var(--bg-surface) !important;
-  border: 1px solid var(--border-default) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-elevated) !important;
-  color: var(--text-primary) !important;
-  padding: 11px 12px 11px 15px !important;
-  font-size: 12.5px !important;
-  overflow: hidden !important;
+  background: var(--normal-bg) !important;
+  color: var(--normal-text) !important;
+  border: 1px solid var(--normal-border) !important;
+  --toast-gap: 10px;
+  border-radius: 8px !important;
+  padding: 14px 32px 14px 16px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+  font-size: 13px !important;
+  /* 不能再有 overflow:hidden（会把卡片外的关闭按钮裁掉） */
+  overflow: visible !important;
 }
 [data-sonner-toaster] [data-sonner-toast][data-styled='true']::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='success']::before {
-  background: var(--success, #22c55e);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='error']::before {
-  background: var(--danger);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='warning']::before {
-  background: var(--warning);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='info']::before {
-  background: var(--accent);
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon] {
-  color: var(--success, #22c55e) !important;
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon] {
-  color: var(--danger) !important;
-}
-[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon] {
-  color: var(--warning) !important;
+  display: none !important;
 }
 [data-sonner-toaster] [data-sonner-toast] [data-title] {
-  color: var(--text-primary) !important;
-  font-size: 12.5px !important;
-  font-weight: 600 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
 }
 [data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: var(--text-secondary) !important;
-  font-size: 11.5px !important;
+  font-size: 12px !important;
+  opacity: 0.75 !important;
 }
+/* 关闭按钮保持在原生位置（卡片右上角外侧），只修裁切问题 */
 [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
-  background: var(--bg-hover) !important;
-  border: 1px solid var(--border-default) !important;
-  color: var(--text-secondary) !important;
-}
-[data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
-  color: var(--text-primary) !important;
+  width: 20px !important;
+  height: 20px !important;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-sonner-toaster] [data-sonner-toast] {
