@@ -51,6 +51,11 @@ const loading = ref(false)
 const modelRefreshSeq = ref(0)
 // 手工添加的模型名（上游 /models 没列出、或想先填一个）：Enter/「添加」加入启用集合
 const formManualModel = ref('')
+// 草稿态（未保存）刷新出来的**候选**模型：上游返回、未落库，默认不选中；点一下加入/移出待保存集合。
+// 本轮缺陷：草稿态没有 providerId ⇒ 模型库面板无从渲染，刷出来的 159 个模型必须在这里立刻可见。
+const draftCandidates = ref<string[]>([])
+// 上一次刷新返回的模型总数：芯片区计数必须等于刷新真正返回的数量（不再出现「报了 N 个但页面空」）
+const lastRefreshCount = ref<number | null>(null)
 
 const editingId = ref<string | null>(null)
 const formProvider = ref('')
@@ -366,6 +371,53 @@ function onEnabledModelsChange(list: string[]) {
   formSelectedModels.value = [...list]
 }
 
+/** 草稿态候选芯片 = 上游候选 ∪ 手工添加的模型（手工的也要可见、可点取消） */
+const draftChipList = computed(() => {
+  const out = [...draftCandidates.value]
+  for (const m of formSelectedModels.value) if (!out.includes(m)) out.push(m)
+  return out
+})
+
+/** 草稿态点击候选芯片：选中 / 取消（草稿语义 = 候选，默认一个都不选中） */
+function toggleDraftModel(m: string) {
+  const idx = formSelectedModels.value.indexOf(m)
+  if (idx >= 0) formSelectedModels.value = formSelectedModels.value.filter((x) => x !== m)
+  else formSelectedModels.value = [...formSelectedModels.value, m]
+}
+
+/** 草稿候选芯片的 tooltip（已选中/未选中，说清保存后的效果） */
+function draftChipTitle(m: string): string {
+  return formSelectedModels.value.includes(m)
+    ? tf('ai_draft_chip_on_h', '{name}：已选中（保存后启用）', { name: m })
+    : tf('ai_draft_chip_off_h', '{name}：未选中，点击选中', { name: m })
+}
+
+/** 「报了 N 个却渲染不出来」时的可见说明（绝不空白） */
+const draftBrokenText = computed(() =>
+  tf('ai_models_status_unreadable', '已获取 {n} 个模型，但当前无法展示：{reason}', {
+    n: lastRefreshCount.value ?? 0,
+    reason: t('ai_models_unreadable_reason', '响应里没有可识别的 models 列表'),
+  }),
+)
+
+/**
+ * 芯片区计数：「上游 N 个 · 已启用 M 个模型」；没刷新过就只显示已启用数。
+ * 上游数用**刷新返回的数量**，与芯片渲染同一个 list —— 不会再出现两个互相矛盾的数。
+ */
+const modelsCountText = computed(() => {
+  const selected = tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.value.length })
+  if (lastRefreshCount.value === null) return selected
+  return tf('ai_models_upstream_count', '上游 {n} 个', { n: lastRefreshCount.value }) + ' · ' + selected
+})
+
+/**
+ * 防御：刷新报了 N>0，但候选芯片一个都渲染不出来（数据形状不认识等）⇒ 必须给出可见说明，
+ * **空白是最糟的结果**。正常路径不会命中（成功分支一定带非空 list）。
+ */
+const draftRenderBroken = computed(
+  () => !editingId.value && (lastRefreshCount.value ?? 0) > 0 && draftChipList.value.length === 0,
+)
+
 /**
  * 供应商表单 / 刷新模型 / 搜索源测试的失败文案。
  *
@@ -457,12 +509,32 @@ async function refreshModels() {
       return
     }
 
-    const list = Array.isArray(res.data.models) ? res.data.models : []
+    // ①b 响应形状不认识（200 但 models 不是数组）：既不假成功、也不留白 —— 用服务端报的数量
+    //     如实说明「已获取 N 个但展示不了」并给出重试（本轮缺陷的姊妹形态：有数但看不见）。
+    const payload = res.data as { models?: unknown; count?: number }
+    const rawModels = payload.models
+    if (!Array.isArray(rawModels)) {
+      const reason = t('ai_models_unreadable_reason', '响应里没有可识别的 models 列表')
+      modelsRefresh.value = {
+        kind: 'error',
+        text: tf('ai_models_status_unreadable', '已获取 {n} 个模型，但当前无法展示：{reason}', {
+          n: typeof payload.count === 'number' ? payload.count : 0,
+          reason,
+        }),
+      }
+      toast.show(reason, 'error')
+      return
+    }
+    const list = rawModels
+      .filter((m): m is string => typeof m === 'string' && m.trim() !== '')
+      .map((m) => m.trim())
     // ② 上游**合法**返回 0 个模型：不是成功 —— 按 warning 提示（用户实测就是因为这里弹了 success
     //    才一直发现不了问题），服务端已按契约把库里的列表更新为合法空列表。
     if (res.data.upstreamEmpty === true || list.length === 0) {
+      lastRefreshCount.value = 0
+      draftCandidates.value = []
       // 库里的 models 已按契约被更新为合法空列表 → 让模型库面板重新拉取，UI 不显示与库里不一致的旧列表
-      modelRefreshSeq.value += 1
+      if (editingId.value) modelRefreshSeq.value += 1
       modelsRefresh.value = {
         kind: 'empty',
         text: tf('ai_models_status_empty', '上次刷新 {time}：上游返回 0 个模型，请检查该网关是否提供 /v1/models', {
@@ -475,7 +547,17 @@ async function refreshModels() {
 
     // ③ 成功且 N>0：added 由服务端按刷新前的已存列表算出（预览模式没给就只报总数）
     const added = typeof res.data.added === 'number' ? res.data.added : null
-    modelRefreshSeq.value += 1
+    // 计数用刷新真正返回的数量（与芯片渲染同一个 list）：失败/形状异常时不清它
+    lastRefreshCount.value = list.length
+    if (editingId.value) {
+      // 已保存供应商：列表已落库，模型库面板重新拉取即可（草稿候选区退场）
+      draftCandidates.value = []
+      modelRefreshSeq.value += 1
+    } else {
+      // 草稿态（未保存）：没有 providerId，模型库面板无从渲染 ⇒ 立刻把候选芯片渲染出来，
+      // 让用户「刷到了就能看见、点一下就选上」，不必先保存。
+      draftCandidates.value = [...list]
+    }
     modelsRefresh.value = {
       kind: 'success',
       text:
@@ -544,7 +626,19 @@ async function save() {
       //（AI 侧边栏默认只在 open=true 切换时 loadProviders，常驻打开时不刷新）
       window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
       await load()
-      resetForm()
+      // 草稿候选退场：模型库（编辑态面板）接管
+      draftCandidates.value = []
+      // 保存成功**不再关表单**：切成「编辑该供应商」，让模型库无缝接管（草稿态的候选集合已写进 models）。
+      // 之前这里 resetForm() 会把表单关掉，用户刚选好的模型立刻从眼前消失，还得重新找编辑入口。
+      const saved = res.data
+      const fresh = (saved && providers.value.find((p) => p.id === saved.id)) || saved
+      if (fresh) {
+        startEdit(fresh)
+        // 覆盖「保存后」路径：面板（编辑态）立刻重新拉取 model-settings
+        modelRefreshSeq.value += 1
+      } else {
+        resetForm()
+      }
     } else {
       formError.value = providerErrorText(res, t('ai_save_failed'))
     }
@@ -777,9 +871,8 @@ onMounted(() => {
               <RefreshCw v-if="!refreshingModels" :size="12" />
               {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
             </Button>
-            <span class="ai-models-count">
-              {{ tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.length }) }}
-            </span>
+            <!-- 计数用**刷新返回的数量**：不会再出现「报了 159 个但页面空」 -->
+            <span class="ai-models-count">{{ modelsCountText }}</span>
           </div>
 
           <!-- 防线 ②：provider 为空时把"为什么点不了 + 该选什么"直接写在按钮下面，
@@ -807,6 +900,36 @@ onMounted(() => {
             </button>
           </div>
 
+          <!-- 草稿态（未保存）刷新出来的**候选**模型：立刻可见、点一下就选中，不必先保存。
+               本轮缺陷：这里以前一个芯片都没有，用户刷出 159 个却看不到任何模型。 -->
+          <div v-if="!editingId && (draftChipList.length > 0 || draftRenderBroken)" class="ai-draft-models">
+            <div class="ai-draft-models-head">{{ t('ai_draft_models_title', '候选模型（草稿态，默认不选中）') }}</div>
+            <div v-if="draftChipList.length" class="ai-draft-chips">
+              <button
+                v-for="m in draftChipList"
+                :key="m"
+                type="button"
+                class="ai-draft-chip"
+                :class="{ on: formSelectedModels.includes(m) }"
+                :data-model="m"
+                :title="draftChipTitle(m)"
+                @click="toggleDraftModel(m)"
+              >
+                {{ m }}
+              </button>
+            </div>
+            <!-- 绝不空白：报了数量却渲染不出来时，给出可见说明 + 重试 -->
+            <div v-else class="ai-draft-models-broken">
+              {{ draftBrokenText }}
+              <button type="button" class="ai-refresh-status-retry" :disabled="refreshingModels" @click="refreshModels">
+                {{ t('retry', '重试') }}
+              </button>
+            </div>
+            <div class="ai-draft-models-hint">
+              {{ t('ai_draft_models_hint', '点一下选中 / 取消；保存后即可逐个配置这些模型的上下文、多模态与推理协议。') }}
+            </div>
+          </div>
+
           <!-- 模型库：单排胶囊（启用/停用）+ 行内图标操作（自检/配置/停用/清除自定义值）+ 折叠分组 -->
           <AIModelSettingsPanel
             v-if="editingId"
@@ -815,8 +938,21 @@ onMounted(() => {
             :refresh-seq="modelRefreshSeq"
             @update:enabled-models="onEnabledModelsChange"
           />
-          <div v-else class="ai-format-hint">
-            {{ t('ai_model_cfg_need_save', '先保存该供应商，保存后即可逐个配置模型的参数与预设。') }}
+          <!-- 草稿态降级：没有 providerId ⇒ 不去打 model-settings（会 404/空），
+               只说明「保存后可逐个配置」+ 就近的保存按钮（别让用户到处找） -->
+          <div v-else class="ai-draft-cfg">
+            <span class="ai-draft-cfg-text">
+              {{ t('ai_model_cfg_need_save', '保存后可逐个配置这些模型的上下文 / 多模态 / 推理协议。') }}
+            </span>
+            <Button
+              size="sm"
+              class="ai-draft-cfg-save shrink-0 whitespace-nowrap"
+              data-action="draft-save"
+              :disabled="saving"
+              @click="save"
+            >
+              {{ saving ? t('ai_saving') : t('ai_save') }}
+            </Button>
           </div>
         </div>
 
@@ -1353,6 +1489,79 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* 草稿态候选芯片：上游刷出来的模型立刻可见（默认不选中，点一下选中） */
+.ai-draft-models {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface, transparent);
+}
+.ai-draft-models-head {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.ai-draft-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.ai-draft-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ai-draft-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ai-draft-chip.on {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.ai-draft-models-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.ai-draft-models-broken {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--danger);
+}
+/* 草稿态配置降级：说明 + 就近保存按钮 */
+.ai-draft-cfg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+}
+.ai-draft-cfg-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.ai-draft-cfg-save {
+  height: 32px;
+  padding: 0 14px;
 }
 .ai-models-hint {
   font-size: 11px;

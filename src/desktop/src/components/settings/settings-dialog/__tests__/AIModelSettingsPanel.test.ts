@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   getPresets: vi.fn(),
   getProviderModels: vi.fn(),
   fetchProviderModels: vi.fn(),
+  createProvider: vi.fn(),
+  updateProvider: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   can: vi.fn(),
@@ -48,8 +50,8 @@ vi.mock('@/composables/useMenuAccess', () => ({
 vi.mock('@/api/ai', () => ({
   getProviders: mocks.getProviders,
   getPresets: mocks.getPresets,
-  createProvider: vi.fn(),
-  updateProvider: vi.fn(),
+  createProvider: mocks.createProvider,
+  updateProvider: mocks.updateProvider,
   deleteProvider: vi.fn(),
   testProvider: vi.fn(),
   getProviderModels: mocks.getProviderModels,
@@ -1254,6 +1256,205 @@ describe('AIProviderSettings — 供应商为空（草稿态）不再被带沟�
   })
 })
 
+/* ===================== 草稿态刷新后必须看得见模型（本轮缺陷） ===================== */
+
+describe('AIProviderSettings — 草稿态刷新成功后模型可见（本轮缺陷：假成功但页面空白）', () => {
+  const statusEl = () => document.querySelector<HTMLElement>('.ai-refresh-status')
+  const statusText = () => statusEl()?.textContent || ''
+  const inputByPh = (ph: string) => document.querySelector<HTMLInputElement>(`input[placeholder="${ph}"]`)
+  const refreshBtn = () =>
+    Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+  const draftChips = () => document.querySelectorAll<HTMLButtonElement>('.ai-draft-chip')
+
+  const SETTINGS = {
+    defaultProviderId: PROVIDER_ID,
+    defaultModel: 'gpt-4o-mini',
+    selectedModels: {},
+    defaultMode: 'ask',
+    thinkingEnabled: false,
+    thinkingStrength: 'medium',
+    memoryEnabled: false,
+    customSystemPrompt: '',
+    searchProvider: '',
+    searchBaseUrl: '',
+    searchHasKey: false,
+  }
+  const PRESETS = [
+    { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+  ]
+
+  function wire(providers: unknown[]) {
+    mocks.getProviders.mockResolvedValue({ ok: true, status: 200, data: { items: providers, count: providers.length } })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    installApi([chatOn(), chatOff()])
+  }
+
+  /** 草稿态（新增供应商）：填好 base/key 并刷新一次，返回刷新用的模型列表 */
+  async function mountDraftAndRefresh(models: unknown[], extraData: Record<string, unknown> = {}) {
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models, count: Array.isArray(models) ? models.length : 0, upstreamEmpty: false, ...extraData },
+    })
+    wire([])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    buttonByLabel(t('ai_add_provider')).click()
+    await flush()
+    await setValue(inputByPh(t('ai_base_url_ph'))!, 'http://host.docker.internal:3800/v1')
+    await setValue(inputByPh(t('ai_api_key_ph'))!, 'sk-local')
+    await flush()
+    refreshBtn().click()
+    await flush()
+    return m
+  }
+
+  it('㉛ 草稿态刷新 159 个 → 候选芯片立刻渲染，计数=刷新返回数量，默认不选中、点一下即选中', async () => {
+    const models = Array.from({ length: 159 }, (_, i) => `m-${i + 1}`)
+    const m = await mountDraftAndRefresh(models, { added: 159, previousCount: 0 })
+
+    // ★ 本轮缺陷：以前这里一个芯片都没有（159 个模型只落在内存里、页面空白）
+    expect(draftChips()).toHaveLength(159)
+    expect(draftChips()[0].textContent).toContain('m-1')
+    // 计数必须等于刷新真正返回的数量（不再出现"159 个"但页面空）
+    expect(text()).toContain(tf('ai_models_upstream_count', 'x', { n: 159 }))
+    // 草稿态语义 = 候选：默认一个都不选中
+    expect(document.querySelectorAll('.ai-draft-chip.on')).toHaveLength(0)
+
+    // 点一下即选中，再点一下取消
+    draftChips()[0].click()
+    await flush()
+    expect(document.querySelectorAll('.ai-draft-chip.on')).toHaveLength(1)
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 1 }))
+    draftChips()[0].click()
+    await flush()
+    expect(document.querySelectorAll('.ai-draft-chip.on')).toHaveLength(0)
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 0 }))
+
+    m.unmount()
+  })
+
+  it('㉜ 草稿态**不调用** model-settings 接口；配置面板降级为"保存后可配置"说明 + 就近保存按钮', async () => {
+    const m = await mountDraftAndRefresh(['local-1', 'local-2'])
+
+    // 没有 providerId ⇒ 一次都不许打 model-settings（否则 404/空）
+    expect(modelSettingCalls()).toHaveLength(0)
+
+    // 降级说明 + 就近的「保存」主按钮
+    const note = document.querySelector<HTMLElement>('.ai-draft-cfg')
+    expect(note).toBeTruthy()
+    expect(note!.textContent).toContain(t('ai_model_cfg_need_save'))
+    const cta = document.querySelector<HTMLButtonElement>('[data-action="draft-save"]')
+    expect(cta).toBeTruthy()
+    expect((cta!.textContent || '').trim()).toBe(t('ai_save'))
+    expect(cta!.disabled).toBe(false)
+
+    // 候选芯片仍然可见（草稿态不等于"什么都不给看"）
+    expect(draftChips()).toHaveLength(2)
+
+    m.unmount()
+  })
+
+  it('㉝ 草稿态保存成功 → 选中集合写进 models、表单切成编辑态、自动拉取并渲染模型库（无缝接管）', async () => {
+    const NEW_ID = 'feedface-0000-1111-2222-333344445555'
+    const models = ['local-1', 'local-2', 'local-3']
+    mocks.createProvider.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROVIDER, id: NEW_ID, models: ['local-2'] },
+    })
+    const m = await mountDraftAndRefresh(models)
+
+    // 填名字 + 勾一个候选
+    await setValue(inputByPh(t('ai_name_ph'))!, 'Local GW')
+    await flush()
+    draftChips()[1].click()
+    await flush()
+    expect(draftChips()[1].classList.contains('on')).toBe(true)
+
+    buttonByLabel(t('ai_save')).click()
+    await flush(8)
+
+    // ① 草稿态的选中集合写进 models 落库
+    expect(mocks.createProvider).toHaveBeenCalledTimes(1)
+    const payload = mocks.createProvider.mock.calls[0][0] as { models: string[]; name: string }
+    expect(payload.name).toBe('Local GW')
+    expect(payload.models).toEqual(['local-2'])
+
+    // ② 保存成功后自动重新拉取 model-settings，模型库无缝接管（草稿候选区退场）
+    expect(modelSettingCalls().filter((c) => c[0] === 'GET')).toHaveLength(1)
+    expect(document.querySelectorAll('.aim-chip').length).toBeGreaterThan(0)
+    expect(draftChips()).toHaveLength(0)
+    expect(document.querySelector('.aim-row[data-model="gpt-4o-mini"]')).toBeTruthy()
+    // 表单仍在（切到编辑态），模型库就在原位
+    expect(document.querySelector('.ai-form')).toBeTruthy()
+
+    m.unmount()
+  })
+
+  it('㉞ 刷新返回不可识别形状（200 但 models 不是数组）→ 可见说明 + 重试，绝不空白、也不假成功', async () => {
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      // 服务端报了 159 个，但响应里没有可识别的 models 列表
+      data: { count: 159 },
+    })
+    wire([])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    buttonByLabel(t('ai_add_provider')).click()
+    await flush()
+    await setValue(inputByPh(t('ai_base_url_ph'))!, 'http://host.docker.internal:3800/v1')
+    await setValue(inputByPh(t('ai_api_key_ph'))!, 'sk-local')
+    await flush()
+    refreshBtn().click()
+    await flush()
+
+    // 必须给出可见说明（含服务端报的数量）+ 重试；页面不得留白
+    expect(statusEl()).toBeTruthy()
+    expect(statusText()).toContain(
+      tf('ai_models_status_unreadable', 'x', { n: 159, reason: t('ai_models_unreadable_reason') }),
+    )
+    expect(statusEl()!.className).toContain('ai-refresh-status--error')
+    expect(document.querySelector('.ai-refresh-status-retry')).toBeTruthy()
+    // 不假成功：不能弹「已刷新」success
+    expect(mocks.showToast).not.toHaveBeenCalledWith(expect.stringContaining('已刷新'), 'success')
+    expect(draftChips()).toHaveLength(0)
+
+    m.unmount()
+  })
+
+  it('㉟ 已保存供应商刷新不回归：不出现草稿候选区，仍走模型库，计数含上游数量', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: ['gpt-4o-mini', 'o3-mini'], count: 2, upstreamEmpty: false, added: 1, previousCount: 1 },
+    })
+    wire([PROVIDER])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(2)
+
+    refreshBtn().click()
+    await flush()
+
+    expect(mocks.getProviderModels).toHaveBeenCalledTimes(1)
+    expect(draftChips()).toHaveLength(0) // 草稿候选区只在未保存时出现
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(2)
+    // 编辑态 1 次 + 刷新后自动再拉 1 次
+    expect(modelSettingCalls().filter((c) => c[0] === 'GET')).toHaveLength(2)
+    expect(text()).toContain(tf('ai_models_upstream_count', 'x', { n: 2 }))
+    expect(document.querySelector('.ai-draft-cfg')).toBeNull()
+
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()
@@ -1261,6 +1462,8 @@ beforeEach(() => {
   mocks.getPresets.mockReset()
   mocks.getProviderModels.mockReset()
   mocks.fetchProviderModels.mockReset()
+  mocks.createProvider.mockReset()
+  mocks.updateProvider.mockReset()
   mocks.getSettings.mockReset()
   mocks.can.mockReset()
   mocks.can.mockReturnValue(true)
