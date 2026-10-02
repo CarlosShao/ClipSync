@@ -230,4 +230,30 @@ describe('FeedbackDialog — 应用内反馈工单', () => {
 
     m.unmount()
   })
+
+  it('⑤ 分类下拉可选，所选分类写入 payload.category', async () => {
+    const m = mountDialog()
+    await flush()
+
+    await setValue(titleInput(), '主题切换闪烁')
+    await setValue(contentInput(), '在浅色/深色之间切换时，列表会闪一下')
+    // 打开分类下拉 → 选「问题反馈」（服务端白名单里的 bug）
+    const trigger = document.querySelector('.fb-select .custom-select-trigger') as HTMLButtonElement
+    trigger.click()
+    await flush()
+    const options = Array.from(document.querySelectorAll('.custom-select-option'))
+    expect(options).toHaveLength(5)
+    const bugOption = options.find((o) => (o.textContent || '').includes(t('fb_cat_bug')))
+    expect(bugOption).toBeTruthy()
+    ;(bugOption as HTMLElement).click()
+    await flush()
+
+    buttonByLabel(t('fb_submit')).click()
+    await flush()
+
+    expect(mocks.api).toHaveBeenCalledTimes(1)
+    expect(mocks.api.mock.calls[0][2].category).toBe('bug')
+
+    m.unmount()
+  })
 })
