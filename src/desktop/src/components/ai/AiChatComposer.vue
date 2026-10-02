@@ -360,7 +360,7 @@ function setStrength(s: ThinkingStrength) {
   closePopups()
 }
 
-/** 档位文案：直接英文（Low/Medium/High/XHigh/Max），不翻译成"低/中/高" */
+/** 档位文案：直接英文（Low/Medium/High/Xhigh/Max），不翻译成"低/中/高" */
 function strengthLabel(s: ThinkingStrength) {
   return t(`ai_strength_${s}`, THINKING_STRENGTH_LABELS[s])
 }

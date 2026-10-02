@@ -19,7 +19,7 @@ export const THINKING_STRENGTH_LABELS: Record<ThinkingStrength, string> = {
   low: 'Low',
   medium: 'Medium',
   high: 'High',
-  xhigh: 'XHigh',
+  xhigh: 'Xhigh',
   max: 'Max',
 }
 

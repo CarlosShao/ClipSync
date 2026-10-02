@@ -4,8 +4,8 @@
 // 冻结契约 v2：枚举 5 档、原样透传上游、不再有 reasoningLevels 映射表；
 // 前端白名单（TS 联合类型 + 持久化归一）必须放行 xhigh / max。
 //
-// ① 设置页（AIProviderSettings）「思考强度」下拉：5 个英文选项 Low/Medium/High/XHigh/Max，
-//    选 XHigh 后的 payload 是 thinkingStrength='xhigh'（PUT /api/ai/settings）。
+// ① 设置页（AIProviderSettings）「思考强度」下拉：5 个英文选项 Low/Medium/High/Xhigh/Max，
+//    选 Xhigh 后的 payload 是 thinkingStrength='xhigh'（PUT /api/ai/settings）。
 //    本文件把界面语言固定成中文 → 顺带证明这些档位**不走 i18n 翻译**（中英 locale 写的是同一份英文）。
 // ② AI 侧栏（AiChatComposer）思考等级选择器：同样 5 档英文 + 保留「关闭思考」，选 Max 外抛 'max'，
 //    并把回流值渲染回触发按钮；同一行的「模式（问答/代理）」「模型」两个下拉仍可用（未被改坏）。
@@ -90,7 +90,7 @@ const trimmed = (el: Element | null) => (el?.textContent || '').trim()
 /* ===================== ① 设置页：5 档英文 + 提交 payload ===================== */
 
 describe('思考强度（设置页 AIProviderSettings）', () => {
-  it('① 下拉渲染 5 个英文档位（含 XHigh / Max），选 XHigh 提交 thinkingStrength=xhigh', async () => {
+  it('① 下拉渲染 5 个英文档位（含 Xhigh / Max），选 Xhigh 提交 thinkingStrength=xhigh', async () => {
     const m = mount(AIProviderSettings as Component)
     await flush()
 
@@ -105,14 +105,14 @@ describe('思考强度（设置页 AIProviderSettings）', () => {
     await flush()
 
     const options = Array.from(row?.querySelectorAll('.custom-select-option') || [])
-    expect(options.map((o) => trimmed(o))).toEqual(['Low', 'Medium', 'High', 'XHigh', 'Max'])
+    expect(options.map((o) => trimmed(o))).toEqual(['Low', 'Medium', 'High', 'Xhigh', 'Max'])
     // 中英 locale 都是英文 ⇒ 中文界面下也不会出现"轻量/均衡/深度"
     const rowText = row?.textContent || ''
     for (const zhWord of ['轻量', '均衡', '深度']) {
       expect(rowText.includes(zhWord)).toBe(false)
     }
 
-    const xhigh = options.find((o) => trimmed(o) === 'XHigh') as HTMLElement
+    const xhigh = options.find((o) => trimmed(o) === 'Xhigh') as HTMLElement
     expect(xhigh).toBeTruthy()
     xhigh.click()
     await flush()
@@ -121,7 +121,7 @@ describe('思考强度（设置页 AIProviderSettings）', () => {
     const put = mocks.api.mock.calls.find((c) => c[0] === 'PUT' && c[1] === '/api/ai/settings')
     expect(put).toBeTruthy()
     expect(put?.[2]).toEqual({ thinkingStrength: 'xhigh' })
-    expect(trimmed(document.querySelector('.ai-pref-row--sub .custom-select-trigger'))).toContain('XHigh')
+    expect(trimmed(document.querySelector('.ai-pref-row--sub .custom-select-trigger'))).toContain('Xhigh')
 
     m.unmount()
   })
@@ -164,7 +164,7 @@ describe('思考强度（AI 侧栏 AiChatComposer）', () => {
     expect(popup).not.toBeNull()
     const labels = Array.from(popup.querySelectorAll('button')).map((b) => trimmed(b))
     // 5 档英文 + 保留「关闭思考」（off）
-    expect(labels).toEqual(['Low', 'Medium', 'High', 'XHigh', 'Max', '关闭思考'])
+    expect(labels).toEqual(['Low', 'Medium', 'High', 'Xhigh', 'Max', '关闭思考'])
 
     const maxBtn = Array.from(popup.querySelectorAll('button')).find((b) => trimmed(b) === 'Max') as HTMLElement
     maxBtn.click()
@@ -206,7 +206,7 @@ describe('思考强度（5 档白名单 / 持久化）', () => {
       low: 'Low',
       medium: 'Medium',
       high: 'High',
-      xhigh: 'XHigh',
+      xhigh: 'Xhigh',
       max: 'Max',
     })
 
