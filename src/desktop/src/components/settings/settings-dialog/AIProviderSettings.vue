@@ -23,6 +23,7 @@ import {
   testSearchConfig,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
+import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
 
 const { t, tf, tMsg } = useI18n()
 const toast = useSonner()
@@ -35,6 +36,9 @@ const aiCategoriesEnabled = computed(() => can('feature.ai_categories'))
 const providers = ref<AiProvider[]>([])
 const presets = ref<AiProviderPreset[]>([])
 const loading = ref(false)
+// 模型级配置面板（每个模型单独配置上下文窗口/最大输出/多模态/推理协议）。
+// 刷新模型列表后由 refreshModels() 调 reload() 自动拉取预设值，用户无需手动点。
+const modelPanelRef = ref<InstanceType<typeof AIModelSettingsPanel> | null>(null)
 
 const editingId = ref<string | null>(null)
 const formProvider = ref('')
@@ -356,6 +360,8 @@ async function refreshModels() {
         selected.add(list[0])
       }
       formSelectedModels.value = Array.from(selected)
+      // 刷新成功后自动拉取模型级配置（GET /api/ai/model-settings），把预设值与来源标记展示出来
+      void modelPanelRef.value?.reload()
       toast.show(t('ai_models_refreshed'), 'success')
     } else {
       toast.show(tMsg(res.error) || t('ai_models_refresh_fail'), 'error')
@@ -658,6 +664,17 @@ onMounted(() => {
               <RefreshCw v-if="!refreshingModels" :size="12" />
               {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
             </Button>
+          </div>
+
+          <!-- 模型级配置：每个已选模型一行，点「配置」展开上下文/最大输出/多模态/推理协议 + 恢复预设 -->
+          <AIModelSettingsPanel
+            v-if="editingId"
+            ref="modelPanelRef"
+            :provider-id="editingId"
+            :models="formSelectedModels"
+          />
+          <div v-else class="ai-format-hint">
+            {{ t('ai_model_cfg_need_save', '先保存该供应商，保存后即可逐个配置模型的参数与预设。') }}
           </div>
         </div>
 

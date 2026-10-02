@@ -36,7 +36,11 @@ const XSS_PAYLOADS = [
 ]
 
 describe('vue/no-v-html —— 报警器本身不得再被拔电', () => {
-  it('eslint 扁平配置里该规则的最终生效值必须是 error，且任何一段都不许设成 off', async () => {
+  // 超时放宽到 20s：本条用例要动态 import eslint.config.js，即把整套 ESLint 工具链
+  // （typescript-eslint / eslint-plugin-vue / prettier 插件…）拉起来，独占跑就要 ~4.5s，
+  // 与其它 jsdom 用例并行时贴着 vitest 默认的 5s 上限（新增模型配置用例后实测 4.4–4.7s）。
+  // 只放宽等待时间，断言口径一字未改。
+  it('eslint 扁平配置里该规则的最终生效值必须是 error，且任何一段都不许设成 off', { timeout: 20_000 }, async () => {
     // eslint.config.js 是纯 JS 无 .d.ts（tsconfig 未开 allowJs）⇒ 这里只借它读扁平配置数组
     // @ts-expect-error TS7016: Could not find a declaration file for module '../../../eslint.config.js'
     const mod = (await import('../../../eslint.config.js')) as {
