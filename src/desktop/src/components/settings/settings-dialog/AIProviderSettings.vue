@@ -45,19 +45,21 @@ const aiCategoriesEnabled = computed(() => can('feature.ai_categories'))
 const providers = ref<AiProvider[]>([])
 const presets = ref<AiProviderPreset[]>([])
 const loading = ref(false)
-// 模型级配置面板（每个模型单独配置上下文窗口/最大输出/多模态/推理协议）。
-// 刷新模型列表后由 refreshModels() 调 reload() 自动拉取预设值，用户无需手动点。
-const modelPanelRef = ref<InstanceType<typeof AIModelSettingsPanel> | null>(null)
+// 模型库面板（单排胶囊启用/停用 + 每行自检/配置/停用/清除自定义值 + 折叠分组）由下面模板渲染；
+// 刷新模型列表成功 → modelRefreshSeq +1，面板据此自己重新拉取并按新模型给出一次性智能建议
+// （父组件不再需要持有面板实例：全部通过 props/emit 单向数据流交互）。
+const modelRefreshSeq = ref(0)
+// 手工添加的模型名（上游 /models 没列出、或想先填一个）：Enter/「添加」加入启用集合
+const formManualModel = ref('')
 
 const editingId = ref<string | null>(null)
 const formProvider = ref('')
 const formName = ref('')
 const formApiKey = ref('')
 const formBaseUrl = ref('')
-// 多选：该配置已启用的模型（tags 形式）
+// 该配置已启用的模型：由模型库面板的单排胶囊（enabled）驱动；面板变更后会同步回来，
+// 保存供应商时作为 models 数组落库（与服务端 enabled → selected_models 的一致性由此保证）
 const formSelectedModels = ref<string[]>([])
-// 上游刷新得到的完整模型列表（用于点选）
-const formModels = ref<string[]>([])
 const formIsDefault = ref(false)
 // 上下文窗口用字符串承载（兼容 type=number 的 Input v-model），提交时再转 number
 const formContextWindow = ref<string>('')
@@ -298,7 +300,8 @@ function resetForm() {
   formApiKey.value = ''
   formBaseUrl.value = ''
   formSelectedModels.value = []
-  formModels.value = []
+  formManualModel.value = ''
+  modelRefreshSeq.value = 0
   formIsDefault.value = false
   formContextWindow.value = ''
   formApiFormat.value = 'openai'
@@ -314,7 +317,8 @@ function startEdit(p: AiProvider) {
   formApiKey.value = '' // 不回显密钥；留空表示不修改
   formBaseUrl.value = p.base_url || ''
   formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
-  formModels.value = Array.isArray(p.models) ? [...p.models] : []
+  formManualModel.value = ''
+  modelRefreshSeq.value = 0
   formIsDefault.value = p.is_default
   formContextWindow.value = p.context_window != null ? String(p.context_window) : ''
   // 回显自定义供应商的协议格式（历史数据无 api_format 时默认 openai）
@@ -322,13 +326,19 @@ function startEdit(p: AiProvider) {
   formError.value = ''
 }
 
-function toggleModel(m: string) {
-  const idx = formSelectedModels.value.indexOf(m)
-  if (idx >= 0) {
-    formSelectedModels.value = formSelectedModels.value.filter((x) => x !== m)
-  } else {
+/** 手工添加模型名：加入启用集合（面板会立刻渲染该行；服务端下次读取也会把它纳入候选） */
+function addManualModel() {
+  const m = formManualModel.value.trim()
+  if (!m) return
+  if (!formSelectedModels.value.includes(m)) {
     formSelectedModels.value = [...formSelectedModels.value, m]
   }
+  formManualModel.value = ''
+}
+
+/** 模型库面板回传的启用集合：同步进供应商表单，保证保存时 models 与胶囊的真实状态一致 */
+function onEnabledModelsChange(list: string[]) {
+  formSelectedModels.value = [...list]
 }
 
 /**
@@ -374,17 +384,9 @@ async function refreshModels() {
         })
       : await getProviderModels(editingId.value as string)
     if (res.ok && res.data) {
-      const list = res.data.models || []
-      formModels.value = list
-      // 把当前已选但不在新列表里的模型合并进去，避免用户先手工输入后被刷新清空
-      const selected = new Set([...formSelectedModels.value, ...list.filter((m) => formSelectedModels.value.includes(m))])
-      // 若当前未选任何模型，默认勾选第一个
-      if (selected.size === 0 && list.length > 0) {
-        selected.add(list[0])
-      }
-      formSelectedModels.value = Array.from(selected)
-      // 刷新成功后自动拉取模型级配置（GET /api/ai/model-settings），把预设值与来源标记展示出来
-      void modelPanelRef.value?.reload()
+      // 刷新成功：把刷新序号 +1 交给模型库面板 —— 它会重新拉取配置（GET /api/ai/model-settings），
+      // 并把新模型里的对话模型默认勾选、音频/图像/嵌入折叠且不启用，同时给出一条可关闭的智能建议。
+      modelRefreshSeq.value += 1
       toast.show(t('ai_models_refreshed'), 'success')
     } else {
       toast.show(providerErrorText(res, t('ai_models_refresh_fail')), 'error')
@@ -638,44 +640,20 @@ onMounted(() => {
 
         <div class="ai-field">
           <label class="ai-label">{{ t('ai_model') }}</label>
-          <!-- 已选模型以 tag 形式展示，可直接删除；亦可从下方列表点选添加 -->
-          <div v-if="formSelectedModels.length" class="ai-models">
-            <div class="ai-models-tags">
-              <button
-                v-for="m in formSelectedModels"
-                :key="m"
-                type="button"
-                class="ai-model-tag ai-model-tag--selected"
-                @click="toggleModel(m)"
-              >
-                {{ m }}
-                <span class="ai-model-remove">×</span>
-              </button>
-            </div>
+          <!-- 手工添加模型名（上游 /models 未列出 / 想先填一个）：加入启用集合 -->
+          <div class="ai-model-add">
+            <Input v-model="formManualModel" :placeholder="t('ai_model_ph')" @keydown.enter.prevent="addManualModel" />
+            <Button
+              size="sm"
+              variant="outline"
+              class="shrink-0 whitespace-nowrap"
+              :disabled="!formManualModel.trim()"
+              @click="addManualModel"
+            >
+              {{ t('ai_model_add', '添加') }}
+            </Button>
           </div>
-          <Input
-            v-model="formSelectedModels[formSelectedModels.length - 1]"
-            :placeholder="t('ai_model_ph')"
-            @keydown.enter.prevent="
-              ($event.target as HTMLInputElement)?.value &&
-                toggleModel(($event.target as HTMLInputElement).value)
-            "
-          />
-          <div v-if="formModels.length" class="ai-models">
-            <div class="ai-models-hint">{{ t('ai_models_hint') }}</div>
-            <div class="ai-models-tags">
-              <button
-                v-for="m in formModels"
-                :key="m"
-                type="button"
-                class="ai-model-tag"
-                :class="{ active: formSelectedModels.includes(m) }"
-                @click="toggleModel(m)"
-              >
-                {{ m }}
-              </button>
-            </div>
-          </div>
+          <div class="ai-models-hint">{{ t('ai_models_hint') }}</div>
           <div class="ai-models-actions">
             <Button
               size="sm"
@@ -687,14 +665,18 @@ onMounted(() => {
               <RefreshCw v-if="!refreshingModels" :size="12" />
               {{ refreshingModels ? t('ai_refreshing') : t('ai_refresh_models') }}
             </Button>
+            <span class="ai-models-count">
+              {{ tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.length }) }}
+            </span>
           </div>
 
-          <!-- 模型级配置：每个已选模型一行，点「配置」展开上下文/最大输出/多模态/推理协议 + 恢复预设 -->
+          <!-- 模型库：单排胶囊（启用/停用）+ 行内图标操作（自检/配置/停用/清除自定义值）+ 折叠分组 -->
           <AIModelSettingsPanel
             v-if="editingId"
-            ref="modelPanelRef"
             :provider-id="editingId"
             :models="formSelectedModels"
+            :refresh-seq="modelRefreshSeq"
+            @update:enabled-models="onEnabledModelsChange"
           />
           <div v-else class="ai-format-hint">
             {{ t('ai_model_cfg_need_save', '先保存该供应商，保存后即可逐个配置模型的参数与预设。') }}
@@ -1229,57 +1211,11 @@ onMounted(() => {
 .ai-default-row {
   padding: 10px 4px;
 }
-.ai-models {
-  margin-top: 10px;
-}
-.ai-models-tags {
+/* 手工添加模型：输入框 + 添加按钮同一行 */
+.ai-model-add {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ai-model-tag {
-  padding: 4px 10px;
-  border: 1px solid var(--border-default);
-  border-radius: 999px;
-  background: transparent;
-  font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.ai-model-tag:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-.ai-model-tag.active {
-  background: var(--accent-bg);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 500;
-}
-.ai-model-tag--selected {
-  background: var(--accent-bg);
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 500;
-  padding-right: 8px;
-}
-.ai-model-remove {
-  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-bg);
-  font-size: 10px;
-  line-height: 1;
-}
-.ai-model-tag--selected:hover .ai-model-remove {
-  background: var(--danger);
-  color: var(--danger-foreground);
+  gap: 8px;
 }
 .ai-models-hint {
   font-size: 11px;
@@ -1287,11 +1223,14 @@ onMounted(() => {
   margin-top: 6px;
 }
 .ai-models-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-top: 10px;
 }
-.ai-models-actions :deep(.ai-model-tag svg) {
-  display: inline-block;
-  vertical-align: middle;
+.ai-models-count {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
 }
 .ai-error {
   color: var(--danger);
