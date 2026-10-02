@@ -20,7 +20,6 @@ import { logger } from './logger.js'
 import { lookupBuiltinContextWindow } from './aiProviders.js'
 import {
   resolveModelPreset,
-  normalizeReasoningLevels,
   REASONING_PROTOCOLS,
 } from './modelPresets.js'
 
@@ -76,13 +75,10 @@ export function mergeModelSettings(model, preset, row) {
     ? Math.floor(Number(row.max_output))
     : (hasValue(p.maxOutput) ? Number(p.maxOutput) : null)
 
+  // 推理协议：覆盖行 ← 预设（白名单之外的脏值一律回退 inherit）
   const protocol = REASONING_PROTOCOLS.includes(row?.reasoning_protocol)
     ? row.reasoning_protocol
     : (REASONING_PROTOCOLS.includes(p.reasoningProtocol) ? p.reasoningProtocol : 'inherit')
-
-  // 等级映射：预设 ← 覆盖行（行内只保留 low/medium/high 的合法值）
-  const rowLevels = row ? normalizeReasoningLevels(row.reasoning_levels) : {}
-  const reasoningLevels = { ...(p.reasoningLevels || {}), ...rowLevels }
 
   return {
     model,
@@ -96,7 +92,9 @@ export function mergeModelSettings(model, preset, row) {
     supportsAudio: row ? row.supports_audio === true : p.supportsAudio === true,
     reasoningEnabled: row ? row.reasoning_enabled === true : p.reasoningEnabled === true,
     reasoningProtocol: protocol,
-    reasoningLevels,
+    // ⚠️ 已废弃：ai_model_settings.reasoning_levels（等级映射表）不再读取、不再对外暴露。
+    // 契约 v2 起思考等级原样透传（见 utils/modelPresets.js 头部说明）；
+    // 列本身保留在库里但不参与任何计算（不删列 = 不做破坏性迁移）。
     isPreset: p.matched === true,
     isOverridden: !!row,
     presetRuleId: p.ruleId || null,

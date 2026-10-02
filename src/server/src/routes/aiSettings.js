@@ -3,6 +3,9 @@ import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { logger } from '../utils/logger.js'
 import { encrypt } from '../utils/encryption.js'
+// 思考强度白名单与迁移 082 的 ai_settings_thinking_strength_check 一致（5 档，默认 medium）。
+// 单一事实来源：utils/modelPresets.js THINKING_STRENGTHS（聊天链路下发时用同一份列表）。
+import { THINKING_STRENGTHS } from '../utils/modelPresets.js'
 
 const router = Router()
 
@@ -16,6 +19,8 @@ const DEFAULTS = {
   selectedModels: {},
   defaultMode: 'ask',
   thinkingEnabled: false,
+  // 思考强度：low | medium | high | xhigh | max（迁移 082 放宽；默认 medium）。
+  // 契约 v2：等级**原样**下发到上游（不做低/中/高翻译、不查映射表），非法值一律忽略（保留已存值/默认值）。
   thinkingStrength: 'medium',
   // 长程记忆开关：是否把用户记忆注入 AI system prompt（Agent-F）
   memoryEnabled: false,
@@ -42,7 +47,9 @@ function sanitize(input, existing) {
   }
   if (b.defaultMode === 'ask' || b.defaultMode === 'agent') o.defaultMode = b.defaultMode
   if (typeof b.thinkingEnabled === 'boolean') o.thinkingEnabled = b.thinkingEnabled
-  if (['low', 'medium', 'high'].includes(b.thinkingStrength)) o.thinkingStrength = b.thinkingStrength
+  // 思考强度：白名单（5 档）之外的值一律忽略 —— 保留已存值 / 默认 medium，绝不放行任意字符串
+  //（既有的兜底逻辑不变；DB 侧另有 CHECK 约束兜底，见迁移 082）。
+  if (THINKING_STRENGTHS.includes(b.thinkingStrength)) o.thinkingStrength = b.thinkingStrength
   if (typeof b.memoryEnabled === 'boolean') o.memoryEnabled = b.memoryEnabled
   if (typeof b.customSystemPrompt === 'string') o.customSystemPrompt = b.customSystemPrompt
   // 联网搜索源：provider 必须在白名单内，空串 = 未配置（走管理台全局兜底）

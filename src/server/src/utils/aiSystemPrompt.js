@@ -235,6 +235,10 @@ const THINKING_STRENGTH = {
   low: 'Think step by step briefly.',
   medium: 'Think step by step with moderate detail.',
   high: 'Think step by step with thorough analysis.',
+  // 契约 v2 新增两档（与 ai_settings.thinking_strength 的 5 档枚举一致，见迁移 082）。
+  // 这里只是系统提示词的措辞强化，**不是**推理参数映射：等级原样下发到上游。
+  xhigh: 'Think step by step with very thorough analysis; verify each step before answering.',
+  max: 'Think step by step with maximum depth and rigor; exhaustively verify every step before answering.',
 };
 
 // 在角色系统提示词基础上，复用前端的思考/agent 增强逻辑（#212）：

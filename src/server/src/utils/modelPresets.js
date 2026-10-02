@@ -11,15 +11,23 @@
  *    **不编造**精确数字。所有非 null 的上下文窗口都能追溯到下面注释的官方文档或
  *    aiProviders.js 内置 MODEL_CONTEXT_WINDOWS（同一数字，避免两处互相矛盾）。
  *
- * 推理协议（reasoningProtocol）白名单与语义：
+ * 推理协议（reasoningProtocol）白名单与语义（**契约 v2：等级原样透传，不再查映射表**）：
  *   - 'inherit'                  沿用既有行为。OpenAI 兼容族=不下发（既有行为就是不下发），
  *                                Anthropic 族=沿用原 thinking / output_config 逻辑。
  *                                **这是安全底线**：不支持的协议绝不塞未知字段（会 400）。
  *   - 'none'                     该模型明确不支持任何推理参数（如 step-explore）→ 一律不下发。
- *   - 'openai_reasoning_effort'  body.reasoning_effort = levels[strength]（OpenAI o 系 / gpt-5）
- *   - 'anthropic_thinking'       body.thinking = { type:'enabled', budget_tokens: levels[strength] }
- *   - 'output_config_effort'     body.output_config = { effort: levels[strength] }（Anthropic 兼容网关）
- *   - 'qwen_enable_thinking'     body.enable_thinking = true（+ 支持时一并下发 thinking_budget）
+ *   - 'openai_reasoning_effort'  body.reasoning_effort = strength 字面值（OpenAI o 系 / gpt-5）
+ *   - 'anthropic_thinking'       body.thinking = { type:'enabled', budget_tokens: <内部换算值> }
+ *   - 'output_config_effort'     body.output_config = { effort: strength 字面值 }（Anthropic 兼容网关）
+ *   - 'qwen_enable_thinking'     body.enable_thinking = true（+ 支持时一并下发 thinking_budget，
+ *                                同样是**内部换算**出的数字）
+ *
+ * ⚠️ 已废弃：reasoningLevels（「思考强度 → 该协议取值」的用户可配映射表，迁移 081 引入）
+ *   用户要求「不用管映射，把思考强度映射那个配置去掉」⇒ 等级一律原样透传，
+ *   本文件不再定义/读取等级映射，routes/aiModelSettings.js 也不再对外暴露该字段
+ *   （DB 列 ai_model_settings.reasoning_levels 保留但不再读写，避免破坏性迁移）。
+ *   唯一保留的「等级 → 数字」换算只有 Anthropic/Qwen 的预算（见 ANTHROPIC_BUDGET_TOKENS），
+ *   它是协议硬要求（budget_tokens 必须是数字）的内部细节，不是用户可配项。
  */
 
 /** 推理协议白名单（路由层校验 + DB 语义，必须与迁移 081 注释保持一致） */
@@ -32,21 +40,30 @@ export const REASONING_PROTOCOLS = [
   'qwen_enable_thinking',
 ]
 
-/** 思考强度取值（与 ai_settings.thinking_strength 一致） */
-export const THINKING_STRENGTHS = ['low', 'medium', 'high']
-
-/** 字符串型等级映射（OpenAI reasoning_effort / output_config.effort 用） */
-export const EFFORT_LEVELS = { low: 'low', medium: 'medium', high: 'high' }
+/**
+ * 思考强度取值（与迁移 082 放宽后的 ai_settings.thinking_strength CHECK 一致）：
+ * low | medium | high | xhigh | max（默认 medium）。
+ * 老客户端只发 low|medium|high 依旧合法（契约向后兼容）。
+ */
+export const THINKING_STRENGTHS = ['low', 'medium', 'high', 'xhigh', 'max']
 
 /**
- * Anthropic budget_tokens 等级映射：沿用 routes/aiChatCore.js 原有口径
- * （low 1024 / medium 4096 / high 8192），保证改造前后同一开关得到同一预算，不产生行为漂移。
+ * Anthropic extended thinking 的 budget_tokens **内部换算表**（代码内部使用）：
+ * 协议要求该字段必须是数字，而契约 v2 的等级是字符串 ⇒ 只有这里做一次换算。
+ *   low 1024 / medium 4096 / high 8192 沿用改造前 routes/aiChatCore.js 的口径（零行为漂移）；
+ *   xhigh 16384 / max 32768 为本次新增的两档。
+ * ⚠️ 这是内部换算，**不是**用户可配的映射（用户可配的 reasoningLevels 已按要求移除）。
+ * qwen_enable_thinking 的 thinking_budget 复用同一张表（同样是数字字段）。
  */
-export const BUDGET_LEVELS = { low: 1024, medium: 4096, high: 8192 }
+export const ANTHROPIC_BUDGET_TOKENS = { low: 1024, medium: 4096, high: 8192, xhigh: 16384, max: 32768 }
+
+/** 需要数字预算（而非等级字符串）的协议：buildReasoningRequest 按此决定 value 的形态 */
+const NUMERIC_BUDGET_PROTOCOLS = new Set(['anthropic_thinking', 'qwen_enable_thinking'])
 
 /**
  * 预设规则表（**有序**，首个命中即返回；越具体越靠前）。
- * 每项字段：match 正则、上下文窗口、最大输出、四种模态能力、推理协议/开关/等级映射、依据 note。
+ * 每项字段：match 正则、上下文窗口、最大输出、四种模态能力、推理协议/开关、依据 note。
+ * （不再有 reasoningLevels：契约 v2 起等级原样透传，见文件头部说明）
  */
 const MODEL_PRESET_RULES = [
   // ==================== StepFun（阶跃星辰） ====================
@@ -107,7 +124,6 @@ const MODEL_PRESET_RULES = [
     supportsImage: true, // o1 / o3 / o4-mini 官方支持图片输入
     reasoningProtocol: 'openai_reasoning_effort',
     reasoningEnabled: true,
-    reasoningLevels: EFFORT_LEVELS,
     note: 'OpenAI o 系（o1/o3/o4-mini）官方支持 reasoning_effort=low|medium|high',
   },
   {
@@ -117,8 +133,7 @@ const MODEL_PRESET_RULES = [
     supportsImage: true,
     reasoningProtocol: 'openai_reasoning_effort',
     reasoningEnabled: true,
-    reasoningLevels: EFFORT_LEVELS,
-    note: 'GPT-5 系支持 reasoning_effort（low/medium/high）',
+    note: 'GPT-5 系支持 reasoning_effort（low/medium/high；xhigh/max 由用户按模型选择，原样透传）',
   },
   {
     id: 'gpt-4.1',
@@ -187,8 +202,9 @@ const MODEL_PRESET_RULES = [
     supportsImage: true,
     reasoningProtocol: 'anthropic_thinking',
     reasoningEnabled: true,
-    reasoningLevels: BUDGET_LEVELS,
-    note: 'Claude 3.5/3.7/4 系支持 extended thinking（body.thinking.budget_tokens），等级沿用既有 1024/4096/8192',
+    note:
+      'Claude 3.5/3.7/4 系支持 extended thinking（body.thinking.budget_tokens）；' +
+      '等级 → 预算为代码内部换算（1024/4096/8192/16384/32768），不是用户可配映射',
   },
 
   // ==================== Google Gemini（OpenAI 兼容网关） ====================
@@ -221,8 +237,7 @@ const MODEL_PRESET_RULES = [
     contextWindow: null,
     reasoningProtocol: 'qwen_enable_thinking',
     reasoningEnabled: true,
-    reasoningLevels: BUDGET_LEVELS,
-    note: 'qwen3 / qwq 系：DashScope OpenAI 兼容模式支持 enable_thinking（+thinking_budget）',
+    note: 'qwen3 / qwq 系：DashScope OpenAI 兼容模式支持 enable_thinking（+thinking_budget 为内部换算）',
   },
   {
     id: 'qwen-max-longcontext',
@@ -338,7 +353,6 @@ const NEUTRAL_PRESET = {
   supportsAudio: false,
   reasoningEnabled: false,
   reasoningProtocol: 'inherit',
-  reasoningLevels: { ...EFFORT_LEVELS },
   note: '未命中内置预设：上下文窗口回退内置表，推理参数沿用既有行为（inherit）',
 }
 
@@ -349,9 +363,9 @@ const NEUTRAL_PRESET = {
  */
 export function resolveModelPreset(model) {
   const m = String(model || '').trim().toLowerCase()
-  if (!m) return { ...NEUTRAL_PRESET, reasoningLevels: { ...EFFORT_LEVELS } }
+  if (!m) return { ...NEUTRAL_PRESET }
   const rule = MODEL_PRESET_RULES.find((r) => r.match.test(m))
-  if (!rule) return { ...NEUTRAL_PRESET, reasoningLevels: { ...EFFORT_LEVELS } }
+  if (!rule) return { ...NEUTRAL_PRESET }
   return {
     ...NEUTRAL_PRESET,
     ...rule,
@@ -365,7 +379,6 @@ export function resolveModelPreset(model) {
     supportsAudio: rule.supportsAudio === true,
     reasoningEnabled: rule.reasoningEnabled === true,
     reasoningProtocol: REASONING_PROTOCOLS.includes(rule.reasoningProtocol) ? rule.reasoningProtocol : 'inherit',
-    reasoningLevels: { ...(rule.reasoningLevels || EFFORT_LEVELS) },
   }
 }
 
@@ -385,28 +398,22 @@ export function listModelPresetRules() {
   }))
 }
 
-/** 归一化等级映射：只保留 low/medium/high，值为非空字符串或有限数字 */
-export function normalizeReasoningLevels(input) {
-  const out = {}
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return out
-  for (const key of THINKING_STRENGTHS) {
-    const v = input[key]
-    if (typeof v === 'string' && v.trim().length > 0 && v.trim().length <= 64) out[key] = v.trim()
-    else if (typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 1000000) out[key] = Math.floor(v)
-  }
-  return out
-}
-
 /**
  * 解析「该模型在本次请求里到底该下发什么推理字段」。
+ *
+ * 契约 v2（等级原样透传，不再查映射表）：
+ *   · 字符串型协议（openai_reasoning_effort / output_config_effort）的 value = thinkingStrength **字面值**
+ *     （low | medium | high | xhigh | max），用户选什么就发什么，不做任何翻译/映射。
+ *   · 数字型协议（anthropic_thinking 的 budget_tokens / qwen_enable_thinking 的 thinking_budget）
+ *     由内部换算表 ANTHROPIC_BUDGET_TOKENS 换算成数字（协议硬要求，非用户可配映射）。
  *
  * 契约（安全底线）：protocol 为 'inherit' / 'none'、或 reasoningEnabled 不为 true 时**返回 null**
  * ——调用方据此一个字都不下发。这是「不支持的模型塞未知字段导致 400」的硬闸门。
  *
  * @param {object} p
  * @param {object} p.settings 生效配置（mergeModelSettings 的产物）
- * @param {string} [p.strength] 'low'|'medium'|'high'
- * @returns {{protocol:string,strength:string,value:(string|number)}|null}
+ * @param {string} [p.strength] 'low'|'medium'|'high'|'xhigh'|'max'
+ * @returns {{protocol:string,strength:string,value:(string|number),budgetTokens:number}|null}
  */
 export function buildReasoningRequest({ settings, strength } = {}) {
   if (!settings) return null
@@ -414,10 +421,12 @@ export function buildReasoningRequest({ settings, strength } = {}) {
   if (protocol === 'inherit' || protocol === 'none') return null
   if (settings.reasoningEnabled !== true) return null
   if (!REASONING_PROTOCOLS.includes(protocol)) return null
+  // 非法/缺失等级 → 兜底 medium（与 ai_settings.thinking_strength 的 DEFAULT 一致）
   const s = THINKING_STRENGTHS.includes(strength) ? strength : 'medium'
-  const levels = settings.reasoningLevels && typeof settings.reasoningLevels === 'object' ? settings.reasoningLevels : {}
-  const mapped = Object.prototype.hasOwnProperty.call(levels, s) ? levels[s] : s
-  return { protocol, strength: s, value: mapped }
+  const budgetTokens = ANTHROPIC_BUDGET_TOKENS[s]
+  // 数字型协议：value = 内部换算出的预算；字符串型协议：value = 等级字面值
+  const value = NUMERIC_BUDGET_PROTOCOLS.has(protocol) ? budgetTokens : s
+  return { protocol, strength: s, value, budgetTokens }
 }
 
 /**
@@ -437,7 +446,8 @@ export function buildThinkingOptions({ settings, enabled, strength } = {}) {
   const s = THINKING_STRENGTHS.includes(strength) ? strength : 'medium'
   const base = {
     thinkingStrength: s,
-    thinkingBudget: s === 'low' ? 1024 : s === 'high' ? 8192 : 4096,
+    // 等级 → 预算：内部换算（Anthropic legacy 路径与 qwen thinking_budget 用同一张表）
+    thinkingBudget: ANTHROPIC_BUDGET_TOKENS[s],
   }
   if (enabled !== true) return base
   const reasoning = buildReasoningRequest({ settings, strength: s })
@@ -449,10 +459,10 @@ export function buildThinkingOptions({ settings, enabled, strength } = {}) {
 
 /** budget_tokens / thinking_budget 必须是合法整数（否则退回默认预算），防止把字符串塞进数字字段 */
 export function resolveNumericBudget(value, fallback = 4096) {
-  // 等级名（'low'/'medium'/'high'）也接受：万一把字符串等级配到数值协议上，按既有预算表兜底，
+  // 等级名（'low'…'max'）也接受：万一把字符串等级配到数值协议上，按内部预算表兜底，
   // 而不是把 "high" 这种字符串塞进 budget_tokens 数字字段（上游会 400）
-  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(BUDGET_LEVELS, value.trim())) {
-    return BUDGET_LEVELS[value.trim()]
+  if (typeof value === 'string' && Object.prototype.hasOwnProperty.call(ANTHROPIC_BUDGET_TOKENS, value.trim())) {
+    return ANTHROPIC_BUDGET_TOKENS[value.trim()]
   }
   if (typeof value === 'number' && Number.isFinite(value) && value >= 1024) return Math.floor(value)
   if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
@@ -471,11 +481,9 @@ export function resolveEffortString(value, fallback = 'medium') {
 export default {
   REASONING_PROTOCOLS,
   THINKING_STRENGTHS,
-  EFFORT_LEVELS,
-  BUDGET_LEVELS,
+  ANTHROPIC_BUDGET_TOKENS,
   resolveModelPreset,
   listModelPresetRules,
-  normalizeReasoningLevels,
   buildReasoningRequest,
   buildThinkingOptions,
   resolveNumericBudget,

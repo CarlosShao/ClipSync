@@ -782,7 +782,10 @@ export function buildUpstreamChat(cfg) {
     // 不再只无条件看 options.thinking：
     //   options.reasoning 由调用方按 ai_model_settings 生效协议构造
     //   （utils/modelPresets.buildReasoningRequest，仅当协议非 inherit/none 且 reasoning_enabled
-    //    且用户思考开关打开时才存在），其 value 已按 low/medium/high 映射到该协议取值。
+    //    且用户思考开关打开时才存在）。
+    //   契约 v2：等级（low|medium|high|xhigh|max）**原样透传**给 output_config.effort；
+    //   只有 anthropic_thinking 的 budget_tokens 是数字 —— 由 modelPresets 的
+    //   ANTHROPIC_BUDGET_TOKENS 内部换算（非用户可配映射）。
     //   未传 options.reasoning 时**保持改造前的既有行为**（options.thinking → thinking / output_config），
     //   保证老调用方零行为漂移。
     const explicitReasoning =
@@ -797,13 +800,16 @@ export function buildUpstreamChat(cfg) {
       // 不发送 thinking 或 output_config
     } else if (explicitReasoning) {
       if (explicitReasoning.protocol === 'anthropic_thinking') {
-        // 原生 Anthropic extended thinking（budget_tokens 必须是数字，等级映射见 modelPresets.BUDGET_LEVELS）
+        // 原生 Anthropic extended thinking：budget_tokens 必须是数字，
+        // 由 modelPresets.ANTHROPIC_BUDGET_TOKENS 把 5 档等级内部换算成预算
+        //（1024/4096/8192/16384/32768）—— 这是协议硬要求的内部换算，不是用户可配映射。
         body.thinking = {
           type: 'enabled',
           budget_tokens: resolveNumericBudget(explicitReasoning.value, options.thinkingBudget || 4096),
         }
       } else if (explicitReasoning.protocol === 'output_config_effort') {
-        // Anthropic 兼容网关：推理强度字段为 output_config.effort（low/medium/high）
+        // Anthropic 兼容网关：推理强度字段为 output_config.effort，
+        // 契约 v2 下**原样透传**等级字面值（low/medium/high/xhigh/max），不做任何映射。
         body.output_config = {
           effort: resolveEffortString(explicitReasoning.value, options.thinkingStrength || 'medium'),
         }
@@ -812,7 +818,8 @@ export function buildUpstreamChat(cfg) {
       // **没有**对应字段 —— 一个字都不下发（安全底线：给不支持的模型塞未知字段会 400）
     } else if (options.thinking) {
       if (preset.anthropicEffortField === 'output_config') {
-        // 其他自定义 Anthropic 网关：推理强度字段为 output_config.effort（low/medium/high）
+        // 其他自定义 Anthropic 网关：推理强度字段为 output_config.effort；
+        // legacy 路径直接用 thinkingStrength 字面值（契约 v2：等级原样透传）
         const effort =
           options.thinkingStrength || options.thinkingEffort ||
           (options.thinkingBudget > 8192 ? 'high' : options.thinkingBudget < 2048 ? 'low' : 'medium')
@@ -910,6 +917,7 @@ export function buildUpstreamChat(cfg) {
     // 推理参数下发（Responses 协议分支）：OpenAI Responses API 的推理强度字段是
     // `reasoning: { effort }`（不是 Chat Completions 的 reasoning_effort）。
     // 只在模型协议明确为 openai_reasoning_effort 时下发；其余协议一律不下发。
+    // 契约 v2：effort 是 thinkingStrength 的**字面值**（low|medium|high|xhigh|max），不做映射。
     if (options.reasoning?.protocol === 'openai_reasoning_effort') {
       body.reasoning = {
         effort: resolveEffortString(options.reasoning.value, options.thinkingStrength || 'medium'),
@@ -969,9 +977,11 @@ export function buildUpstreamChat(cfg) {
   // ===== 推理参数下发（OpenAI 兼容协议分支）=====
   // 修复的根因：改造前 thinking 只在 Anthropic 分支生效（见上方 anthropic 分支），
   // 于是 LongCat / 阶跃 / MiMo / Agnes / 通义 等 OpenAI 兼容供应商的「思考强度」**从未下发**。
-  // 现在按该模型解析出的 reasoningProtocol 下发：
-  //   · openai_reasoning_effort → body.reasoning_effort = levels[strength]（o 系 / gpt-5）
-  //   · qwen_enable_thinking    → body.enable_thinking = true（+ 供应商支持时一并下发 thinking_budget）
+  // 现在按该模型解析出的 reasoningProtocol 下发（契约 v2：等级原样透传，不再查映射表）：
+  //   · openai_reasoning_effort → body.reasoning_effort = thinkingStrength 字面值（o 系 / gpt-5），
+  //     用户选 xhigh / max 就原样发 xhigh / max（上游不支持时由其自身拒绝，不由我们改写等级）
+  //   · qwen_enable_thinking    → body.enable_thinking = true（+ 供应商支持时一并下发 thinking_budget，
+  //     该数字由 modelPresets.ANTHROPIC_BUDGET_TOKENS 内部换算）
   //   · 其他（none / inherit / anthropic_thinking / output_config_effort）→ 一个字都不下发
   //     （安全底线：OpenAI 兼容族塞 thinking / output_config 等未知字段会被上游 400 拒绝）
   const reasoning = options.reasoning
