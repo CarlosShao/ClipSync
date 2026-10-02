@@ -6,7 +6,8 @@ import { useSonner } from '@/composables/useSonner'
 import Button from '@/components/ui/button/Button.vue'
 import { api } from '@/api/client'
 import * as tauri from '@/lib/tauri'
-import { Github, ExternalLink, RefreshCw, MessageSquare } from 'lucide-vue-next'
+import FeedbackDialog from './FeedbackDialog.vue'
+import { Github, ExternalLink, RefreshCw, MessageSquare, ChevronRight } from 'lucide-vue-next'
 
 const { t } = useI18n()
 const toast = useSonner()
@@ -18,6 +19,8 @@ const installingUpdate = ref(false)
 /** 有待安装的新版本 → 就地展示"发现新版本 vX + 立即安装/稍后"；forceUpdate=true 时不可跳过（无"稍后"） */
 const pendingUpdate = ref<{ version: string; forceUpdate: boolean } | null>(null)
 const lastChecked = ref('')
+/** 「发送反馈」应用内工单弹窗（原行为是跳转 GitHub Issues 外链） */
+const feedbackOpen = ref(false)
 
 onMounted(async () => {
   try {
@@ -144,12 +147,15 @@ async function installUpdate() {
         <ExternalLink :size="12" class="link-ext" />
       </a>
 
-      <!-- 问题反馈行 -->
-      <a class="about-line about-line--link" href="https://github.com/CarlosShao/ClipSync/issues" target="_blank" rel="noopener">
+      <!-- 问题反馈行：改为应用内工单弹窗（POST /api/feedback），不再跳转 GitHub Issues -->
+      <button type="button" class="about-line about-line--action" @click="feedbackOpen = true">
         <span class="about-line-label"><MessageSquare :size="14" />{{ t('fb_title') || '发送反馈' }}</span>
-        <ExternalLink :size="12" class="link-ext" />
-      </a>
+        <ChevronRight :size="12" class="link-ext" />
+      </button>
     </div>
+
+    <!-- 应用内反馈工单弹窗（自带 Teleport，不受设置页滚动容器裁剪） -->
+    <FeedbackDialog :open="feedbackOpen" @close="feedbackOpen = false" />
   </div>
 </template>
 
@@ -259,6 +265,29 @@ async function installUpdate() {
 .link-ext {
   opacity: 0.45;
   flex: none;
+}
+
+/* 「发送反馈」行：沿用上面两行的行样式，但由外链 <a> 改为按钮（点开应用内工单弹窗） */
+.about-line--action {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
+}
+.about-line--action:hover .about-line-label {
+  color: var(--accent);
+}
+.about-line--action:hover .about-line-label svg {
+  color: var(--accent);
+}
+.about-line--action:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
 }
 
 /* 检查更新按钮 */
