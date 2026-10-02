@@ -55,9 +55,10 @@ onMounted(async () => {
     <TitleBar v-if="showAuthTitlebar" minimal />
     <router-view />
     <!-- Clearline toast：右下角堆叠，入场从右缘滑入（动画与卡片化样式见 globals.css 的 sonner 覆盖段） -->
+    <!-- richColors 已关闭：它会给整块饱和绿/红底色，与本设计系统反差最大；语义改由皮肤里的左侧 3px 色条 + 图标着色表达 -->
     <Toaster
       position="bottom-right"
-      :rich-colors="true"
+      :rich-colors="false"
       :close-button="true"
       close-button-position="top-right"
       :duration="3000"

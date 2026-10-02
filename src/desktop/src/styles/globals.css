@@ -1181,3 +1181,75 @@ html.app-font-kai body samp {
 [data-sonner-toaster] [data-sonner-toast][data-rich-colors='true'][data-type='info'] [data-icon] {
   color: var(--accent, #4f6bed);
 }
+
+/* ===== Sonner toast 皮肤（唯一来源，覆盖本文件上方的旧 sonner 段与 styles/sonner-theme.css）=====
+   换皮动机（用户）："皮肤实在太丑了，跟系统反差太大"。
+   反差的两个来源：① <Toaster :rich-colors="true"> 的饱和绿/红底色；
+                   ② 本项目曾有两套皮肤（本文件上方 + styles/sonner-theme.css）互相打架。
+   现统一为一份，全部走 design token：底色/边框/圆角/阴影与卡片一致，
+   **语义只用「左侧 3px 色条 + 图标着色」表达**，不再有整块饱和底。
+   选择器同时带 [data-styled] 并用 !important，确保压过旧段（旧段选择器更具体）。 */
+[data-sonner-toaster] [data-sonner-toast][data-styled='true'] {
+  position: relative !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-elevated) !important;
+  color: var(--text-primary) !important;
+  padding: 11px 12px 11px 15px !important;
+  font-size: 12.5px !important;
+  overflow: hidden !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='success']::before {
+  background: var(--success, #22c55e);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='error']::before {
+  background: var(--danger);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='warning']::before {
+  background: var(--warning);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='info']::before {
+  background: var(--accent);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon] {
+  color: var(--success, #22c55e) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon] {
+  color: var(--danger) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon] {
+  color: var(--warning) !important;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-title] {
+  color: var(--text-primary) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--text-secondary) !important;
+  font-size: 11.5px !important;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  background: var(--bg-hover) !important;
+  border: 1px solid var(--border-default) !important;
+  color: var(--text-secondary) !important;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
+  color: var(--text-primary) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toaster] [data-sonner-toast] {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}
