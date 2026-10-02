@@ -27,6 +27,12 @@ import type { ApiResponse } from '@/api/client'
 import { aiFailureFrom, describeAiFailure, hasAiFailureMapping, SERVER_MESSAGE_FIRST_CODES } from '@/utils/aiErrors'
 import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
 import {
+  BATCH_MAX_ITEMS,
+  putModelSettingsBatch,
+  type ModelSettingBatchItem,
+  type ModelSettingPatch,
+} from '@/api/modelSettings'
+import {
   DEFAULT_THINKING_STRENGTH,
   THINKING_STRENGTH_LABELS,
   THINKING_STRENGTHS,
@@ -56,6 +62,18 @@ const formManualModel = ref('')
 const draftCandidates = ref<string[]>([])
 // 上一次刷新返回的模型总数：芯片区计数必须等于刷新真正返回的数量（不再出现「报了 N 个但页面空」）
 const lastRefreshCount = ref<number | null>(null)
+// 草稿态的模型配置改动（per model，只含用户真改过的字段）：由模型库面板（草稿模式）回传；
+// 供应商创建成功后用 PUT /api/ai/model-settings/batch 一次性落库。
+const draftModelPatches = ref<Record<string, ModelSettingPatch>>({})
+// 批量写入失败：供应商其实已经创建成功，但配置没写进去 —— 如实告知 + 就地重试（绝不谎报成功）
+const draftBatchFailure = ref<{
+  providerId: string
+  items: ModelSettingBatchItem[]
+  reason: string
+  provider: AiProvider | null
+} | null>(null)
+const draftBatchApplying = ref(false)
+const draftBatchReason = ref('')
 
 const editingId = ref<string | null>(null)
 const formProvider = ref('')
@@ -336,6 +354,9 @@ function resetForm() {
   draftCandidates.value = []
   lastRefreshCount.value = null
   modelsRefresh.value = { kind: 'idle', text: '' }
+  // 草稿里的模型配置改动与批量写入失败态同样清空（取消表单 = 放弃这次草稿）
+  draftModelPatches.value = {}
+  draftBatchFailure.value = null
   formIsDefault.value = false
   formContextWindow.value = ''
   formApiFormat.value = 'openai'
@@ -597,6 +618,71 @@ async function refreshModels() {
     refreshingModels.value = false
   }
 }
+/** 草稿态真正改过的模型配置（只含非空 patch；未改的模型/字段一个都不出现） */
+function buildDraftBatchItems(): ModelSettingBatchItem[] {
+  const out: ModelSettingBatchItem[] = []
+  for (const m of formSelectedModels.value) {
+    const patch = draftModelPatches.value[m]
+    if (patch && Object.keys(patch).length > 0) out.push({ model: m, patch })
+  }
+  return out
+}
+
+/** PUT /api/ai/model-settings/batch（超 200 条按契约分片）；返回是否全部成功，失败原因记在 draftBatchReason */
+async function flushDraftBatch(providerId: string, items: ModelSettingBatchItem[]): Promise<boolean> {
+  draftBatchApplying.value = true
+  draftBatchReason.value = ''
+  try {
+    for (let i = 0; i < items.length; i += BATCH_MAX_ITEMS) {
+      const res = await putModelSettingsBatch(providerId, items.slice(i, i + BATCH_MAX_ITEMS))
+      if (!res.ok) {
+        draftBatchReason.value = providerErrorText(res, t('ai_draft_batch_fail_default', '模型配置写入失败'))
+        return false
+      }
+    }
+    return true
+  } catch (e) {
+    draftBatchReason.value = (e as Error)?.message || String(e)
+    return false
+  } finally {
+    draftBatchApplying.value = false
+  }
+}
+
+/** 重试批量写入（供应商早已创建成功，这里只重发模型配置） */
+async function retryDraftBatch() {
+  const f = draftBatchFailure.value
+  if (!f || draftBatchApplying.value) return
+  const ok = await flushDraftBatch(f.providerId, f.items)
+  if (!ok) {
+    draftBatchFailure.value = { ...f, reason: draftBatchReason.value }
+    return
+  }
+  toast.show(t('ai_draft_batch_ok', '模型配置已写入'), 'success')
+  finishDraftSave(f.provider)
+}
+
+/** 放弃批量写入：如实说明，然后切到模型库让用户在里面逐个配置 */
+function abandonDraftBatch() {
+  const f = draftBatchFailure.value
+  toast.show(t('ai_draft_batch_skipped', '已跳过模型配置写入，可在模型库里逐个配置'), 'warning')
+  finishDraftSave(f?.provider ?? null)
+}
+
+/** 草稿流收尾：草稿退场 + 切「编辑刚保存的供应商」，让模型库（服务端数据）无缝接管 */
+function finishDraftSave(fresh: AiProvider | null | undefined) {
+  draftBatchFailure.value = null
+  draftModelPatches.value = {}
+  draftCandidates.value = []
+  if (fresh) {
+    startEdit(fresh)
+    // 覆盖「保存后」路径：面板（编辑态）立刻重新拉取 model-settings
+    modelRefreshSeq.value += 1
+  } else {
+    resetForm()
+  }
+}
+
 async function save() {
   formError.value = ''
   if (!formProvider.value) {
@@ -633,19 +719,27 @@ async function save() {
       //（AI 侧边栏默认只在 open=true 切换时 loadProviders，常驻打开时不刷新）
       window.dispatchEvent(new CustomEvent('clipsync:ai-providers-changed'))
       await load()
-      // 草稿候选退场：模型库（编辑态面板）接管
-      draftCandidates.value = []
       // 保存成功**不再关表单**：切成「编辑该供应商」，让模型库无缝接管（草稿态的候选集合已写进 models）。
       // 之前这里 resetForm() 会把表单关掉，用户刚选好的模型立刻从眼前消失，还得重新找编辑入口。
       const saved = res.data
       const fresh = (saved && providers.value.find((p) => p.id === saved.id)) || saved
-      if (fresh) {
-        startEdit(fresh)
-        // 覆盖「保存后」路径：面板（编辑态）立刻重新拉取 model-settings
-        modelRefreshSeq.value += 1
-      } else {
-        resetForm()
+      const wasNew = !editingId.value
+      const batchItems = wasNew ? buildDraftBatchItems() : []
+      // 草稿 → 正式：先把草稿卡片里改过的模型配置一次性写进去（只提交改过的字段）
+      if (wasNew && batchItems.length > 0 && fresh?.id) {
+        const ok = await flushDraftBatch(fresh.id, batchItems)
+        if (!ok) {
+          // 供应商已创建（下面如实告知），但配置没写进去：就地在草稿里重试，**不**切编辑态、**不**丢草稿
+          draftBatchFailure.value = {
+            providerId: fresh.id,
+            items: batchItems,
+            reason: draftBatchReason.value,
+            provider: fresh,
+          }
+          return
+        }
       }
+      finishDraftSave(fresh)
     } else {
       formError.value = providerErrorText(res, t('ai_save_failed'))
     }
@@ -945,22 +1039,62 @@ onMounted(() => {
             :refresh-seq="modelRefreshSeq"
             @update:enabled-models="onEnabledModelsChange"
           />
-          <!-- 草稿态降级：没有 providerId ⇒ 不去打 model-settings（会 404/空），
-               只说明「保存后可逐个配置」+ 就近的保存按钮（别让用户到处找） -->
-          <div v-else class="ai-draft-cfg">
-            <span class="ai-draft-cfg-text">
-              {{ t('ai_model_cfg_need_save', '保存后可逐个配置这些模型的上下文 / 多模态 / 推理协议。') }}
-            </span>
-            <Button
-              size="sm"
-              class="ai-draft-cfg-save shrink-0 whitespace-nowrap"
-              data-action="draft-save"
-              :disabled="saving"
-              @click="save"
-            >
-              {{ saving ? t('ai_saving') : t('ai_save') }}
-            </Button>
-          </div>
+          <!-- 草稿态：模型库面板以 draft-mode 渲染 —— 勾选候选模型即出配置卡片
+               （POST /resolve 只读解析预设值，不落库；没有 providerId 就绝不打 model-settings），
+               改动先记在草稿里，点保存时用 PUT /batch 一次性落库 -->
+          <template v-else>
+            <AIModelSettingsPanel
+              draft-mode
+              :draft-models="formSelectedModels"
+              :draft-patches="draftModelPatches"
+              @update:draft-patches="draftModelPatches = $event"
+            />
+
+            <!-- 批量写入失败：供应商已保存（如实告知）+ 可就地重试，绝不谎报「配置已存」 -->
+            <div v-if="draftBatchFailure" class="ai-draft-batch-fail">
+              <span class="ai-draft-batch-fail-text">
+                {{
+                  tf('ai_draft_batch_fail', '供应商已保存，但模型配置写入失败：{reason}', {
+                    reason: draftBatchFailure.reason,
+                  })
+                }}
+              </span>
+              <Button
+                size="sm"
+                class="shrink-0 whitespace-nowrap"
+                data-action="draft-batch-retry"
+                :disabled="draftBatchApplying"
+                @click="retryDraftBatch"
+              >
+                {{ draftBatchApplying ? t('ai_draft_batch_applying', '正在写入…') : t('retry', '重试') }}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                class="shrink-0 whitespace-nowrap"
+                data-action="draft-batch-skip"
+                :disabled="draftBatchApplying"
+                @click="abandonDraftBatch"
+              >
+                {{ t('ai_draft_batch_use_library', '去模型库配置') }}
+              </Button>
+            </div>
+
+            <div class="ai-draft-cfg">
+              <span class="ai-draft-cfg-text">
+                {{ t('ai_model_cfg_need_save', '勾选候选模型即可在下方卡片里直接配置；改动会在点「保存」时一次性写入（只提交你改过的字段）。') }}
+              </span>
+              <Button
+                size="sm"
+                class="ai-draft-cfg-save shrink-0 whitespace-nowrap"
+                data-action="draft-save"
+                :disabled="saving"
+                @click="save"
+              >
+                {{ saving ? t('ai_saving') : t('ai_save') }}
+              </Button>
+            </div>
+          </template>
         </div>
 
         <div class="ai-field">
@@ -1565,6 +1699,25 @@ onMounted(() => {
   font-size: 11.5px;
   line-height: 1.55;
   color: var(--text-secondary);
+}
+/* 草稿 → 正式：批量写模型配置失败时的就近提示（供应商已保存这件事如实写在文案里） */
+.ai-draft-batch-fail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.ai-draft-batch-fail-text {
+  flex: 1;
+  min-width: 220px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--danger);
 }
 .ai-draft-cfg-save {
   height: 32px;

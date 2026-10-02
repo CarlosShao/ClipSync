@@ -1455,6 +1455,274 @@ describe('AIProviderSettings — 草稿态刷新成功后模型可见（本轮�
   })
 })
 
+/* ===================== 草稿态勾选即出配置卡片（本轮需求） ===================== */
+
+describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时批量落库', () => {
+  const inputByPh = (ph: string) => document.querySelector<HTMLInputElement>(`input[placeholder="${ph}"]`)
+  const refreshBtn = () =>
+    Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+  const draftChip = (m: string) => document.querySelector<HTMLButtonElement>(`.ai-draft-chip[data-model="${m}"]`)
+  const card = (m: string) => document.querySelector<HTMLElement>(`.aim-draft-card[data-model="${m}"]`)
+  const cardInputs = (m: string) => card(m)!.querySelectorAll<HTMLInputElement>('.aim-input')
+  const cardSwitches = (m: string) => card(m)!.querySelectorAll<HTMLElement>('[role="switch"]')
+
+  const resolveCalls = () =>
+    mocks.api.mock.calls
+      .filter((c) => String(c[1]) === '/api/ai/model-settings/resolve')
+      .map((c) => c[2] as { models: string[] })
+  const batchCalls = () =>
+    mocks.api.mock.calls
+      .filter((c) => String(c[1]) === '/api/ai/model-settings/batch')
+      .map((c) => c[2] as { providerId: string; items: Array<{ model: string; patch: Record<string, unknown> }> })
+  /** 草稿态**禁止**触碰的端点：GET/PUT /api/ai/model-settings（不含 /resolve、/batch） */
+  const plainModelSettingsCalls = () =>
+    mocks.api.mock.calls.filter((c) => {
+      const p = String(c[1] || '')
+      return p === '/api/ai/model-settings' || p.startsWith('/api/ai/model-settings?')
+    })
+
+  const SETTINGS = {
+    defaultProviderId: PROVIDER_ID,
+    defaultModel: 'gpt-4o-mini',
+    selectedModels: {},
+    defaultMode: 'ask',
+    thinkingEnabled: false,
+    thinkingStrength: 'medium',
+    memoryEnabled: false,
+    customSystemPrompt: '',
+    searchProvider: '',
+    searchBaseUrl: '',
+    searchHasKey: false,
+  }
+  const PRESETS = [
+    { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+  ]
+
+  /** resolve 返回该模型名的预设值（chatOn 夹具：上下文 200000 / 输出 16384 / 识图 on / reasoning_effort） */
+  function draftPreset(model: string): Raw {
+    return chatOn({ model, enabled: false, isPreset: true, isOverridden: false })
+  }
+
+  /** 只桩模型相关的三个出口：resolve（只读解析）/ batch（批量写）/ 兜底 —— 其余走各自 mock */
+  function installDraftApi(opts: { resolveFails?: boolean; batchFails?: boolean } = {}) {
+    mocks.api.mockImplementation(async (method: string, path: string, body: Raw) => {
+      const p = String(path)
+      if (method === 'POST' && p === '/api/ai/model-settings/resolve') {
+        if (opts.resolveFails) return { ok: false, status: 404, error: 'Not Found' }
+        const models = (body.models ?? []) as string[]
+        return { ok: true, status: 200, data: { items: models.map((mm) => draftPreset(mm)) } }
+      }
+      if (method === 'PUT' && p === '/api/ai/model-settings/batch') {
+        if (opts.batchFails) return { ok: false, status: 500, error: 'batch boom' }
+        const items = (body.items ?? []) as unknown[]
+        return { ok: true, status: 200, data: { ok: true, updated: items.length, items: [] } }
+      }
+      if (method === 'GET' && p.startsWith('/api/ai/model-settings?')) {
+        return { ok: true, status: 200, data: { items: [] } }
+      }
+      if (method === 'PUT' && p === '/api/ai/model-settings') {
+        return { ok: true, status: 200, data: { ok: true, item: {} } }
+      }
+      return { ok: true, status: 200, data: {} }
+    })
+  }
+
+  /** 草稿态：打开「添加供应商」+ 填 base/key + 刷新出候选模型 */
+  async function mountDraftWithCandidates(models: string[]) {
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models, count: models.length, upstreamEmpty: false, added: models.length, previousCount: 0 },
+    })
+    mocks.getProviders.mockResolvedValue({ ok: true, status: 200, data: { items: [], count: 0 } })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    installDraftApi()
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    buttonByLabel(t('ai_add_provider')).click()
+    await flush()
+    await setValue(inputByPh(t('ai_base_url_ph'))!, 'http://host.docker.internal:3800/v1')
+    await setValue(inputByPh(t('ai_api_key_ph'))!, 'sk-local')
+    await flush()
+    refreshBtn().click()
+    await flush()
+    return m
+  }
+
+  it('㊱ 勾选 1 个候选 ⇒ resolve 批量调用一次（含该模型）且卡片立刻渲染出预设值', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2', 'm-3'])
+    expect(card('m-1')).toBeNull()
+
+    draftChip('m-1')!.click()
+    await flush()
+
+    // 批量一次：把该模型名数组发过去（不是每个模型一次）
+    expect(resolveCalls()).toHaveLength(1)
+    expect(resolveCalls()[0].models).toEqual(['m-1'])
+
+    const c = card('m-1')!
+    expect(c).toBeTruthy()
+    // 预设值渲染进输入框（数字字段是 input.value，不在 textContent 里）
+    expect(cardInputs('m-1')[0].value).toBe('200000')
+    expect(cardInputs('m-1')[1].value).toBe('16384')
+    // 草稿态来源一律"来自预设"（isOverridden=false）
+    expect(c.textContent).toContain(t('ai_model_cfg_badge_preset'))
+    expect(c.textContent).toContain(t('ai_model_src_preset'))
+    // 与已保存态同一套字段：2 个数字输入 + 别名输入 + 5 个开关 + 协议下拉
+    expect(cardInputs('m-1')).toHaveLength(3)
+    expect(cardSwitches('m-1')).toHaveLength(5)
+    expect(c.querySelectorAll('.custom-select-trigger')).toHaveLength(1)
+
+    m.unmount()
+  })
+
+  it('㊲ 再勾选 1 个 ⇒ 只解析**新增**的那一个（增量，不是全量重拉）', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2', 'm-3'])
+    draftChip('m-1')!.click()
+    await flush()
+    draftChip('m-2')!.click()
+    await flush()
+
+    expect(resolveCalls()).toHaveLength(2)
+    expect(resolveCalls()[1].models).toEqual(['m-2'])
+    expect(document.querySelectorAll('.aim-draft-card')).toHaveLength(2)
+
+    draftChip('m-3')!.click()
+    await flush()
+    expect(resolveCalls()).toHaveLength(3)
+    expect(resolveCalls()[2].models).toEqual(['m-3'])
+    expect(document.querySelectorAll('.aim-draft-card')).toHaveLength(3)
+
+    m.unmount()
+  })
+
+  it('㊳ 取消勾选 ⇒ 卡片消失；再勾回来 ⇒ 卡片回来且草稿里改过的值保留（不重置、不重复解析）', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2'])
+    draftChip('m-1')!.click()
+    await flush()
+    await setValue(cardInputs('m-1')[0], '128000')
+    cardSwitches('m-1')[1].click() // 识图：预设 on → 改成 off
+    await flush()
+
+    expect(cardInputs('m-1')[0].value).toBe('128000')
+    expect(card('m-1')!.textContent).toContain(t('ai_model_src_pending')) // 你刚改过
+
+    // 取消勾选 ⇒ 卡片消失（不是"删除配置"，草稿仍在）
+    draftChip('m-1')!.click()
+    await flush()
+    expect(card('m-1')).toBeNull()
+
+    // 再勾回来 ⇒ 卡片回来、值保留、且不重新解析（已解析过）
+    const before = resolveCalls().length
+    draftChip('m-1')!.click()
+    await flush()
+    expect(card('m-1')).toBeTruthy()
+    expect(cardInputs('m-1')[0].value).toBe('128000')
+    expect(card('m-1')!.textContent).toContain(t('ai_model_src_pending'))
+    expect(resolveCalls()).toHaveLength(before)
+
+    m.unmount()
+  })
+
+  it('㊴ 保存 ⇒ PUT /batch 只带**改过的字段**（未改的模型/字段一个都不发），providerId 正确', async () => {
+    const NEW_ID = 'feedface-0000-1111-2222-333344445555'
+    mocks.createProvider.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROVIDER, id: NEW_ID, models: ['m-1', 'm-2'] },
+    })
+    const m = await mountDraftWithCandidates(['m-1', 'm-2', 'm-3'])
+    await setValue(inputByPh(t('ai_name_ph'))!, 'Local GW')
+
+    draftChip('m-1')!.click() // 勾选但一个字段都不改
+    await flush()
+    draftChip('m-2')!.click() // 勾选并改两个字段
+    await flush()
+    await setValue(cardInputs('m-2')[0], '128000')
+    cardSwitches('m-2')[1].click()
+    await flush()
+    // 取消再勾回来：改动必须保留（草稿 override map）
+    draftChip('m-2')!.click()
+    await flush()
+    draftChip('m-2')!.click()
+    await flush()
+
+    buttonByLabel(t('ai_save')).click()
+    await flush(8)
+
+    const batches = batchCalls()
+    expect(batches).toHaveLength(1)
+    expect(batches[0].providerId).toBe(NEW_ID)
+    expect(batches[0].items).toEqual([{ model: 'm-2', patch: { contextWindow: 128000, supportsImage: false } }])
+    // 未改动的 m-1 / 未勾选的 m-3 都不出现（否则会把预设物化成"已自定义"）
+    expect(batches[0].items.some((i) => i.model === 'm-1')).toBe(false)
+    expect(batches[0].items.some((i) => i.model === 'm-3')).toBe(false)
+
+    m.unmount()
+  })
+
+  it('㊵ batch 失败 ⇒ 显示「供应商已保存，但模型配置写入失败 + 重试」且不谎报成功；重试成功后才切模型库', async () => {
+    const NEW_ID = 'feedface-0000-1111-2222-333344445556'
+    mocks.createProvider.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROVIDER, id: NEW_ID, models: ['m-1'] },
+    })
+    const m = await mountDraftWithCandidates(['m-1'])
+    await setValue(inputByPh(t('ai_name_ph'))!, 'Local GW')
+    draftChip('m-1')!.click()
+    await flush()
+    await setValue(cardInputs('m-1')[0], '128000')
+
+    installDraftApi({ batchFails: true })
+    mocks.showToast.mockClear()
+    buttonByLabel(t('ai_save')).click()
+    await flush(8)
+
+    // 如实告知：供应商已保存 + 配置写入失败（带原因）+ 可就地重试
+    const banner = document.querySelector<HTMLElement>('.ai-draft-batch-fail')
+    expect(banner).toBeTruthy()
+    expect(banner!.textContent).toContain(tf('ai_draft_batch_fail', 'x', { reason: 'batch boom' }))
+    expect(document.querySelector('[data-action="draft-batch-retry"]')).toBeTruthy()
+    // 不谎报"配置已存"
+    expect(mocks.showToast).not.toHaveBeenCalledWith(t('ai_draft_batch_ok'), 'success')
+    // 仍在草稿态：卡片与改动都在，没切到模型库
+    expect(card('m-1')).toBeTruthy()
+    expect(cardInputs('m-1')[0].value).toBe('128000')
+    expect(document.querySelector('.aim-chip')).toBeNull()
+
+    // 重试（这次成功）⇒ 才切到模型库
+    installDraftApi()
+    ;(document.querySelector('[data-action="draft-batch-retry"]') as HTMLButtonElement).click()
+    await flush(8)
+    expect(mocks.showToast).toHaveBeenCalledWith(t('ai_draft_batch_ok'), 'success')
+    expect(document.querySelector('.ai-draft-batch-fail')).toBeNull()
+    expect(document.querySelectorAll('.aim-draft-card')).toHaveLength(0)
+
+    m.unmount()
+  })
+
+  it('㊶ 草稿态**从不**调用 GET/PUT /api/ai/model-settings（只走 resolve；保存前不写 batch）', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2'])
+    await setValue(inputByPh(t('ai_name_ph'))!, 'Local GW')
+    draftChip('m-1')!.click()
+    await flush()
+    draftChip('m-2')!.click()
+    await flush()
+    await setValue(cardInputs('m-1')[0], '128000')
+    await flush()
+
+    expect(plainModelSettingsCalls()).toEqual([])
+    expect(resolveCalls().length).toBeGreaterThan(0)
+    expect(batchCalls()).toEqual([]) // 保存前一次都不写
+
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()

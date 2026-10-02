@@ -382,3 +382,42 @@ export function putModelSetting(providerId: string, model: string, patch: ModelS
 export function probeModelSetting(providerId: string, model: string) {
   return api<ProbeResult>('POST', '/api/ai/model-settings/probe', { providerId, model })
 }
+
+// ===== 草稿态（供应商还没保存）：只读解析 + 批量落库 =====
+
+/**
+ * POST /api/ai/model-settings/resolve —— **只读、不落库**的批量解析。
+ * 草稿态没有 providerId，配置卡片的数据就靠它：一次把当前勾选的模型名数组发过去，
+ * 服务端按「预设 ← 覆盖行（若有）」给出生效值（无覆盖行时就是预设值，isOverridden=false）。
+ *
+ * 注意：这是**批量**接口 —— 选中多个模型时一次请求搞定，别再逐个模型发；
+ * 增选时也只把**新增**的模型名发过去（增量，见 AIModelSettingsPanel 的草稿模式）。
+ */
+export function resolveModelSettings(models: string[], providerId?: string) {
+  return api<{ items: ModelSettingItem[] }>(
+    'POST',
+    '/api/ai/model-settings/resolve',
+    providerId ? { models, providerId } : { models },
+  )
+}
+
+/** 批量 upsert 的单条：model + 只含**用户真改过**的字段（未改的字段不要出现，否则会把预设物化成"已自定义"） */
+export interface ModelSettingBatchItem {
+  model: string
+  patch: ModelSettingPatch
+}
+
+/** 服务端契约：items 1..200 条；超出按 200 分片提交 */
+export const BATCH_MAX_ITEMS = 200
+
+/**
+ * PUT /api/ai/model-settings/batch —— 事务批量 upsert。
+ * 用于「草稿态 → 正式」：供应商创建拿到 providerId 后，一次性把草稿里改过的模型配置写进去。
+ * 事务语义：要么全成功要么全回滚（所以调用方必须避免混入非法字段，否则整批 400）。
+ */
+export function putModelSettingsBatch(providerId: string, items: ModelSettingBatchItem[]) {
+  return api<{ ok: boolean; updated: number; items: ModelSettingItem[] }>('PUT', '/api/ai/model-settings/batch', {
+    providerId,
+    items,
+  })
+}
