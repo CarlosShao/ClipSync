@@ -11,8 +11,11 @@
  * - tavily：POST https://api.tavily.com/search（body.api_key）
  * - searxng：GET {baseUrl}/search?q=&format=json（自建，无 key；baseUrl 必填）
  *
- * 安全：出站一律走 safeUpstreamFetch（协议/内网/元数据 차단 + DNS 复检 + 手动重定向 + 超时），
- * 因此 SearXNG 自建源指向内网同样会被拒绝 —— 自建源必须挂公网域名。
+ * 安全：出站一律走 safeUpstreamFetch（协议 + 地址策略 + DNS 复检 + 手动重定向 + 超时），
+ * 判定口径与 AI 供应商 base_url 完全同源（utils/aiProviders.js 的 checkUpstreamUrl）：
+ * 自建 SearXNG 指向**环回/内网**（如 http://127.0.0.1:8080）默认放行 —— 这是正当的自托管
+ * 用法（开关 AI_ALLOW_LOCAL_BASE_URL 默认 true）；云元数据 / 链路本地（169.254.0.0/16、
+ * fe80::/10）、组播 / 广播 / 保留段、非 http(s) 协议在任何开关下都仍然拒绝。
  */
 import { logger } from './logger.js'
 import { safeUpstreamFetch } from './aiProviders.js'
@@ -141,11 +144,12 @@ async function tavilySearch(query, { apiKey, baseUrl, count }) {
 
 async function searxngSearch(query, { baseUrl, count }) {
   if (!baseUrl || !/^https?:\/\//i.test(baseUrl)) {
-    throw new Error('自建 SearXNG 需要填写公网 BaseURL（如 https://search.example.com）')
+    throw new Error('自建 SearXNG 需要填写 BaseURL（如 https://search.example.com 或本机 http://127.0.0.1:8080）')
   }
   const base = baseUrl.replace(/\/+$/, '')
   const url = `${base}/search?q=${encodeURIComponent(query)}&format=json&language=zh-CN`
-  // safeUpstreamFetch 内含 SSRF 校验：内网自建源会被拒绝，必须挂公网域名
+  // safeUpstreamFetch 内含 SSRF 校验（与供应商 base_url 同一口径）：放行本机/内网自建源，
+  // 云元数据（169.254.169.254 等）与保留段仍被拒绝。
   const res = await safeUpstreamFetch(url, {}, { timeoutMs: 15000 })
   if (!res.ok) throw new Error(`SearXNG 返回 HTTP ${res.status}`)
   const body = await readJson(res)
@@ -186,7 +190,12 @@ export async function searchWeb(provider, query, opts = {}) {
     return { ...out, query, count: out.items.length }
   } catch (e) {
     logger.warn('[searchProviders] search failed:', { provider: name, error: e?.message })
-    return { error: 'SEARCH_FAILED', code: 'SEARCH_FAILED', provider: name, message: String(e?.message || e) }
+    // baseUrl 被 SSRF 地址策略拒绝时（assertSafeUpstreamUrl 抛出的 ai_base_url_* 机器码）
+    // 原样透出 code —— 设置页「测试」按钮据此显示"哪一类地址被拒 + 怎么解决"，
+    // 而不是笼统的 SEARCH_FAILED。其余失败仍走 SEARCH_FAILED（保持既有语义）。
+    const upstreamCode = typeof e?.code === 'string' && e.code.startsWith('ai_base_url_') ? e.code : ''
+    const code = upstreamCode || 'SEARCH_FAILED'
+    return { error: code, code, provider: name, message: String(e?.message || e) }
   }
 }
 

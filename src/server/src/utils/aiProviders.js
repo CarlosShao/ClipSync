@@ -31,9 +31,91 @@ import { resolveNumericBudget, resolveEffortString } from './modelPresets.js'
  * authHeader：默认 Authorization；MiMo 等部分平台需要 api-key 头。
  */
 
-// ==================== SSRF 防护（上游 fetch 统一入口） ====================
-// 供 chat / models / test / ocr 复用：URL 解析 + 协议/主机校验防内网 SSRF +
+// ==================== SSRF 防护（上游地址策略 v2：自托管优先） ====================
+// 供 chat / models / test / ocr / 联网搜索统一复用：URL 解析 + 协议/主机校验防内网 SSRF +
 // 禁跟随重定向 + 超时。避免各调用点各自裸 fetch 造成"忘了校验"的漂移。
+//
+// 用户反馈（本策略的由来）：桌面端把**本地聚合网关**（one-api / vLLM / Ollama /
+// LM Studio，典型地址 http://127.0.0.1:3800/v1）配成 AI 供应商时，被旧实现以
+// 「Base URL resolves to a blocked internal address」拒绝。旧实现把"私网/环回 IP"
+// 等同于"SSRF 攻击"，把本产品最主要的**自托管用法**一起拒了。
+//
+// 现在的判定分两层（唯一权威实现：checkUpstreamUrl）：
+//
+// 【第一层】永远拒绝 —— 与开关无关，这是不能为了需求拆掉的安全底线：
+//   - 云元数据 / 链路本地：169.254.0.0/16（含 169.254.169.254）、IPv6 fe80::/10；
+//   - 广播 / 组播 / 保留 / 未指定段：0.0.0.0/8、224.0.0.0/4、240.0.0.0/4、
+//     255.255.255.255、TEST-NET 文档段、100.64/10 CGNAT、100::/64、2001:db8::/32、:: 等；
+//   - 非 http/https 协议（file: / gopher: / ftp: …）；
+//   - 云元数据主机名（metadata.google.internal / metadata）与内网域名后缀
+//     （.local / .internal / .svc，沿用既有拒绝项）；
+//   - 畸形 URL、超长 URL（> MAX_UPSTREAM_URL_LENGTH）、带用户信息（user:pass@）的 URL。
+//
+// 【第二层】仅当 AI_ALLOW_LOCAL_BASE_URL=false 时拒绝（默认 true = 放行自托管网关）：
+//   - 环回 127.0.0.0/8、::1、localhost；
+//   - 私网 10/8、172.16/12、192.168/16；IPv6 ULA fc00::/7；
+//   - 上述地址的 IPv4-mapped / 6to4 / Teredo 封装形态（按内嵌 IPv4 归类）。
+//
+// DNS 重绑定防护**不因放行内网而退化**：主机名一律"先解析、再对解析结果逐条判定"，
+// 解析失败 / 无记录一律拒绝（fail-closed）；建连时（guardedLookup）对 socket 实际使用的
+// IP 再判一次，消除校验与建连之间的 TOCTOU 窗口。
+//
+// 开关：AI_ALLOW_LOCAL_BASE_URL（默认 true；显式 false/0/no/off → 恢复旧行为=一律禁止内网）。
+// 说明与示例见 src/server/.env.example 的同名条目。
+
+/** 环境变量名：是否放行环回/私网/ULA 上游地址（默认 true —— 本产品是自托管/桌面优先） */
+export const AI_ALLOW_LOCAL_BASE_URL_ENV = 'AI_ALLOW_LOCAL_BASE_URL'
+
+/** 上游 Base URL 长度上限：超过即视为畸形（正常网关地址远小于此值） */
+export const MAX_UPSTREAM_URL_LENGTH = 2048
+
+const LOCAL_SWITCH_FALSEY = new Set(['false', '0', 'no', 'off'])
+
+/**
+ * 读取"是否放行本地/内网上游地址"开关（每次调用读环境变量，便于运维热调整与测试）。
+ * 未设置 → true（默认放行：本地模型网关是正当用法）；
+ * 显式 false/0/no/off（大小写不敏感）→ false（恢复旧行为，一律禁止内网/环回）。
+ * @param {Record<string, string|undefined>} [env]
+ * @returns {boolean}
+ */
+export function allowLocalBaseUrl(env = process.env) {
+  const raw = String((env && env[AI_ALLOW_LOCAL_BASE_URL_ENV]) ?? '').trim().toLowerCase()
+  if (raw === '') return true
+  return !LOCAL_SWITCH_FALSEY.has(raw)
+}
+
+/**
+ * 稳定的机器码：前端按 code 映射人话文案，**不要解析 message 文本**。
+ * 与桌面端 src/desktop/src/utils/aiErrors.ts 的 REASON 表一一对应。
+ */
+export const UPSTREAM_URL_CODES = {
+  invalid: 'ai_base_url_invalid',
+  tooLong: 'ai_base_url_too_long',
+  scheme: 'ai_base_url_scheme_not_allowed',
+  userinfo: 'ai_base_url_userinfo_not_allowed',
+  host: 'ai_base_url_host_not_allowed',
+  unresolved: 'ai_base_url_unresolved',
+  blockedAddress: 'ai_base_url_blocked_address',
+  localDisabled: 'ai_base_url_local_disabled',
+}
+
+/** 地址类别 → 人类可读标签（错误信息里说清"哪一类地址被拒"） */
+const ADDRESS_CLASS_LABELS = {
+  invalid: 'not-an-IP / unparsable',
+  unspecified: 'unspecified (0.0.0.0/8, ::)',
+  loopback: 'loopback (127.0.0.0/8, ::1)',
+  private: 'private (10/8, 172.16/12, 192.168/16)',
+  ula: 'IPv6 unique-local (fc00::/7)',
+  'link-local': 'link-local / cloud-metadata (169.254.0.0/16, fe80::/10)',
+  cgNAT: 'carrier-grade NAT (100.64/10)',
+  multicast: 'multicast (224.0.0.0/4, ff00::/8)',
+  broadcast: 'broadcast (255.255.255.255)',
+  reserved: 'reserved / documentation range',
+  public: 'public',
+}
+
+/** 放行名单（本地可达地址）：默认放行；AI_ALLOW_LOCAL_BASE_URL=false 时拒绝 */
+const LOCAL_CLASSES = new Set(['loopback', 'private', 'ula'])
 
 function parseIpv4(s) {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s)
@@ -43,20 +125,26 @@ function parseIpv4(s) {
   return p
 }
 
-function isPrivateIpv4(p) {
-  const [a, b] = p
-  if (a === 0) return true // 0.0.0.0/8
-  if (a === 10) return true // 10/8
-  if (a === 100 && b >= 64 && b <= 127) return true // 100.64/10 CGNAT
-  if (a === 127) return true // 127/8 loopback
-  if (a === 169 && b === 254) return true // 169.254/16 link-local（含云元数据 169.254.169.254）
-  if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12
-  if (a === 192 && b === 168) return true // 192.168/16
-  if (a === 192 && p[1] === 0 && p[2] === 2) return true // 192.0.2/24 TEST-NET-1
-  if (a === 198 && b === 51 && p[2] === 100) return true // 198.51.100/24 TEST-NET-2
-  if (a === 203 && b === 0 && p[2] === 113) return true // 203.0.113/24 TEST-NET-3
-  if (a >= 224) return true // 224/4 组播 + 240/4 保留 + 255.255.255.255 广播
-  return false
+/**
+ * IPv4 地址分类（只分类，不做放行决策）。
+ * @returns {'unspecified'|'loopback'|'private'|'link-local'|'cgNAT'|'multicast'|'broadcast'|'reserved'|'public'}
+ */
+function classifyIpv4(p) {
+  const [a, b, c] = p
+  if (a === 0) return 'unspecified' // 0.0.0.0/8（0.0.0.0 本身也属此类）
+  if (a === 10) return 'private' // 10/8
+  if (a === 100 && b >= 64 && b <= 127) return 'cgNAT' // 100.64/10 CGNAT（不在放行名单内）
+  if (a === 127) return 'loopback' // 127/8 环回
+  if (a === 169 && b === 254) return 'link-local' // 169.254/16 链路本地（含云元数据 169.254.169.254）
+  if (a === 172 && b >= 16 && b <= 31) return 'private' // 172.16/12
+  if (a === 192 && b === 168) return 'private' // 192.168/16
+  if (a === 192 && b === 0 && c === 2) return 'reserved' // 192.0.2/24 TEST-NET-1
+  if (a === 198 && b === 51 && c === 100) return 'reserved' // 198.51.100/24 TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return 'reserved' // 203.0.113/24 TEST-NET-3
+  if (a === 255 && b === 255 && c === 255 && p[3] === 255) return 'broadcast' // 255.255.255.255
+  if (a >= 240) return 'reserved' // 240/4 保留
+  if (a >= 224) return 'multicast' // 224/4 组播
+  return 'public'
 }
 
 /** 展开 IPv6 字面量为 8 个 16-bit 组；支持 :: 缩写与内嵌 IPv4（::ffff:a.b.c.d）。非法返回 null。 */
@@ -95,34 +183,40 @@ function v4FromGroups(g6, g7) {
   return [(g6 >> 8) & 0xff, g6 & 0xff, (g7 >> 8) & 0xff, g7 & 0xff]
 }
 
-function isPrivateIpv6(g) {
-  if (g.every((x) => x === 0)) return true // ::
-  if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true // ::1
+/**
+ * IPv6 地址分类（只分类，不做放行决策）。封装形态（IPv4-mapped / 6to4 / Teredo）
+ * 一律按**内嵌 IPv4** 归类，避免"用封装绕开判定"。
+ */
+function classifyIpv6(g) {
+  if (g.every((x) => x === 0)) return 'unspecified' // ::
+  if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return 'loopback' // ::1
   if (g.slice(0, 5).every((x) => x === 0)) {
-    if (g[5] === 0xffff) return isPrivateIpv4(v4FromGroups(g[6], g[7])) // ::ffff:a.b.c.d IPv4-mapped
-    if (g[5] === 0) return true // ::/96 IPv4-compatible（已废弃、不可路由）一律拒绝
+    if (g[5] === 0xffff) return classifyIpv4(v4FromGroups(g[6], g[7])) // ::ffff:a.b.c.d IPv4-mapped
+    if (g[5] === 0) return 'reserved' // ::/96 IPv4-compatible（已废弃、不可路由）一律拒绝
   }
-  if ((g[0] & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
-  if ((g[0] & 0xfe00) === 0xfc00) return true // fc00::/7 唯一本地
-  if ((g[0] & 0xff00) === 0xff00) return true // ff00::/8 组播
-  if (g[0] === 0x100 && g.slice(1, 5).every((x) => x === 0)) return true // 100::/64 discard-only
-  if (g[0] === 0x2001 && g[1] === 0xdb8) return true // 2001:db8::/32 文档段
-  if (g[0] === 0x2002) return isPrivateIpv4(v4FromGroups(g[1], g[2])) // 6to4 内嵌 IPv4
+  if ((g[0] & 0xffc0) === 0xfe80) return 'link-local' // fe80::/10 链路本地
+  if ((g[0] & 0xfe00) === 0xfc00) return 'ula' // fc00::/7 唯一本地
+  if ((g[0] & 0xff00) === 0xff00) return 'multicast' // ff00::/8 组播
+  if (g[0] === 0x100 && g.slice(1, 5).every((x) => x === 0)) return 'reserved' // 100::/64 discard-only
+  if (g[0] === 0x2001 && g[1] === 0xdb8) return 'reserved' // 2001:db8::/32 文档段
+  if (g[0] === 0x2002) return classifyIpv4(v4FromGroups(g[1], g[2])) // 6to4 内嵌 IPv4
   if (g[0] === 0x2001 && g[1] === 0) {
     // Teredo：groups[2..3] 内嵌服务器 IPv4，groups[6..7] 内嵌客户端 IPv4（按位取反）
-    if (isPrivateIpv4(v4FromGroups(g[2], g[3]))) return true
-    const c = v4FromGroups(g[6], g[7]).map((x) => (~x) & 0xff)
-    return isPrivateIpv4(c)
+    const server = classifyIpv4(v4FromGroups(g[2], g[3]))
+    if (server !== 'public') return server
+    return classifyIpv4(v4FromGroups(g[6], g[7]).map((x) => (~x) & 0xff))
   }
-  return false
+  return 'public'
 }
 
 /**
- * 是否为私网/保留网段 IP（fail-closed：无法解析为合法 IP 字面量时一律返回 true 视为被禁）。
+ * 判定一个 IP 字面量的地址类别（fail-closed：无法解析为合法 IP 字面量时返回 'invalid'）。
  * 接受带方括号（[::1]）、带 zone（fe80::1%eth0）、IPv4-mapped/兼容 IPv6、:: 缩写等形态。
+ * @param {string} ip
+ * @returns {string} classifyIpv4 / classifyIpv6 的类别值，或 'invalid'
  */
-export function isPrivateIp(ip) {
-  if (ip === null || ip === undefined) return true
+export function classifyUpstreamIp(ip) {
+  if (ip === null || ip === undefined) return 'invalid'
   let v = String(ip).trim().toLowerCase()
   if (v.startsWith('[') && v.endsWith(']')) v = v.slice(1, -1)
   const zone = v.indexOf('%')
@@ -130,56 +224,180 @@ export function isPrivateIp(ip) {
   const kind = net.isIP(v)
   if (kind === 4) {
     const p = parseIpv4(v)
-    return p ? isPrivateIpv4(p) : true
+    return p ? classifyIpv4(p) : 'invalid'
   }
   if (kind === 6) {
     const g = parseIpv6(v)
-    return g ? isPrivateIpv6(g) : true
+    return g ? classifyIpv6(g) : 'invalid'
   }
+  return 'invalid'
+}
+
+/**
+ * 是否为私网/保留网段 IP（**保持既有语义与导出**：非公网即 true，fail-closed）。
+ * 注意：本函数只做分类，不代表"必须拒绝" —— 放行决策在 isBlockedUpstreamIp /
+ * checkUpstreamUrl 里（环回/私网/ULA 默认放行，见文件顶部策略说明）。
+ */
+export function isPrivateIp(ip) {
+  return classifyUpstreamIp(ip) !== 'public'
+}
+
+/** 是否为"本地可达"网段（环回 / 私网 / IPv6 ULA；含其 IPv4-mapped / 6to4 / Teredo 封装形态） */
+export function isLocalUpstreamIp(ip) {
+  return LOCAL_CLASSES.has(classifyUpstreamIp(ip))
+}
+
+/**
+ * 该 IP 是否必须被拒绝。
+ * - 公网 → false；
+ * - 环回/私网/ULA → 取决于 allowLocal（默认读 AI_ALLOW_LOCAL_BASE_URL，默认放行）；
+ * - 其余非公网类别（invalid / unspecified / 链路本地-元数据 / CGNAT / 组播 / 广播 / 保留）
+ *   一律 true（与开关无关的安全底线）。
+ * @param {string} ip
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowLocal]
+ */
+export function isBlockedUpstreamIp(ip, { allowLocal = allowLocalBaseUrl() } = {}) {
+  const kind = classifyUpstreamIp(ip)
+  if (kind === 'public') return false
+  if (LOCAL_CLASSES.has(kind)) return !allowLocal
   return true
 }
 
-/** 明文禁用的上游主机名（本机回环别名 / 云元数据端点） */
-export const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal', 'metadata']
+/** 永远禁用的上游主机名：云元数据端点（与开关无关；沿用既有拒绝项） */
+export const BLOCKED_HOSTNAMES = ['metadata.google.internal', 'metadata']
+
+/** 永远禁用的主机名后缀：内网/mDNS/集群内部域名（沿用既有拒绝项） */
+const BLOCKED_HOST_SUFFIXES = ['.local', '.internal', '.svc']
+
+/** 主机名是否为回环的固定别名（无需 DNS；开关关闭时按"本地地址被禁"拒绝） */
+function isLoopbackHostname(host) {
+  const h = host.endsWith('.') ? host.slice(0, -1) : host
+  return h === 'localhost'
+}
 
 function stripBrackets(host) {
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
 }
 
-/** 校验上游 URL：协议必须 http/https，且主机不得指向内网/保留网段。非法时抛错（fail-closed）。 */
-export async function assertSafeUpstreamUrl(input) {
+/** 统一的拒绝结果：带稳定 code + 可行动文案 */
+function reject(code, message, extra = {}) {
+  return { ok: false, code, message, ...extra }
+}
+
+/**
+ * 已判定为"被禁地址"时的可行动文案。两类分开写，因为**解决办法不同**：
+ * - 本地地址（环回/私网/ULA）：只是被开关关掉了 → 告诉用户把 AI_ALLOW_LOCAL_BASE_URL 改回 true；
+ * - 元数据/链路本地/组播/保留段：开关也救不了 → 明确说"永远拒绝"，并给出正确写法。
+ */
+function blockedAddressResult(host, ip, kind) {
+  const label = ADDRESS_CLASS_LABELS[kind] || kind
+  if (LOCAL_CLASSES.has(kind)) {
+    return reject(
+      UPSTREAM_URL_CODES.localDisabled,
+      `Base URL host "${host}" resolves to a local/private address (${ip}, class=${label}). ` +
+        'Self-hosted gateways on loopback/private networks are allowed by default; this address is rejected only because ' +
+        'AI_ALLOW_LOCAL_BASE_URL is set to false. Set AI_ALLOW_LOCAL_BASE_URL=true (default) to connect to a local gateway ' +
+        'such as http://127.0.0.1:3800/v1.',
+      { host, address: ip, addressClass: kind },
+    )
+  }
+  return reject(
+    UPSTREAM_URL_CODES.blockedAddress,
+    `Base URL host "${host}" resolves to a blocked address (${ip}, class=${label}). ` +
+      'Link-local / cloud-metadata (169.254.0.0/16, fe80::/10), multicast / broadcast / reserved / unspecified ranges ' +
+      'are always blocked, regardless of AI_ALLOW_LOCAL_BASE_URL. To reach a self-hosted gateway on this machine or your ' +
+      'LAN use its loopback / private address instead (e.g. http://127.0.0.1:3800/v1 or http://192.168.1.10:8000/v1).',
+    { host, address: ip, addressClass: kind },
+  )
+}
+
+/** 对一个 IP 字面量做放行决策（checkUpstreamUrl 与 guardedLookup 共用同一口径） */
+function decideAddress(host, ip, allowLocal) {
+  const kind = classifyUpstreamIp(ip)
+  if (kind === 'public') return { ok: true, host, address: ip, addressClass: kind }
+  if (LOCAL_CLASSES.has(kind) && allowLocal) return { ok: true, host, address: ip, addressClass: kind }
+  return blockedAddressResult(host, ip, kind)
+}
+
+/**
+ * 上游 URL 的**唯一权威校验入口**：保存供应商（POST/PUT /providers）、未保存预览
+ * （POST /providers/fetch-models）、搜索源测试（POST /settings/search-test）与所有出站
+ * 请求（safeUpstreamFetch）都走这里，从根上杜绝"两套口径漂移"。
+ *
+ * 顺序：空 → 长度 → URL 解析 → 协议 → 用户信息 → 主机名黑名单 → 后缀黑名单
+ *      → IP 字面量直接判定 → 主机名先解析再逐条判定（解析失败/为空 fail-closed）。
+ *
+ * @param {string} input 待校验 URL
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowLocal] 是否放行环回/私网/ULA（默认读 AI_ALLOW_LOCAL_BASE_URL）
+ * @param {Function} [opts.lookup] 可注入的解析器（签名同 dns.promises.lookup，便于离线测试）
+ * @returns {Promise<{ok: boolean, code?: string, message?: string, host?: string, address?: string, addressClass?: string}>}
+ */
+export async function checkUpstreamUrl(input, { allowLocal = allowLocalBaseUrl(), lookup } = {}) {
+  const target = typeof input === 'string' ? input.trim() : ''
+  if (!target) return reject(UPSTREAM_URL_CODES.invalid, 'Base URL is empty')
+  if (target.length > MAX_UPSTREAM_URL_LENGTH) {
+    return reject(UPSTREAM_URL_CODES.tooLong, `Base URL is too long (max ${MAX_UPSTREAM_URL_LENGTH} characters)`)
+  }
   let parsed
   try {
-    parsed = new URL(input)
+    parsed = new URL(target)
   } catch {
-    throw new Error('Invalid upstream URL')
+    return reject(UPSTREAM_URL_CODES.invalid, 'Invalid base URL')
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('Upstream URL must use http or https')
+    return reject(UPSTREAM_URL_CODES.scheme, 'Base URL must use http or https')
+  }
+  // 带用户信息（user:pass@host）的地址：凭据应走 API Key 字段，不塞进 URL（会进日志/入库）
+  if (parsed.username || parsed.password) {
+    return reject(
+      UPSTREAM_URL_CODES.userinfo,
+      'Base URL must not embed credentials (user:pass@); put the API key in the API Key field instead',
+    )
   }
   const host = parsed.hostname.toLowerCase()
-  if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
-    throw new Error('Upstream URL host is not allowed')
+  if (BLOCKED_HOSTNAMES.includes(host) || BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s))) {
+    return reject(UPSTREAM_URL_CODES.host, `Base URL host "${host}" is not allowed`)
   }
   const bare = stripBrackets(host)
-  if (net.isIP(bare)) {
-    if (isPrivateIp(bare)) throw new Error('Upstream URL resolves to a blocked internal address')
-    return
-  }
-  // 主机名：解析出全部地址逐个校验；解析失败/为空一律拒绝（fail-closed，不能把
+  if (net.isIP(bare)) return decideAddress(host, bare, allowLocal)
+  // localhost 是环回固定别名，不需要 DNS
+  if (isLoopbackHostname(host)) return decideAddress(host, '127.0.0.1', allowLocal)
+  // 主机名：解析出全部地址**逐条**判定；解析失败/为空一律拒绝（fail-closed，不能把
   // DNS 失败与"内网判定抛错"混在同一个 catch 里吞掉）
+  const resolve = typeof lookup === 'function' ? lookup : (h, o) => dns.promises.lookup(h, o)
   let addresses
   try {
-    addresses = await dns.promises.lookup(host, { all: true, verbatim: true })
+    addresses = await resolve(host, { all: true, verbatim: true })
   } catch {
-    throw new Error('Upstream URL host cannot be resolved')
+    return reject(UPSTREAM_URL_CODES.unresolved, `Base URL host "${host}" cannot be resolved (DNS lookup failed)`)
   }
-  if (!addresses || addresses.length === 0) {
-    throw new Error('Upstream URL host cannot be resolved')
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    return reject(UPSTREAM_URL_CODES.unresolved, `Base URL host "${host}" cannot be resolved (DNS lookup failed)`)
   }
+  let last = null
   for (const a of addresses) {
-    if (isPrivateIp(a.address)) throw new Error('Upstream URL resolves to a blocked internal address')
+    const ip = typeof a === 'string' ? a : a && a.address
+    const r = decideAddress(host, ip, allowLocal)
+    if (!r.ok) return r
+    last = r
   }
+  // 成功时也带上判定过的地址信息（host / address / addressClass），便于调用方日志与提示
+  return { ok: true, host, address: last?.address, addressClass: last?.addressClass }
+}
+
+/**
+ * 断言上游 URL 安全：非法时抛错（fail-closed）。错误对象带 `code`（稳定机器码）与
+ * `addressClass`，调用方可据此构造可行动的用户提示。
+ */
+export async function assertSafeUpstreamUrl(input, opts = {}) {
+  const r = await checkUpstreamUrl(input, opts)
+  if (r.ok) return
+  const err = new Error(r.message || 'Invalid upstream URL')
+  err.code = r.code || UPSTREAM_URL_CODES.invalid
+  if (r.addressClass) err.addressClass = r.addressClass
+  throw err
 }
 
 /** 连接期兜底：对 socket 实际要连接的每个解析结果再判一次，消除校验与建连之间的 DNS rebinding 窗口 */
@@ -188,8 +406,12 @@ function guardedLookup(hostname, options, callback) {
     if (err) return callback(err, address, family)
     const list = Array.isArray(address) ? address.map((x) => (typeof x === 'string' ? x : x.address)) : [address]
     for (const ip of list) {
-      if (isPrivateIp(ip)) {
-        return callback(new Error('Upstream URL resolves to a blocked internal address'), address, family)
+      if (isBlockedUpstreamIp(ip)) {
+        const r = blockedAddressResult(hostname, ip, classifyUpstreamIp(ip))
+        const e = new Error(r.message)
+        e.code = r.code
+        e.addressClass = r.addressClass
+        return callback(e, address, family)
       }
     }
     callback(null, address, family)
@@ -1075,4 +1297,11 @@ export default {
   fetchProviderModels,
   safeUpstreamFetch,
   lookupBuiltinContextWindow,
+  checkUpstreamUrl,
+  assertSafeUpstreamUrl,
+  isBlockedUpstreamIp,
+  isLocalUpstreamIp,
+  classifyUpstreamIp,
+  allowLocalBaseUrl,
+  UPSTREAM_URL_CODES,
 }

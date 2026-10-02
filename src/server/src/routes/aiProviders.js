@@ -1,6 +1,4 @@
 import { Router } from 'express'
-import dns from 'node:dns'
-import net from 'node:net'
 import pool from '../db/pool.js'
 import { apiLimiter } from '../middleware/rateLimiter.js'
 import { encrypt, decrypt } from '../utils/encryption.js'
@@ -10,8 +8,7 @@ import {
   resolveFamily,
   buildUpstreamChat,
   fetchProviderModels,
-  isPrivateIp,
-  BLOCKED_HOSTNAMES,
+  checkUpstreamUrl,
   safeUpstreamFetch,
 } from '../utils/aiProviders.js'
 import { getAiContext } from '../utils/aiContext.js'
@@ -37,43 +34,27 @@ function normalizeApiFormat(raw, isCustom) {
   return raw
 }
 
+/**
+ * 校验用户填写的 provider base_url（保存路径 POST/PUT /providers 与未保存预览
+ * POST /providers/fetch-models 共用）。
+ *
+ * 判定策略与所有出站请求（safeUpstreamFetch → assertSafeUpstreamUrl）**完全同源**：
+ * 两边都调 utils/aiProviders.js 的 checkUpstreamUrl，从根上杜绝"两套口径漂移"。
+ * 默认放行环回 / 私网 / IPv6 ULA —— 本地模型网关（one-api / vLLM / Ollama）是正当的
+ * 自托管用法，开关 AI_ALLOW_LOCAL_BASE_URL 默认 true；仍拒绝云元数据 / 链路本地
+ * （169.254/16 含 169.254.169.254、fe80::/10）、组播 / 广播 / 保留 / 未指定段、
+ * 非 http(s) 协议、带用户信息（user:pass@）、畸形 / 超长 URL；
+ * 主机名一律先解析、再对**每条**解析结果判定（DNS 重绑定防护），解析失败即拒绝。
+ *
+ * 失败时返回稳定机器码 code（前端据 code 映射人话，不解析 message 文本）。
+ * @returns {Promise<{ok: boolean, error?: string, code?: string, addressClass?: string}>}
+ */
 async function validateProviderBaseUrl(input) {
-  if (!input || typeof input !== 'string' || input.trim().length === 0) {
-    return { ok: true } // 空 baseUrl 允许，回退到预设默认地址
-  }
-  let parsed
-  try {
-    parsed = new URL(input.trim())
-  } catch {
-    return { ok: false, error: 'Invalid base URL' }
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return { ok: false, error: 'Base URL must use http or https' }
-  }
-  const host = parsed.hostname.toLowerCase()
-  if (BLOCKED_HOSTNAMES.includes(host) || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.svc')) {
-    return { ok: false, error: 'Base URL host is not allowed' }
-  }
-  // 直接是 IP（含 [::1] / ::ffff:x 等 IPv6 字面量，URL.hostname 对 IPv6 保留方括号）：立即校验
-  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-  if (net.isIP(bare)) {
-    if (isPrivateIp(bare)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
-    return { ok: true }
-  }
-  // 主机名：解析出全部地址逐个校验，防 DNS rebinding 指向内网；解析失败一律拒绝（fail-closed）
-  let addresses
-  try {
-    addresses = await dns.promises.lookup(host, { all: true, verbatim: true })
-  } catch {
-    return { ok: false, error: 'Base URL host cannot be resolved' }
-  }
-  if (!addresses || addresses.length === 0) {
-    return { ok: false, error: 'Base URL host cannot be resolved' }
-  }
-  for (const a of addresses) {
-    if (isPrivateIp(a.address)) return { ok: false, error: 'Base URL resolves to a blocked internal address' }
-  }
-  return { ok: true }
+  // 空 baseUrl 允许：回退到该供应商的预设默认地址
+  if (!input || typeof input !== 'string' || input.trim().length === 0) return { ok: true }
+  const r = await checkUpstreamUrl(input)
+  if (r.ok) return { ok: true }
+  return { ok: false, error: r.message, code: r.code, addressClass: r.addressClass }
 }
 
 // GET /api/ai/providers - 列出当前用户的供应商（不返回密钥明文，仅 hasKey 标记）
@@ -135,7 +116,9 @@ router.post('/providers', apiLimiter, async (req, res) => {
 
     if (baseUrl) {
       const vb = await validateProviderBaseUrl(baseUrl)
-      if (!vb.ok) return res.status(400).json({ error: vb.error })
+      if (!vb.ok) {
+        return res.status(400).json({ error: vb.error, code: vb.code, addressClass: vb.addressClass })
+      }
     }
 
     // models 多选列表：至少选一个模型；model 字段取 models[0]（或显式传入的 model）
@@ -202,7 +185,9 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
 
     if (newBaseUrl) {
       const vb = await validateProviderBaseUrl(newBaseUrl)
-      if (!vb.ok) return res.status(400).json({ error: vb.error })
+      if (!vb.ok) {
+        return res.status(400).json({ error: vb.error, code: vb.code, addressClass: vb.addressClass })
+      }
     }
 
     // models 多选列表：客户端显式传入数组时覆盖；同时保证 model 落在 models 内
@@ -306,9 +291,12 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
 //        不必先保存一条记录）
 //
 // 安全：模式 2 收到的 baseUrl 必须过 validateProviderBaseUrl —— 与保存路径（POST/PUT
-// /providers）**同一套 SSRF 校验**（禁内网/环回/链路本地/.local/.internal/.svc，DNS 全部
-// 解析结果逐个校验，解析失败 fail-closed）。因此放宽"必须已保存"并不会降低防护强度：
-// 这条路径能打到的地址，和"先存下来再拉"能打到的完全一致。
+// /providers）**同一套 SSRF 校验**（都调 utils/aiProviders.js 的 checkUpstreamUrl）：
+// 默认放行环回/私网/ULA（本地模型网关是正当的自托管用法，见 AI_ALLOW_LOCAL_BASE_URL），
+// 仍拒云元数据/链路本地（169.254/16、fe80::/10）、组播/广播/保留段、非 http(s)、
+// 带用户信息、畸形/超长 URL；主机名全部解析结果逐条校验，解析失败 fail-closed。
+// 因此放宽"必须已保存"并不会降低防护强度：这条路径能打到的地址，和"先存下来再拉"
+// 能打到的完全一致。
 // 明文 apiKey 仅在请求体内传输、用完即弃、不落库也不进日志，与 POST/PUT /providers 保存路径
 // 同等信任级别（key 本来就是靠请求体传给服务端加密入的库）。
 router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
@@ -327,7 +315,9 @@ router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
       const preset = getPreset(provider)
       const effectiveBaseUrl = (typeof baseUrl === 'string' && baseUrl.trim()) || preset.defaultBaseUrl || undefined
       const vb = await validateProviderBaseUrl(effectiveBaseUrl)
-      if (!vb.ok) return res.status(400).json({ error: vb.error, models: [] })
+      if (!vb.ok) {
+        return res.status(400).json({ error: vb.error, code: vb.code, addressClass: vb.addressClass, models: [] })
+      }
       const models = await fetchProviderModels({
         provider,
         baseUrl: effectiveBaseUrl,

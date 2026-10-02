@@ -23,6 +23,8 @@ import {
   testSearchConfig,
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
+import type { ApiResponse } from '@/api/client'
+import { aiFailureFrom, describeAiFailure, hasAiFailureMapping } from '@/utils/aiErrors'
 import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
 import {
   DEFAULT_THINKING_STRENGTH,
@@ -182,7 +184,7 @@ async function testSearch() {
         'success',
       )
     } else {
-      toast.show(tMsg(res.error) || t('ai_search_test_fail', '搜索测试失败'), 'error')
+      toast.show(providerErrorText(res, t('ai_search_test_fail', '搜索测试失败')), 'error')
     }
   } catch (e: any) {
     toast.show(tMsg(e?.message) || String(e), 'error')
@@ -329,11 +331,26 @@ function toggleModel(m: string) {
   }
 }
 
+/**
+ * 供应商表单 / 刷新模型 / 搜索源测试的失败文案。
+ *
+ * 服务端对 base_url 的拒绝会带稳定机器码（ai_base_url_*，见 src/server/src/utils/aiProviders.js
+ * 的 UPSTREAM_URL_CODES）：命中 utils/aiErrors 的映射表就出人话（哪一类地址被拒 + 怎么解决），
+ * 不再把「Base URL resolves to a blocked internal address」这类黑话直接甩给用户；
+ * 未命中任何映射时**沿用原 error 文案**（不改变既有行为）。
+ */
+function providerErrorText(res: ApiResponse<unknown>, fallback: string): string {
+  const payload = aiFailureFrom(res)
+  if (payload && hasAiFailureMapping(payload)) return describeAiFailure(payload, tf)
+  return tMsg(res.error) || fallback
+}
+
 // 刷新该供应商可用模型列表（上游 /models）。
 // 有 key 就能拉列表，**不需要先保存**：
 //   - 表单里填了 key（新增供应商，或刚改了 key / 地址）→ 直接用表单里的值走预览接口（不落库）；
 //   - 编辑已保存的供应商、且没重输 key → 按 id 用库里已存的加密 key。
-// 预览接口对 baseUrl 走与保存路径同一套 SSRF 校验（禁内网/环回、DNS 全解析逐个校验），
+// 预览接口对 baseUrl 走与保存路径同一套 SSRF 校验（默认放行环回/私网/ULA 本地网关，
+// 仍禁云元数据/链路本地、组播/广播/保留段、非 http(s)、带用户信息等；DNS 全解析逐个校验），
 // 所以直连预览不会降低安全性。
 // 按钮可否点：新增时必须先有 key；编辑态即使没重输 key 也能刷新（用库里的 key）。
 const canRefreshModels = computed(() => !!editingId.value || formApiKey.value.trim().length > 0)
@@ -370,7 +387,7 @@ async function refreshModels() {
       void modelPanelRef.value?.reload()
       toast.show(t('ai_models_refreshed'), 'success')
     } else {
-      toast.show(tMsg(res.error) || t('ai_models_refresh_fail'), 'error')
+      toast.show(providerErrorText(res, t('ai_models_refresh_fail')), 'error')
     }
   } catch (e: any) {
     toast.show(tMsg(e?.message) || String(e), 'error')
@@ -416,7 +433,7 @@ async function save() {
       await load()
       resetForm()
     } else {
-      formError.value = tMsg(res.error) || t('ai_save_failed')
+      formError.value = providerErrorText(res, t('ai_save_failed'))
     }
   } catch (e: any) {
     formError.value = tMsg(e?.message) || String(e)
@@ -896,7 +913,7 @@ onMounted(() => {
         <div v-if="searchProvider === 'searxng'" class="ai-pref-row">
           <div class="ai-pref-text">
             <div class="ai-pref-name">{{ t('ai_search_base_url', '自建地址') }}</div>
-            <div class="ai-pref-hint">{{ t('ai_search_base_url_h', '公网地址，如 https://search.example.com（内网会被拒绝）。') }}</div>
+            <div class="ai-pref-hint">{{ t('ai_search_base_url_h', '自建 SearXNG 地址，如 https://search.example.com 或本机 http://127.0.0.1:8080（本机/内网已放行；云元数据等地址仍会被拒绝）。') }}</div>
           </div>
           <div class="ai-pref-control ai-pref-control--wide">
             <Input
