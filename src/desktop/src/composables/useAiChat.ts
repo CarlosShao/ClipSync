@@ -13,11 +13,12 @@ import type {
 } from '@/api/ai'
 import { useAiConversations } from './useAiConversations'
 import { triggerRefreshAfterTool } from './useAiDataRefresh'
+import type { ThinkingStrength } from '@/utils/aiThinking'
 
 interface SendOptions {
   mode?: 'ask' | 'agent'
   thinking?: boolean
-  thinkingStrength?: 'low' | 'medium' | 'high'
+  thinkingStrength?: ThinkingStrength
   // 随消息一起发送的截图（粘贴得到）。构造上游历史时会转成 vision content 数组。
   images?: ChatImage[]
   // 上下文感知（任务 #229）：当前页面/视图上下文，注入到 user 消息开头让 AI 感知。

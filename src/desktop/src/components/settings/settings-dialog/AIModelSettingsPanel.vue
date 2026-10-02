@@ -3,7 +3,7 @@
 // 现状问题：模型那块只有一个标签多选 + 一个「刷新模型列表」，上下文窗口只能给"整个供应商"填一个数，
 // 多模态能力/推理协议无从配置。本面板把每个已选模型做成一行，可就地展开配置：
 //   上下文窗口 / 最大输出 / 四路多模态能力（文本·识图·视频·音频）/
-//   推理开关 + 推理协议（思考强度怎么下发）+ 三档强度映射（low·medium·high）
+//   推理开关 + 推理协议（思考强度怎么下发；强度本身固定 5 档，见 src/utils/aiThinking.ts）
 // 并展示来源标记（预设 / 已自定义）与「恢复预设」。
 //
 // 契约：src/desktop/src/api/modelSettings.ts（GET/PUT /api/ai/model-settings，已冻结字段名）。
@@ -30,7 +30,6 @@ import { RotateCcw, Settings2 } from 'lucide-vue-next'
 import {
   CONTEXT_WINDOW_MAX,
   CONTEXT_WINDOW_MIN,
-  LEVEL_VALUE_MAX_LEN,
   MAX_OUTPUT_MAX,
   MAX_OUTPUT_MIN,
   REASONING_PROTOCOLS,
@@ -39,13 +38,11 @@ import {
   RESTORE_PRESET_PATCH,
   defaultModelSetting,
   getModelSettings,
-  isValidLevelValue,
   isValidTokenCount,
   normalizeModelSettingItem,
   putModelSetting,
   type ModelSettingItem,
   type ModelSettingPatch,
-  type ReasoningLevels,
   type ReasoningProtocol,
 } from '@/api/modelSettings'
 
@@ -130,9 +127,6 @@ interface Draft {
   supportsAudio: boolean
   reasoningEnabled: boolean
   reasoningProtocol: ReasoningProtocol
-  levelLow: string
-  levelMedium: string
-  levelHigh: string
 }
 
 const draft = ref<Draft>(emptyDraft())
@@ -149,14 +143,10 @@ function emptyDraft(): Draft {
     supportsAudio: false,
     reasoningEnabled: false,
     reasoningProtocol: 'inherit',
-    levelLow: '',
-    levelMedium: '',
-    levelHigh: '',
   }
 }
 
 function draftFromItem(item: ModelSettingItem): Draft {
-  const lv = item.reasoningLevels || {}
   return {
     contextWindow: item.contextWindow == null ? '' : String(item.contextWindow),
     maxOutput: item.maxOutput == null ? '' : String(item.maxOutput),
@@ -166,9 +156,6 @@ function draftFromItem(item: ModelSettingItem): Draft {
     supportsAudio: item.supportsAudio,
     reasoningEnabled: item.reasoningEnabled,
     reasoningProtocol: item.reasoningProtocol,
-    levelLow: lv.low == null ? '' : String(lv.low),
-    levelMedium: lv.medium == null ? '' : String(lv.medium),
-    levelHigh: lv.high == null ? '' : String(lv.high),
   }
 }
 
@@ -198,18 +185,6 @@ function closeEditor() {
   modalError.value = ''
 }
 
-/** 三档映射：留空的档位不写进对象（= 同名/交给服务端）；全空则提交 null（清除覆盖） */
-function levelsFromDraft(d: Draft): ReasoningLevels | null {
-  const out: ReasoningLevels = {}
-  const low = d.levelLow.trim()
-  const medium = d.levelMedium.trim()
-  const high = d.levelHigh.trim()
-  if (low) out.low = low
-  if (medium) out.medium = medium
-  if (high) out.high = high
-  return Object.keys(out).length > 0 ? out : null
-}
-
 /** 只提交真正改动过的字段：未改的字段不进 patch，服务端保持原值（避免误清用户已有配置） */
 function buildPatch(): ModelSettingPatch {
   const d = draft.value
@@ -227,11 +202,6 @@ function buildPatch(): ModelSettingPatch {
   if (d.supportsAudio !== b.supportsAudio) patch.supportsAudio = d.supportsAudio
   if (d.reasoningEnabled !== b.reasoningEnabled) patch.reasoningEnabled = d.reasoningEnabled
   if (d.reasoningProtocol !== b.reasoningProtocol) patch.reasoningProtocol = d.reasoningProtocol
-  const levelsChanged =
-    d.levelLow.trim() !== b.levelLow.trim() ||
-    d.levelMedium.trim() !== b.levelMedium.trim() ||
-    d.levelHigh.trim() !== b.levelHigh.trim()
-  if (levelsChanged) patch.reasoningLevels = levelsFromDraft(d)
   return patch
 }
 
@@ -255,19 +225,6 @@ function validateDraft(): string {
   if (ctx !== '' && out !== '' && Number(out) > Number(ctx)) {
     return t('ai_model_cfg_err_output_gt_context', '最大输出不能大于上下文窗口')
   }
-  // 三档映射取值：服务端只收非空短串（≤64）；留空 = 与档位同名，合法
-  for (const [lv, label] of [
-    [d.levelLow, t('ai_model_cfg_level_low', '低')],
-    [d.levelMedium, t('ai_model_cfg_level_medium', '中')],
-    [d.levelHigh, t('ai_model_cfg_level_high', '高')],
-  ] as const) {
-    if (lv.trim() !== '' && !isValidLevelValue(lv)) {
-      return tf('ai_model_cfg_err_level', '{level} 档的取值需为 {max} 个字符以内的短串', {
-        level: label,
-        max: LEVEL_VALUE_MAX_LEN,
-      })
-    }
-  }
   return ''
 }
 
@@ -284,7 +241,6 @@ function mergePatchLocally(model: string, patch: ModelSettingPatch) {
   if ('reasoningProtocol' in patch && patch.reasoningProtocol) {
     merged.reasoningProtocol = patch.reasoningProtocol
   }
-  merged.reasoningLevels = 'reasoningLevels' in patch ? (patch.reasoningLevels ?? null) : current.reasoningLevels
   merged.isOverridden = true
   upsertItem(merged)
 }
@@ -440,7 +396,7 @@ const modalTitle = computed(() =>
           {{
             t(
               'ai_model_cfg_restore_hint',
-              '恢复预设会把该模型的全部覆盖项提交为 null 清除：数值回退内置预设，多模态/推理开关与三档映射回退预设值，推理协议回到「沿用系统默认」（服务端把 null 映射为 inherit），随后按服务端返回的最新值显示。',
+              '恢复预设会把该模型的全部覆盖项提交为 null 清除：数值回退内置预设，多模态/推理开关回退预设值，推理协议回到「沿用系统默认」（服务端把 null 映射为 inherit），随后按服务端返回的最新值显示。',
             )
           }}
         </div>
@@ -535,27 +491,6 @@ const modalTitle = computed(() =>
                 '决定"思考强度"如何下发到该模型；沿用系统默认 = 保持既有行为不变。',
               )
             }}
-          </div>
-        </div>
-
-        <div class="aim-field">
-          <label class="aim-label">{{ t('ai_model_cfg_levels', '思考强度映射') }}</label>
-          <div class="aim-levels">
-            <div class="aim-level">
-              <span class="aim-level-name">{{ t('ai_model_cfg_level_low', '低') }}</span>
-              <Input v-model="draft.levelLow" class="aim-input" :placeholder="t('ai_model_cfg_level_ph', '同名')" />
-            </div>
-            <div class="aim-level">
-              <span class="aim-level-name">{{ t('ai_model_cfg_level_medium', '中') }}</span>
-              <Input v-model="draft.levelMedium" class="aim-input" :placeholder="t('ai_model_cfg_level_ph', '同名')" />
-            </div>
-            <div class="aim-level">
-              <span class="aim-level-name">{{ t('ai_model_cfg_level_high', '高') }}</span>
-              <Input v-model="draft.levelHigh" class="aim-input" :placeholder="t('ai_model_cfg_level_ph', '同名')" />
-            </div>
-          </div>
-          <div class="aim-form-note">
-            {{ t('ai_model_cfg_levels_hint', '留空表示与档位同名（low / medium / high），由服务端按协议映射。') }}
           </div>
         </div>
 
@@ -728,22 +663,6 @@ const modalTitle = computed(() =>
 .aim-switch-name {
   font-size: 12.5px;
   color: var(--text-primary);
-}
-.aim-levels {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.aim-level {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.aim-level-name {
-  width: 24px;
-  flex-shrink: 0;
-  font-size: 12.5px;
-  color: var(--text-secondary);
 }
 .aim-form-error {
   margin-top: 12px;

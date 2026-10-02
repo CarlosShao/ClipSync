@@ -1,5 +1,6 @@
 import { api, getCsrfToken } from './client'
 import { useConfigStore } from '@/stores/configStore'
+import type { ThinkingStrength } from '@/utils/aiThinking'
 
 export interface AiProvider {
   id: string
@@ -173,7 +174,8 @@ export interface ChatOptions {
   temperature?: number
   mode?: 'ask' | 'agent'
   thinking?: boolean
-  thinkingStrength?: 'low' | 'medium' | 'high'
+  // 5 档思考强度（low | medium | high | xhigh | max），原样透传上游
+  thinkingStrength?: ThinkingStrength
   // 本次请求使用的模型（覆盖供应商默认 model，用于多选标签场景）
   model?: string
   // 当前对话 id，后端在流结束后把 token 用量持久化到该对话
@@ -229,7 +231,7 @@ export interface AiSettings {
   selectedModels: Record<string, string>
   defaultMode: 'ask' | 'agent'
   thinkingEnabled: boolean
-  thinkingStrength: 'low' | 'medium' | 'high'
+  thinkingStrength: ThinkingStrength
   // 长程记忆开关：是否把用户记忆注入 AI system prompt（服务端读 ai_settings，前端持久化）
   memoryEnabled: boolean
   // 全局自定义系统提示词：追加到角色/产品知识之后（服务端读 ai_settings，前端持久化）

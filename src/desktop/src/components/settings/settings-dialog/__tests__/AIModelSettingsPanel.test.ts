@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 // === 证据：设置 → AI → 供应商编辑 →「模型」区块的逐个配置 ===
 // 需求：模型不再只能多选，还要能逐个配置
-//   上下文窗口 / 最大输出 / 四路多模态能力（文本·识图·视频·音频）/ 推理开关 + 推理协议 + 三档映射，
+//   上下文窗口 / 最大输出 / 四路多模态能力（文本·识图·视频·音频）/ 推理开关 + 推理协议，
 // 并展示来源标记（预设 / 已自定义）与「恢复预设」。契约见 src/desktop/src/api/modelSettings.ts
-// （GET/PUT /api/ai/model-settings，字段名由服务端冻结）。
+// （GET/PUT /api/ai/model-settings，字段名由服务端冻结；契约 v2 已移除 reasoningLevels：
+//  「思考强度映射」编辑按用户要求下线，强度固定 5 档原样透传，见 src/utils/aiThinking.ts）。
 //
 // 面板级（AIModelSettingsPanel）：
 //   ① 拉取后渲染出预设值（GET 的 URL 带 providerId；行内展示服务端返回的数值与"预设"标记）
-//   ② 修改并提交 → 调 PUT，且 patch 只含改动字段、字段名与契约一致
+//   ② 修改并提交 → 调 PUT，且 patch 只含改动字段、字段名与契约一致（**不含 reasoningLevels**）
 //   ③ 恢复预设 → patch 全为 null（reasoningProtocol=inherit），与 RESTORE_PRESET_PATCH 一致
 //   ④ 非法输入（0 / 负数 / 超上限）不提交并就地提示
 //   ⑤ 接口未就绪（404）时如实提示"无法读取预设配置"，不用本地默认值冒充服务端预设
 //   ⑥ 展开/关闭编辑弹窗与父组件新增模型都不会丢行（面板只读 props.models，不写回多选）
+//   ⑨ 弹窗里不再有「思考强度映射」输入框（只有上下文/最大输出两个数字输入）
 // 接线级（AIProviderSettings）：
 //   ⑦ 点「编辑」即自动拉取模型配置；刷新模型列表成功后再次自动拉取（需求 3）
 //   ⑧ 打开/关闭单个模型的配置弹窗，不会弄丢父组件的模型多选
@@ -66,7 +68,7 @@ vi.mock('@/api/ai', () => ({
 import { createApp, h, nextTick, ref, type Component } from 'vue'
 import AIModelSettingsPanel from '../AIModelSettingsPanel.vue'
 import AIProviderSettings from '../AIProviderSettings.vue'
-import { RESTORE_PRESET_PATCH, CONTEXT_WINDOW_MIN, CONTEXT_WINDOW_MAX, LEVEL_VALUE_MAX_LEN } from '@/api/modelSettings'
+import { RESTORE_PRESET_PATCH, CONTEXT_WINDOW_MIN, CONTEXT_WINDOW_MAX } from '@/api/modelSettings'
 import { useI18n } from '@/composables/useI18n'
 
 const { t, tf } = useI18n()
@@ -86,7 +88,6 @@ const PRESET_ITEM = {
   supportsAudio: false,
   reasoningEnabled: true,
   reasoningProtocol: 'openai_reasoning_effort',
-  reasoningLevels: { low: 'low', medium: 'medium', high: 'high' },
   isPreset: true,
   isOverridden: false,
 }
@@ -169,7 +170,7 @@ function openEditor(index = 0) {
   buttons[index].click()
 }
 
-/** 弹窗内的数字输入框顺序：上下文窗口 / 最大输出 / 低 / 中 / 高 */
+/** 弹窗内的数字输入框顺序：上下文窗口 / 最大输出（映射输入框已随契约 v2 下线） */
 const modalInputs = () => document.querySelectorAll<HTMLInputElement>('.aim-form .aim-input')
 const modalSwitches = () => document.querySelectorAll<HTMLElement>('.aim-form [role="switch"]')
 
@@ -194,14 +195,14 @@ describe('AIModelSettingsPanel — 模型逐个配置', () => {
     m.unmount()
   })
 
-  it('② 修改后提交 → 调 PUT，patch 只含改动字段且字段名与契约一致', async () => {
+  it('② 修改后提交 → 调 PUT，patch 只含改动字段且字段名与契约一致（不含 reasoningLevels）', async () => {
     const m = mountPanel()
     await flush()
 
     openEditor(0)
     await flush()
     const inputs = modalInputs()
-    expect(inputs.length).toBe(5)
+    expect(inputs.length).toBe(2)
 
     // 改上下文窗口；识图开关从预设的 true 翻成 false；推理协议换成 Anthropic thinking
     await setValue(inputs[0], '128000')
@@ -233,6 +234,9 @@ describe('AIModelSettingsPanel — 模型逐个配置', () => {
         reasoningProtocol: 'anthropic_thinking',
       },
     })
+    // 契约 v2：patch 里绝不出现 reasoningLevels（服务端已移除该字段，发过去会被忽略）
+    expect('reasoningLevels' in calls[0][2].patch).toBe(false)
+    expect(Object.keys(calls[0][2].patch)).toEqual(['contextWindow', 'supportsImage', 'reasoningProtocol'])
     expect(mocks.showToast).toHaveBeenCalledWith(t('ai_model_cfg_saved'), 'success')
 
     m.unmount()
@@ -261,14 +265,13 @@ describe('AIModelSettingsPanel — 模型逐个配置', () => {
       supportsAudio: null,
       reasoningEnabled: null,
       reasoningProtocol: 'inherit',
-      reasoningLevels: null,
     })
     expect(mocks.showToast).toHaveBeenCalledWith(t('ai_model_cfg_restored'), 'success')
 
     m.unmount()
   })
 
-  it('④ 非法输入（0 / 负数 / 低于下限 / 超上限、档位取值超长）不提交并就地提示', async () => {
+  it('④ 非法输入（0 / 负数 / 低于下限 / 超上限）不提交并就地提示', async () => {
     const m = mountPanel()
     await flush()
 
@@ -289,17 +292,6 @@ describe('AIModelSettingsPanel — 模型逐个配置', () => {
       expect(putCalls()).toHaveLength(0)
       expect(document.body.textContent || '').toContain(expectedError)
     }
-
-    // 三档映射取值超长（服务端只收 ≤64 的短串）同样就地拦下
-    await setValue(ctx, '')
-    await setValue(modalInputs()[2], 'x'.repeat(LEVEL_VALUE_MAX_LEN + 1))
-    buttonByLabel(t('ai_model_cfg_save')).click()
-    await flush()
-
-    expect(putCalls()).toHaveLength(0)
-    expect(document.body.textContent || '').toContain(
-      tf('ai_model_cfg_err_level', 'x', { level: t('ai_model_cfg_level_low', '低'), max: LEVEL_VALUE_MAX_LEN }),
-    )
 
     m.unmount()
   })
@@ -340,6 +332,30 @@ describe('AIModelSettingsPanel — 模型逐个配置', () => {
     await m.setModels(['gpt-4o-mini', 'o3-mini', 'gpt-4.1'])
     expect(document.querySelectorAll('.aim-cfg-row')).toHaveLength(3)
     expect(document.body.textContent || '').toContain('gpt-4.1')
+
+    m.unmount()
+  })
+
+  it('⑨ 弹窗里不再有「思考强度映射」输入框（只保留推理开关 + 推理协议）', async () => {
+    const m = mountPanel()
+    await flush()
+
+    openEditor(0)
+    await flush()
+
+    const form = document.querySelector('.aim-form') as HTMLElement
+    expect(form).toBeTruthy()
+    // 映射编辑已随契约 v2 下线：既没有映射的容器/标签，也没有那三个输入框
+    expect(document.querySelector('.aim-levels')).toBeNull()
+    expect(document.querySelector('.aim-level')).toBeNull()
+    expect(form.querySelectorAll('.aim-input')).toHaveLength(2)
+    const labels = Array.from(form.querySelectorAll('.aim-label')).map((el) => (el.textContent || '').trim())
+    expect(labels.some((l) => l.includes('映射'))).toBe(false)
+    expect(labels.some((l) => l.includes('思考强度映射'))).toBe(false)
+    // 推理开关 + 推理协议照旧保留（协议决定"怎么下发"）
+    expect(form.textContent || '').toContain(t('ai_model_cfg_reasoning_on'))
+    expect(form.textContent || '').toContain(t('ai_model_cfg_reasoning_protocol'))
+    expect(form.querySelectorAll('[role="switch"]')).toHaveLength(5)
 
     m.unmount()
   })

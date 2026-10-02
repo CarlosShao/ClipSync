@@ -1,20 +1,21 @@
 // === 模型级设置 API（设置 → AI → 供应商编辑 → 模型配置）===
 // 需求：模型不再只能"多选"，还要能逐个配置「上下文窗口 / 最大输出 / 多模态能力（文本·识图·
-// 视频·音频）/ 推理协议 + 三档强度映射」，并展示来源（预设 / 已自定义）与「恢复预设」。
+// 视频·音频）/ 推理开关 + 推理协议」，并展示来源（预设 / 已自定义）与「恢复预设」。
 //
-// 服务端契约（已冻结，字段名以此为准）：
+// 契约 v2（已冻结，字段名以此为准）：
 //   GET  /api/ai/model-settings?providerId=<uuid>
 //        → 200 { items: [ { model, contextWindow, maxOutput, supportsText, supportsImage,
 //                           supportsVideo, supportsAudio, reasoningEnabled, reasoningProtocol,
-//                           reasoningLevels, isPreset, isOverridden } ] }
+//                           isPreset, isOverridden } ] }
 //   PUT  /api/ai/model-settings
 //        body { providerId, model, patch: { contextWindow?, maxOutput?, supportsText?,
 //               supportsImage?, supportsVideo?, supportsAudio?, reasoningEnabled?,
-//               reasoningProtocol?, reasoningLevels? } }
+//               reasoningProtocol? } }
 //        → 200 { ok: true, item: {…同上} }
 // reasoningProtocol 取值：inherit | none | openai_reasoning_effort | anthropic_thinking |
 //                        output_config_effort | qwen_enable_thinking
-// reasoningLevels 形如 { low, medium, high }，level → 上游实际取值；inherit = 沿用系统既有行为。
+// 注意：契约 v2 已**移除 reasoningLevels**（思考强度映射）——思考强度统一为 5 档
+// low | medium | high | xhigh | max 原样透传上游，不再逐模型配映射；发 reasoningLevels 会被服务端忽略。
 //
 // 该端点需登录 + 真 CSRF，一律走项目统一的 api()（Bearer + X-CSRF-Token + 幂等键 + 401 刷新），
 // 本文件不裸 fetch。
@@ -73,14 +74,12 @@ export function normalizeReasoningProtocol(value?: string | null): ReasoningProt
 }
 
 // ===== 数值边界（与服务端硬校验同源，避免"本地能填、服务端 400"）=====
-// 服务端 routes/aiModelSettings.js 的契约边界：
-//   contextWindow 1024..2000000 / maxOutput 1..200000 / reasoningLevels 值非空字符串（≤64）或 1..1000000。
+// 服务端 routes/aiModelSettings.js 的契约边界：contextWindow 1024..2000000 / maxOutput 1..200000。
 // 这里取同一组常量做前置校验（服务端仍会独立校验并可能返回 400）。
 export const CONTEXT_WINDOW_MIN = 1024
 export const CONTEXT_WINDOW_MAX = 2_000_000
 export const MAX_OUTPUT_MIN = 1
 export const MAX_OUTPUT_MAX = 200_000
-export const LEVEL_VALUE_MAX_LEN = 64
 
 /** 是否是可以下发的 token 数：纯数字、在 [min, max] 闭区间内。空串由调用方判为"用预设"。 */
 export function isValidTokenCount(raw: string, min: number, max: number): boolean {
@@ -90,20 +89,7 @@ export function isValidTokenCount(raw: string, min: number, max: number): boolea
   return Number.isSafeInteger(n) && n >= min && n <= max
 }
 
-/** 三档映射的单个取值：留空 = 同名；非空必须是 ≤64 字符的短串（服务端口径） */
-export function isValidLevelValue(raw: string): boolean {
-  const s = (raw ?? '').trim()
-  return s.length > 0 && s.length <= LEVEL_VALUE_MAX_LEN
-}
-
 // ===== 类型 =====
-
-/** 三档思考强度 → 上游实际取值（留空键表示与档位同名，由服务端决定） */
-export interface ReasoningLevels {
-  low?: string | null
-  medium?: string | null
-  high?: string | null
-}
 
 export interface ModelSettingItem {
   model: string
@@ -115,7 +101,6 @@ export interface ModelSettingItem {
   supportsAudio: boolean
   reasoningEnabled: boolean
   reasoningProtocol: ReasoningProtocol
-  reasoningLevels: ReasoningLevels | null
   /** 该模型是否在内置预设表中（服务端给） */
   isPreset: boolean
   /** 该模型是否存在用户覆盖（服务端给） */
@@ -131,7 +116,6 @@ export interface ModelSettingPatch {
   supportsAudio?: boolean | null
   reasoningEnabled?: boolean | null
   reasoningProtocol?: ReasoningProtocol | null
-  reasoningLevels?: ReasoningLevels | null
 }
 
 /**
@@ -140,7 +124,7 @@ export interface ModelSettingPatch {
  * 因此恢复预设提交 'inherit' 而不是 null。
  *
  * 服务端语义（routes/aiModelSettings.js + utils/aiModelSettings.js）：patch 里显式 null =
- * 清除该项覆盖 —— 数值列写 NULL（读时回退预设），多模态/推理开关与三档映射物化为该模型的预设值，
+ * 清除该项覆盖 —— 数值列写 NULL（读时回退预设），多模态/推理开关物化为该模型的预设值，
  * 推理协议 null → 'inherit'（沿用系统默认），与本常量直接提交 'inherit' 结果一致。
  * 界面文案据此如实描述；若对接的服务端版本较旧、没有该端点，已存值保持不变（GET 会 404，
  * 面板会提示"无法读取预设配置"，不会假装恢复成功）。
@@ -154,7 +138,6 @@ export const RESTORE_PRESET_PATCH: ModelSettingPatch = {
   supportsAudio: null,
   reasoningEnabled: null,
   reasoningProtocol: 'inherit',
-  reasoningLevels: null,
 }
 
 /** 某个模型在没有服务端数据时的本地占位（未刷新出预设、或模型是刚手工输入的） */
@@ -169,7 +152,6 @@ export function defaultModelSetting(model: string): ModelSettingItem {
     supportsAudio: false,
     reasoningEnabled: false,
     reasoningProtocol: 'inherit',
-    reasoningLevels: null,
     isPreset: false,
     isOverridden: false,
   }
@@ -188,7 +170,6 @@ export function normalizeModelSettingItem(raw: Partial<ModelSettingItem> & { mod
     supportsAudio: !!raw.supportsAudio,
     reasoningEnabled: !!raw.reasoningEnabled,
     reasoningProtocol: normalizeReasoningProtocol(raw.reasoningProtocol),
-    reasoningLevels: raw.reasoningLevels ?? null,
     isPreset: !!raw.isPreset,
     isOverridden: !!raw.isOverridden,
   }

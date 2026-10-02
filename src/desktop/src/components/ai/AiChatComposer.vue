@@ -20,6 +20,11 @@ import {
 } from 'lucide-vue-next'
 import type { ContextUsage, ChatImage } from '@/api/ai'
 import { sha256DataUrl } from '@/utils/hash'
+import {
+  THINKING_STRENGTH_LABELS,
+  THINKING_STRENGTHS,
+  type ThinkingStrength,
+} from '@/utils/aiThinking'
 
 /**
  * AiChatComposer — 聊天输入区（UI-C，由旧 AiChatInput 重构而来；UI-F 起为唯一输入组件）
@@ -40,7 +45,7 @@ const props = defineProps<{
   selectedProviderId: string
   selectedModel: string
   thinkingEnabled: boolean
-  thinkingStrength: 'low' | 'medium' | 'high'
+  thinkingStrength: ThinkingStrength
   mode: 'ask' | 'agent'
   contextUsage: ContextUsage | null
   // 当前选中的供应商在协议层是否支持 prompt cache（由 useAiChat 给出）。
@@ -54,7 +59,7 @@ const emit = defineEmits<{
   'select-provider': [id: string]
   'select-model': [model: string]
   'toggle-thinking': []
-  'set-thinking-strength': [strength: 'low' | 'medium' | 'high']
+  'set-thinking-strength': [strength: ThinkingStrength]
   'set-mode': [mode: 'ask' | 'agent']
   'open-settings': []
 }>()
@@ -349,10 +354,15 @@ function setMode(m: 'ask' | 'agent') {
   closePopups()
 }
 
-function setStrength(s: 'low' | 'medium' | 'high') {
+function setStrength(s: ThinkingStrength) {
   emit('set-thinking-strength', s)
   if (!props.thinkingEnabled) emit('toggle-thinking')
   closePopups()
+}
+
+/** 档位文案：直接英文（Low/Medium/High/XHigh/Max），不翻译成"低/中/高" */
+function strengthLabel(s: ThinkingStrength) {
+  return t(`ai_strength_${s}`, THINKING_STRENGTH_LABELS[s])
 }
 
 function toggleThinking() {
@@ -431,17 +441,16 @@ defineExpose({ setDraft })
           @click.stop="togglePopup('thinking')"
         >
           <Brain :size="12" />
-          <span>{{ thinkingEnabled ? t('ai_strength_' + thinkingStrength) : t('ai_thinking') }}</span>
+          <span>{{ thinkingEnabled ? strengthLabel(thinkingStrength) : t('ai_thinking') }}</span>
         </button>
         <div v-if="activePopup === 'thinking'" ref="thinkingPopupEl" class="ai-popup" @click.stop>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'low' }" @click="setStrength('low')">
-            {{ t('ai_strength_low') }}
-          </button>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'medium' }" @click="setStrength('medium')">
-            {{ t('ai_strength_medium') }}
-          </button>
-          <button :class="{ active: thinkingEnabled && thinkingStrength === 'high' }" @click="setStrength('high')">
-            {{ t('ai_strength_high') }}
+          <button
+            v-for="s in THINKING_STRENGTHS"
+            :key="s"
+            :class="{ active: thinkingEnabled && thinkingStrength === s }"
+            @click="setStrength(s)"
+          >
+            {{ strengthLabel(s) }}
           </button>
           <button class="ai-popup-divider" @click="toggleThinking">
             {{ thinkingEnabled ? t('ai_thinking_off') : t('ai_thinking_on') }}

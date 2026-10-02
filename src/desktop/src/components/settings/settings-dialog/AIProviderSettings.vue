@@ -24,6 +24,13 @@ import {
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
 import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
+import {
+  DEFAULT_THINKING_STRENGTH,
+  THINKING_STRENGTH_LABELS,
+  THINKING_STRENGTHS,
+  normalizeThinkingStrength,
+  type ThinkingStrength,
+} from '@/utils/aiThinking'
 
 const { t, tf, tMsg } = useI18n()
 const toast = useSonner()
@@ -63,8 +70,7 @@ const testingId = ref<string | null>(null)
 const formOpen = ref(false)
 // 表单容器引用：展开后滚动到可见区域（供应商多时表单在列表下方，避免“点了没反应”）
 const formRef = ref<HTMLElement | null>(null)
-// 思考强度选项兜底文案（locale 未热更新/缺 key 时仍可读；英文环境下仅作最后兜底）
-const strengthFallback: Record<'low' | 'medium' | 'high', string> = { low: 'Low', medium: 'Balanced', high: 'Deep' }
+// 思考强度固定 5 档（low|medium|high|xhigh|max），档位文案与兜底统一在 utils/aiThinking.ts，界面不翻译成中文
 
 function scrollFormIntoView() {
   nextTick(() => formRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
@@ -83,7 +89,7 @@ const promptSaving = ref(false)
 // 对话偏好：与 AI 面板共享同一行 ai_settings，变更即时生效
 const prefMode = ref<'ask' | 'agent'>('ask')
 const prefThinking = ref(false)
-const prefThinkingStrength = ref<'low' | 'medium' | 'high'>('medium')
+const prefThinkingStrength = ref<ThinkingStrength>(DEFAULT_THINKING_STRENGTH)
 const prefMemory = ref(false)
 // 复制后自动 AI 摘要（C1）：本地偏好，默认关闭；默认配置下复制内容不触发任何 LLM 调用
 const AUTO_SUMMARY_KEY = 'ai-auto-summary-on-copy'
@@ -107,7 +113,7 @@ async function loadAllSettings() {
       promptSnapshot.value = customPrompt.value
       prefMode.value = res.data.defaultMode || 'ask'
       prefThinking.value = !!res.data.thinkingEnabled
-      prefThinkingStrength.value = res.data.thinkingStrength || 'medium'
+      prefThinkingStrength.value = normalizeThinkingStrength(res.data.thinkingStrength)
       prefMemory.value = !!res.data.memoryEnabled
       searchProvider.value = res.data.searchProvider || ''
       searchBaseUrl.value = res.data.searchBaseUrl || ''
@@ -766,18 +772,18 @@ onMounted(() => {
           <div class="ai-pref-control">
             <CustomSelect
               :model-value="prefThinkingStrength"
-              @update:model-value="(v: string) => { prefThinkingStrength = v as 'low' | 'medium' | 'high'; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
+              @update:model-value="(v: string) => { prefThinkingStrength = v as ThinkingStrength; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
             >
-              {{ t(`ai_thinking_strength_${prefThinkingStrength}`, strengthFallback[prefThinkingStrength]) }}
+              {{ t(`ai_thinking_strength_${prefThinkingStrength}`, THINKING_STRENGTH_LABELS[prefThinkingStrength]) }}
               <template #options>
                 <CustomSelectOption
-                  v-for="s in (['low', 'medium', 'high'] as const)"
+                  v-for="s in THINKING_STRENGTHS"
                   :key="s"
                   :value="s"
                   :selected="prefThinkingStrength === s"
-                  @select="(v: string) => { prefThinkingStrength = v as 'low' | 'medium' | 'high'; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
+                  @select="(v: string) => { prefThinkingStrength = v as ThinkingStrength; savePrefs({ thinkingStrength: prefThinkingStrength }) }"
                 >
-                  {{ t(`ai_thinking_strength_${s}`, strengthFallback[s]) }}
+                  {{ t(`ai_thinking_strength_${s}`, THINKING_STRENGTH_LABELS[s]) }}
                 </CustomSelectOption>
               </template>
             </CustomSelect>

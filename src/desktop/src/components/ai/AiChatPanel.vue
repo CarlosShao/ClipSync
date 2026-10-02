@@ -6,6 +6,12 @@ import { useAiChatUi } from '@/composables/useAiChatUi'
 import { useUser } from '@/composables/useUser'
 import { useResizablePanel } from '@/composables/useResizablePanel'
 import { getSettings } from '@/api/ai'
+import {
+  normalizeThinkingStrength,
+  readStoredThinkingStrength,
+  writeStoredThinkingStrength,
+  type ThinkingStrength,
+} from '@/utils/aiThinking'
 import Button from '@/components/ui/button/Button.vue'
 import AiPanel from './AiPanel.vue'
 import AiNavRail from './AiNavRail.vue'
@@ -102,9 +108,7 @@ const mode = ref<'ask' | 'agent'>((localStorage.getItem('ai-mode') as 'ask' | 'a
 
 // 思考模式（localStorage 瞬时回退，DB 为准）
 const thinkingEnabled = ref(localStorage.getItem('ai-thinking-enabled') === 'true')
-const thinkingStrength = ref<'low' | 'medium' | 'high'>(
-  (localStorage.getItem('ai-thinking-strength') as 'low' | 'medium' | 'high') || 'medium',
-)
+const thinkingStrength = ref<ThinkingStrength>(readStoredThinkingStrength())
 
 // C3④：程序化写入偏好（DB 覆盖 / 切换会话同步 / 设置页广播）不得触发"全局默认模式"持久化，
 // 否则打开一个 agent 模式的历史会话会把全局默认模式改成 agent。
@@ -113,7 +117,7 @@ let suppressPrefPersist = false
 function applyPrefsQuietly(patch: {
   mode?: 'ask' | 'agent'
   thinking?: boolean
-  strength?: 'low' | 'medium' | 'high'
+  strength?: ThinkingStrength
 }) {
   suppressPrefPersist = true
   if (patch.mode) mode.value = patch.mode
@@ -134,7 +138,7 @@ watch(
       applyPrefsQuietly({
         mode: s.defaultMode || 'ask',
         thinking: s.thinkingEnabled || false,
-        strength: s.thinkingStrength || 'medium',
+        strength: normalizeThinkingStrength(s.thinkingStrength),
       })
     }
   },
@@ -152,7 +156,7 @@ async function applyExternalAiSettings() {
       applyPrefsQuietly({
         mode: res.data.defaultMode || 'ask',
         thinking: res.data.thinkingEnabled || false,
-        strength: res.data.thinkingStrength || 'medium',
+        strength: normalizeThinkingStrength(res.data.thinkingStrength),
       })
       memoryEnabled.value = res.data.memoryEnabled ?? false
     }
@@ -169,7 +173,7 @@ watch([mode, thinkingEnabled, thinkingStrength], () => {
   if (suppressPrefPersist) return
   localStorage.setItem('ai-mode', mode.value)
   localStorage.setItem('ai-thinking-enabled', String(thinkingEnabled.value))
-  localStorage.setItem('ai-thinking-strength', thinkingStrength.value)
+  writeStoredThinkingStrength(thinkingStrength.value)
   persistSettings({
     defaultMode: mode.value,
     thinkingEnabled: thinkingEnabled.value,
@@ -437,7 +441,7 @@ function toggleThinking() {
   thinkingEnabled.value = !thinkingEnabled.value
 }
 
-function setThinkingStrength(s: 'low' | 'medium' | 'high') {
+function setThinkingStrength(s: ThinkingStrength) {
   thinkingStrength.value = s
 }
 
