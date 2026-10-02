@@ -399,6 +399,11 @@ function onEnabledModelsChange(list: string[]) {
   formSelectedModels.value = [...list]
 }
 
+/** 草稿行「移除」：从已选集合里去掉该模型（草稿里改过的值仍留在 patch 里，勾回来即恢复） */
+function onDraftRemoveModel(model: string) {
+  formSelectedModels.value = formSelectedModels.value.filter((m) => m !== model)
+}
+
 /** 草稿态候选芯片 = 上游候选 ∪ 手工添加的模型（手工的也要可见、可点取消） */
 const draftChipList = computed(() => {
   const out = [...draftCandidates.value]
@@ -1048,6 +1053,7 @@ onMounted(() => {
               :draft-models="formSelectedModels"
               :draft-patches="draftModelPatches"
               @update:draft-patches="draftModelPatches = $event"
+              @remove-draft-model="onDraftRemoveModel"
             />
 
             <!-- 批量写入失败：供应商已保存（如实告知）+ 可就地重试，绝不谎报「配置已存」 -->

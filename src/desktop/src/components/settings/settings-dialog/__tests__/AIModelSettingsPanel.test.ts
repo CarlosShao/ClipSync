@@ -851,7 +851,7 @@ describe('模型库 — 恢复与降级边界', () => {
     m.unmount()
   })
 
-  it('⑱ 服务端未下发 v3 字段（契约较旧）时如实提示，启用态回落到父组件已选集合', async () => {
+  it('⑱ 服务端未下发 enabled（旧契约）⇒ 一律按**未启用**渲染（不再本地推断），如实提示', async () => {
     // 契约 v2 形态：没有 enabled / alias / sortOrder / applicability
     const legacy: Raw = {
       model: 'gpt-4o-mini',
@@ -866,12 +866,14 @@ describe('模型库 — 恢复与降级边界', () => {
       isPreset: true,
       isOverridden: false,
     }
+    // 父组件"已选"里带着它，但服务端没给 enabled ⇒ 仍必须渲染成未启用（不猜"已启用"）
     const m = mountPanel({ items: [legacy], models: ['gpt-4o-mini'] })
     await flush()
 
     expect(text()).toContain(t('ai_model_v3_missing'))
-    // 服务端没给 enabled → 用父组件传进来的已选集合兜底
-    expect(chipOn('gpt-4o-mini')).toBe(true)
+    expect(chipOn('gpt-4o-mini')).toBe(false)
+    // 面板自己的计数也如实写"已启用 0"（不再本地推断）
+    expect(text()).toContain(tf('ai_model_lib_title', 'x', { n: 1, on: 0 }))
 
     m.unmount()
   })
@@ -1524,6 +1526,14 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
   const card = (m: string) => document.querySelector<HTMLElement>(`.aim-draft-card[data-model="${m}"]`)
   const cardInputs = (m: string) => card(m)!.querySelectorAll<HTMLInputElement>('.aim-input')
   const cardSwitches = (m: string) => card(m)!.querySelectorAll<HTMLElement>('[role="switch"]')
+  const cardAction = (m: string, action: string) =>
+    document.querySelector<HTMLButtonElement>(`.aim-draft-card[data-model="${m}"] [data-action="${action}"]`)
+  /** 折叠概要行 → 点「配置」展开完整表单 */
+  async function expandCard(m: string) {
+    cardAction(m, 'draft-config')!.click()
+    await flush()
+  }
+  const draftForms = () => document.querySelectorAll('.aim-draft-form')
 
   const resolveCalls = () =>
     mocks.api.mock.calls
@@ -1609,7 +1619,7 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     return m
   }
 
-  it('㊱ 勾选 1 个候选 ⇒ resolve 批量调用一次（含该模型）且卡片立刻渲染出预设值', async () => {
+  it('㊱ 勾选 1 个候选 ⇒ resolve 批量调用一次（含该模型）且渲染**折叠概要行**（完整表单默认不出现）', async () => {
     const m = await mountDraftWithCandidates(['m-1', 'm-2', 'm-3'])
     expect(card('m-1')).toBeNull()
 
@@ -1622,16 +1632,23 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
 
     const c = card('m-1')!
     expect(c).toBeTruthy()
-    // 预设值渲染进输入框（数字字段是 input.value，不在 textContent 里）
-    expect(cardInputs('m-1')[0].value).toBe('200000')
-    expect(cardInputs('m-1')[1].value).toBe('16384')
-    // 草稿态来源一律"来自预设"（isOverridden=false）
+    // 概要行（与已保存态模型库行同构），完整表单**默认收起**（不渲染）
+    expect(c.querySelector('[data-draft-row]')).toBeTruthy()
+    expect(c.querySelector('.aim-draft-form')).toBeNull()
+    expect(draftForms()).toHaveLength(0)
+    // 摘要复用已保存态同一套文案：上下文 / 输出 / 多模态 / 推理协议都要有，且不留空
+    const sum = c.querySelector('[data-draft-sum]')!.textContent || ''
+    expect(sum).toContain('200000')
+    expect(sum).toContain('16384')
+    expect(sum).toContain(t('ai_model_cfg_text', '文本'))
+    expect(sum).toContain(t('ai_model_reasoning_protocol_openai_reasoning_effort'))
+    // 徽标：resolve 无覆盖行 ⇒ 预设
     expect(c.textContent).toContain(t('ai_model_cfg_badge_preset'))
-    expect(c.textContent).toContain(t('ai_model_src_preset'))
-    // 与已保存态同一套字段：2 个数字输入 + 别名输入 + 5 个开关 + 协议下拉
-    expect(cardInputs('m-1')).toHaveLength(3)
-    expect(cardSwitches('m-1')).toHaveLength(5)
-    expect(c.querySelectorAll('.custom-select-trigger')).toHaveLength(1)
+    // 右侧是图标操作（配置 / 清空 / 移除），不是文字按钮
+    expect(cardAction('m-1', 'draft-config')).toBeTruthy()
+    expect(cardAction('m-1', 'draft-clear')).toBeTruthy()
+    expect(cardAction('m-1', 'draft-remove')).toBeTruthy()
+    expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(true) // 还没改过 ⇒ 清空不可点
 
     m.unmount()
   })
@@ -1660,6 +1677,7 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     const m = await mountDraftWithCandidates(['m-1', 'm-2'])
     draftChip('m-1')!.click()
     await flush()
+    await expandCard('m-1')
     await setValue(cardInputs('m-1')[0], '128000')
     cardSwitches('m-1')[1].click() // 识图：预设 on → 改成 off
     await flush()
@@ -1698,6 +1716,7 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     await flush()
     draftChip('m-2')!.click() // 勾选并改两个字段
     await flush()
+    await expandCard('m-2')
     await setValue(cardInputs('m-2')[0], '128000')
     cardSwitches('m-2')[1].click()
     await flush()
@@ -1732,6 +1751,7 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     await setValue(inputByPh(t('ai_name_ph'))!, 'Local GW')
     draftChip('m-1')!.click()
     await flush()
+    await expandCard('m-1')
     await setValue(cardInputs('m-1')[0], '128000')
 
     installDraftApi({ batchFails: true })
@@ -1769,12 +1789,125 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     await flush()
     draftChip('m-2')!.click()
     await flush()
+    await expandCard('m-1')
     await setValue(cardInputs('m-1')[0], '128000')
     await flush()
 
     expect(plainModelSettingsCalls()).toEqual([])
     expect(resolveCalls().length).toBeGreaterThan(0)
     expect(batchCalls()).toEqual([]) // 保存前一次都不写
+
+    m.unmount()
+  })
+
+  it('㊼ 勾选 3 个 ⇒ 3 行概要且**默认全部收起**（不再把表单全摊开）', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2', 'm-3'])
+    for (const name of ['m-1', 'm-2', 'm-3']) {
+      draftChip(name)!.click()
+      await flush()
+    }
+
+    expect(document.querySelectorAll('[data-draft-card]')).toHaveLength(3)
+    expect(document.querySelectorAll('[data-draft-row]')).toHaveLength(3)
+    // 展开态的完整表单数量为 0
+    expect(draftForms()).toHaveLength(0)
+    // 每行都有摘要与图标操作
+    for (const name of ['m-1', 'm-2', 'm-3']) {
+      expect(card(name)!.querySelector('[data-draft-sum]')!.textContent).toContain('200000')
+      expect(cardAction(name, 'draft-config')).toBeTruthy()
+    }
+
+    m.unmount()
+  })
+
+  it('㊽ 点「配置」才展开完整表单（值=预设）；收起后「已自定义」徽标 + 摘要反映改过的值', async () => {
+    const m = await mountDraftWithCandidates(['m-1'])
+    draftChip('m-1')!.click()
+    await flush()
+
+    // 默认收起
+    expect(card('m-1')!.querySelector('.aim-draft-form')).toBeNull()
+    // 点「配置」⇒ 展开，字段值=预设
+    await expandCard('m-1')
+    const form = card('m-1')!.querySelector<HTMLElement>('.aim-draft-form')!
+    expect(form).toBeTruthy()
+    expect(cardInputs('m-1')).toHaveLength(3) // 上下文 / 最大输出 / 别名
+    expect(cardInputs('m-1')[0].value).toBe('200000')
+    expect(cardSwitches('m-1')).toHaveLength(5)
+    expect(form.querySelectorAll('.custom-select-trigger')).toHaveLength(1)
+
+    // 改上下文窗口 + 识图
+    await setValue(cardInputs('m-1')[0], '128000')
+    cardSwitches('m-1')[1].click()
+    await flush()
+    // 再点一次 ⇒ 收起（表单卸载）
+    cardAction('m-1', 'draft-config')!.click()
+    await flush()
+    expect(card('m-1')!.querySelector('.aim-draft-form')).toBeNull()
+
+    // 收起后：徽标变「已自定义」，摘要如实反映改过的值
+    const row = card('m-1')!
+    expect(row.textContent).toContain(t('ai_model_cfg_badge_overridden'))
+    const sum = row.querySelector('[data-draft-sum]')!.textContent || ''
+    expect(sum).toContain('128000')
+    expect(sum).not.toContain('200000')
+    // 「清空自定义值」现在可点了；点它 ⇒ 回到预设（摘要回到 200000、徽标回预设）
+    expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(false)
+    cardAction('m-1', 'draft-clear')!.click()
+    await flush()
+    expect(card('m-1')!.querySelector('[data-draft-sum]')!.textContent).toContain('200000')
+    expect(card('m-1')!.textContent).toContain(t('ai_model_cfg_badge_preset'))
+    expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(true)
+
+    m.unmount()
+  })
+
+  it('㊾ 行内「移除」⇒ 父组件从已选里去掉（芯片取消勾选），草稿改动仍保留、勾回来即恢复', async () => {
+    const m = await mountDraftWithCandidates(['m-1', 'm-2'])
+    draftChip('m-1')!.click()
+    await flush()
+    await expandCard('m-1')
+    await setValue(cardInputs('m-1')[0], '128000')
+    await flush()
+    expect(draftChip('m-1')!.classList.contains('on')).toBe(true)
+
+    // 行内移除（图标操作）
+    cardAction('m-1', 'draft-remove')!.click()
+    await flush()
+    expect(draftChip('m-1')!.classList.contains('on')).toBe(false) // 芯片取消选中
+    expect(card('m-1')).toBeNull() // 行消失
+    expect(putBodies()).toEqual([]) // 草稿态不写库
+
+    // 再勾回来：行回来 + 改过的值还在（草稿 override map 保留）
+    draftChip('m-1')!.click()
+    await flush()
+    expect(card('m-1')).toBeTruthy()
+    expect(card('m-1')!.querySelector('[data-draft-sum]')!.textContent).toContain('128000')
+    expect(card('m-1')!.textContent).toContain(t('ai_model_cfg_badge_overridden'))
+
+    m.unmount()
+  })
+
+  it('㊿ 旧契约（无 enabled）下不会用"全未启用"回写父组件、清空它已保存的模型列表', async () => {
+    const legacy: Raw = {
+      model: 'gpt-4o-mini',
+      contextWindow: 200000,
+      maxOutput: 16384,
+      supportsText: true,
+      supportsImage: false,
+      supportsVideo: false,
+      supportsAudio: false,
+      reasoningEnabled: true,
+      reasoningProtocol: 'inherit',
+      isPreset: true,
+      isOverridden: false,
+    }
+    const m = mountPanel({ items: [legacy], models: ['gpt-4o-mini', 'kept-2'] })
+    await flush()
+
+    // 界面按"未启用"渲染（不猜），但**不**把这份"全未启用"回写父组件（否则会把已保存的列表清空）
+    expect(chipOn('gpt-4o-mini')).toBe(false)
+    expect(m.emitted).toEqual([])
 
     m.unmount()
   })

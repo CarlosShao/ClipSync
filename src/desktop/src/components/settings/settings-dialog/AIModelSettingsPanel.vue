@@ -37,6 +37,7 @@ import {
   Activity,
   Check,
   ChevronRight,
+  ChevronUp,
   Eraser,
   GripVertical,
   Pencil,
@@ -102,6 +103,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:enabledModels': [string[]]
   'update:draftPatches': [Record<string, ModelSettingPatch>]
+  /** 草稿行「移除」：父组件把该模型从已选集合里去掉（草稿 patch 保留，勾回来即恢复） */
+  removeDraftModel: [string]
 }>()
 
 const { t, tf } = useI18n()
@@ -382,6 +385,59 @@ function resetDraftCard(model: string) {
   syncDraftPatches()
 }
 
+/* ---------- 草稿行的折叠/展开（纯 UI 状态，不写库） ---------- */
+
+/** 每行的展开状态：默认**全部收起**（多个模型时只显示一行行概要，不摊开一堆表单） */
+const draftExpanded = ref<Record<string, boolean>>({})
+
+function draftIsExpanded(model: string): boolean {
+  return draftExpanded.value[model] === true
+}
+
+function toggleDraftExpanded(model: string) {
+  draftExpanded.value = { ...draftExpanded.value, [model]: !draftIsExpanded(model) }
+}
+
+/** 该模型是否有本地草稿改动（徽标 / 摘要 / 按钮可用性都用它） */
+function draftHasPatch(model: string): boolean {
+  return Object.keys(draftPatchOf(model)).length > 0
+}
+
+/**
+ * 把草稿 patch 叠加到 resolve 条目上 —— 概要行的**摘要与徽标必须如实反映你改过的值**
+ * （例如把上下文改成 128000 后收起，摘要就显示 128000，而不是仍显示预设的 200000）。
+ */
+function effectiveDraftItem(model: string): ModelSettingItem {
+  const base = draftItemMap.value.get(model) ?? defaultModelSetting(model)
+  const patch = draftPatchOf(model)
+  if (Object.keys(patch).length === 0) return base
+  const out: ModelSettingItem = { ...base, isOverridden: true }
+  if ('contextWindow' in patch) out.contextWindow = patch.contextWindow ?? null
+  if ('maxOutput' in patch) out.maxOutput = patch.maxOutput ?? null
+  if (typeof patch.supportsText === 'boolean') out.supportsText = patch.supportsText
+  if (typeof patch.supportsImage === 'boolean') out.supportsImage = patch.supportsImage
+  if (typeof patch.supportsVideo === 'boolean') out.supportsVideo = patch.supportsVideo
+  if (typeof patch.supportsAudio === 'boolean') out.supportsAudio = patch.supportsAudio
+  if (typeof patch.reasoningEnabled === 'boolean') out.reasoningEnabled = patch.reasoningEnabled
+  if (patch.reasoningProtocol) out.reasoningProtocol = normalizeReasoningProtocol(patch.reasoningProtocol)
+  if ('alias' in patch) out.alias = patch.alias && String(patch.alias).trim() !== '' ? String(patch.alias) : null
+  return out
+}
+
+/** 草稿行徽标：本地改过 ⇒ 已自定义；否则按 resolve 条目（预设 / 无预设） */
+function draftSourceLabel(model: string): string {
+  return draftHasPatch(model) ? t('ai_model_cfg_badge_overridden', '已自定义') : sourceLabel(effectiveDraftItem(model))
+}
+
+function draftSourceClass(model: string): string {
+  return draftHasPatch(model) ? 'aim-badge--custom' : sourceClass(effectiveDraftItem(model))
+}
+
+/** 草稿行「移除」：交给父组件从已选集合里去掉（草稿 patch 保留 ⇒ 勾回来即恢复） */
+function removeDraftModel(model: string) {
+  emit('removeDraftModel', model)
+}
+
 /* ===================== 列表 / 排序 / 启用态 ===================== */
 
 const itemMap = computed(() => {
@@ -416,9 +472,14 @@ const allItems = computed<ModelSettingItem[]>(() => {
 function isEnabled(item: ModelSettingItem): boolean {
   const ov = enabledOverrides.value[item.model]
   if (ov !== undefined) return ov
-  if (item.enabledFromServer) return item.enabled
-  // 服务端未下发 enabled（契约 v3 之前的版本）→ 回落到父组件的已选集合
-  return (props.models ?? []).includes(item.model)
+  /**
+   * **只信服务端**：契约 v3+ 每个条目都会下发 enabled（服务端已把默认值定为 false ——
+   * 没有配置行且不在 selected_models 里就是"未启用"）。
+   * 因此这里**不做任何本地推断**：
+   *   · 不再回落到"父组件已选集合"（那是契约 v2 时代的兜底，会把"没有行"误当成已启用）；
+   *   · 字段缺失（旧服务端）一律按 **false** 渲染。
+   */
+  return item.enabledFromServer ? item.enabled : false
 }
 
 const searchActive = computed(() => search.value.trim() !== '')
@@ -449,6 +510,11 @@ const enabledModels = computed(() => allItems.value.filter(isEnabled).map((i) =>
 const loadedOnce = ref(false)
 
 function syncEnabledToParent(list: string[]) {
+  /**
+   * 服务端没下发 enabled（旧契约）时**不往回同步**：那种情况下 isEnabled 一律按 false 渲染，
+   * 若照此回写会把父组件已保存的模型列表清空（数据损失）。宁可不同步，也不猜。
+   */
+  if (!items.value.some((i) => i.enabledFromServer)) return
   const prev = props.models ?? []
   if (list.length === prev.length && list.every((m, i) => m === prev[i])) return
   emit('update:enabledModels', list)
@@ -1332,201 +1398,245 @@ watch(
         {{ t('ai_draft_cards_empty', '勾选上面的候选模型，这里会立刻出现它的配置卡片。') }}
       </div>
 
-      <!-- 一个模型一张卡：与已保存态的配置弹窗**同一套字段/组件**（上下文/输出/四路模态/推理协议/别名
-           + 逐字段来源徽标 + 单项恢复）。改这里时请同步上面的弹窗字段，反之亦然。 -->
-      <div v-for="item in draftCards" :key="item.model" class="aim-draft-card aim-form" :data-model="item.model">
-        <div class="aim-draft-card-head">
-          <span class="aim-draft-card-name">{{ item.model }}</span>
-          <span class="aim-badge" :class="sourceClass(item)">{{ sourceLabel(item) }}</span>
-          <button
-            type="button"
-            class="aim-field-restore"
-            data-action="draft-card-reset"
-            :title="t('ai_draft_card_reset_h', '清空这个模型的草稿改动（回到预设）')"
-            @click="resetDraftCard(item.model)"
-          >
-            <RotateCcw :size="11" />
-          </button>
-        </div>
-        <!-- 预设值在途：卡片先出现（不让人干等），这里说明"正在读"，避免被空输入框误导 -->
-        <div v-if="draftLoading && !draftResolved.includes(item.model)" class="aim-form-note">
-          {{ t('ai_draft_card_loading', '正在读取该模型的预设值…') }}
-        </div>
-
-        <div class="aim-field">
-          <div class="aim-field-head">
-            <label class="aim-label">{{ t('ai_model_cfg_context', '上下文窗口 (tokens)') }}</label>
-            <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'contextWindow')}`">
-              {{ fieldSourceLabel(draftFieldSource(item.model, 'contextWindow')) }}
-            </span>
+      <!-- 草稿态一行 = **折叠概要行**（与已保存态的模型库行同构）：模型名 + 来源徽标 + 要点摘要
+           + 右侧图标操作（配置 / 清空自定义值 / 移除）。点「配置」才展开完整表单。
+           多个模型各自一行、默认**全部收起**（不再把 159 个表单全摊开）。
+           展开后是与已保存态弹窗**同一套字段**（上下文/输出/四路模态/推理协议/别名 + 逐字段来源）；
+           改这里时请同步上面的弹窗字段，反之亦然。 -->
+      <div
+        v-for="item in draftCards"
+        :key="item.model"
+        class="aim-draft-card"
+        :data-draft-card="item.model"
+        :data-model="item.model"
+      >
+        <div class="aim-draft-row" data-draft-row>
+          <div class="aim-row-main">
+            <div class="aim-row-name">
+              <span class="aim-row-model">{{ modelDisplayName(effectiveDraftItem(item.model)) }}</span>
+              <span class="aim-badge" :class="draftSourceClass(item.model)">{{ draftSourceLabel(item.model) }}</span>
+            </div>
+            <!-- 摘要复用已保存态同一套文案生成：未设置的项写成"预设 / 沿用系统默认"，不留空 -->
+            <div class="aim-cfg-sum" data-draft-sum>{{ summary(effectiveDraftItem(item.model)) }}</div>
+            <!-- 预设值在途：行先出现（不让人干等），这里说明"正在读"，避免被空摘要误导 -->
+            <div v-if="draftLoading && !draftResolved.includes(item.model)" class="aim-form-note">
+              {{ t('ai_draft_card_loading', '正在读取该模型的预设值…') }}
+            </div>
+          </div>
+          <div class="aim-row-actions">
             <button
               type="button"
-              class="aim-field-restore"
-              data-action="draft-restore-contextWindow"
-              :disabled="!draftFieldChanged(item.model, 'contextWindow')"
-              :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
-              @click="resetDraftField(item.model, 'contextWindow')"
+              class="aim-icon"
+              data-action="draft-config"
+              :title="
+                draftIsExpanded(item.model) ? t('ai_draft_collapse_h', '收起配置') : t('ai_model_cfg_edit', '配置')
+              "
+              @click="toggleDraftExpanded(item.model)"
             >
-              <RotateCcw :size="11" />
+              <ChevronUp v-if="draftIsExpanded(item.model)" :size="14" />
+              <Settings2 v-else :size="14" />
             </button>
-          </div>
-          <Input
-            :model-value="draftForm(item.model).contextWindow"
-            type="number"
-            class="aim-input"
-            :placeholder="t('ai_model_cfg_leave_empty', '留空 = 用预设')"
-            @update:model-value="(v: string | number) => setDraftField(item.model, 'contextWindow', asText(v))"
-          />
-        </div>
-
-        <div class="aim-field">
-          <div class="aim-field-head">
-            <label class="aim-label">{{ t('ai_model_cfg_max_output', '最大输出 (tokens)') }}</label>
-            <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'maxOutput')}`">
-              {{ fieldSourceLabel(draftFieldSource(item.model, 'maxOutput')) }}
-            </span>
             <button
               type="button"
-              class="aim-field-restore"
-              data-action="draft-restore-maxOutput"
-              :disabled="!draftFieldChanged(item.model, 'maxOutput')"
-              :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
-              @click="resetDraftField(item.model, 'maxOutput')"
+              class="aim-icon"
+              data-action="draft-clear"
+              :disabled="!draftHasPatch(item.model)"
+              :title="t('ai_draft_card_reset_h', '清空这个模型的草稿改动（回到预设）')"
+              @click="resetDraftCard(item.model)"
             >
-              <RotateCcw :size="11" />
+              <Eraser :size="14" />
+            </button>
+            <button
+              type="button"
+              class="aim-icon"
+              data-action="draft-remove"
+              :title="t('ai_draft_remove_h', '从已选里移除（草稿里改过的值仍保留，勾回来即可恢复）')"
+              @click="removeDraftModel(item.model)"
+            >
+              <Power :size="14" />
             </button>
           </div>
-          <Input
-            :model-value="draftForm(item.model).maxOutput"
-            type="number"
-            class="aim-input"
-            :placeholder="t('ai_model_cfg_leave_empty', '留空 = 用预设')"
-            @update:model-value="(v: string | number) => setDraftField(item.model, 'maxOutput', asText(v))"
-          />
         </div>
 
-        <div class="aim-field">
-          <label class="aim-label">{{ t('ai_model_cfg_multimodal', '多模态能力') }}</label>
-          <div class="aim-switch-list">
-            <div
-              v-for="f in ['supportsText', 'supportsImage', 'supportsVideo', 'supportsAudio'] as const"
-              :key="f"
-              class="aim-switch-row"
-            >
-              <span class="aim-switch-name">
-                {{
-                  f === 'supportsText'
-                    ? t('ai_model_cfg_text', '文本')
-                    : f === 'supportsImage'
-                      ? t('ai_model_cfg_image', '识图')
-                      : f === 'supportsVideo'
-                        ? t('ai_model_cfg_video', '视频')
-                        : t('ai_model_cfg_audio', '音频')
-                }}
-              </span>
-              <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, f)}`">
-                {{ fieldSourceLabel(draftFieldSource(item.model, f)) }}
+        <div v-if="draftIsExpanded(item.model)" class="aim-draft-form aim-form">
+          <div class="aim-field">
+            <div class="aim-field-head">
+              <label class="aim-label">{{ t('ai_model_cfg_context', '上下文窗口 (tokens)') }}</label>
+              <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'contextWindow')}`">
+                {{ fieldSourceLabel(draftFieldSource(item.model, 'contextWindow')) }}
               </span>
               <button
                 type="button"
                 class="aim-field-restore"
-                :data-action="`draft-restore-${f}`"
-                :disabled="!draftFieldChanged(item.model, f)"
+                data-action="draft-restore-contextWindow"
+                :disabled="!draftFieldChanged(item.model, 'contextWindow')"
                 :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
-                @click="resetDraftField(item.model, f)"
+                @click="resetDraftField(item.model, 'contextWindow')"
+              >
+                <RotateCcw :size="11" />
+              </button>
+            </div>
+            <Input
+              :model-value="draftForm(item.model).contextWindow"
+              type="number"
+              class="aim-input"
+              :placeholder="t('ai_model_cfg_leave_empty', '留空 = 用预设')"
+              @update:model-value="(v: string | number) => setDraftField(item.model, 'contextWindow', asText(v))"
+            />
+          </div>
+
+          <div class="aim-field">
+            <div class="aim-field-head">
+              <label class="aim-label">{{ t('ai_model_cfg_max_output', '最大输出 (tokens)') }}</label>
+              <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'maxOutput')}`">
+                {{ fieldSourceLabel(draftFieldSource(item.model, 'maxOutput')) }}
+              </span>
+              <button
+                type="button"
+                class="aim-field-restore"
+                data-action="draft-restore-maxOutput"
+                :disabled="!draftFieldChanged(item.model, 'maxOutput')"
+                :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
+                @click="resetDraftField(item.model, 'maxOutput')"
+              >
+                <RotateCcw :size="11" />
+              </button>
+            </div>
+            <Input
+              :model-value="draftForm(item.model).maxOutput"
+              type="number"
+              class="aim-input"
+              :placeholder="t('ai_model_cfg_leave_empty', '留空 = 用预设')"
+              @update:model-value="(v: string | number) => setDraftField(item.model, 'maxOutput', asText(v))"
+            />
+          </div>
+
+          <div class="aim-field">
+            <label class="aim-label">{{ t('ai_model_cfg_multimodal', '多模态能力') }}</label>
+            <div class="aim-switch-list">
+              <div
+                v-for="f in ['supportsText', 'supportsImage', 'supportsVideo', 'supportsAudio'] as const"
+                :key="f"
+                class="aim-switch-row"
+              >
+                <span class="aim-switch-name">
+                  {{
+                    f === 'supportsText'
+                      ? t('ai_model_cfg_text', '文本')
+                      : f === 'supportsImage'
+                        ? t('ai_model_cfg_image', '识图')
+                        : f === 'supportsVideo'
+                          ? t('ai_model_cfg_video', '视频')
+                          : t('ai_model_cfg_audio', '音频')
+                  }}
+                </span>
+                <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, f)}`">
+                  {{ fieldSourceLabel(draftFieldSource(item.model, f)) }}
+                </span>
+                <button
+                  type="button"
+                  class="aim-field-restore"
+                  :data-action="`draft-restore-${f}`"
+                  :disabled="!draftFieldChanged(item.model, f)"
+                  :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
+                  @click="resetDraftField(item.model, f)"
+                >
+                  <RotateCcw :size="11" />
+                </button>
+                <Switch
+                  :model-value="draftForm(item.model)[f]"
+                  @update:model-value="(v: boolean) => setDraftField(item.model, f, v)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="aim-field">
+            <label class="aim-label">{{ t('ai_model_cfg_reasoning', '推理（思考强度下发）') }}</label>
+            <div class="aim-switch-row">
+              <span class="aim-switch-name">{{ t('ai_model_cfg_reasoning_on', '启用推理') }}</span>
+              <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'reasoningEnabled')}`">
+                {{ fieldSourceLabel(draftFieldSource(item.model, 'reasoningEnabled')) }}
+              </span>
+              <button
+                type="button"
+                class="aim-field-restore"
+                data-action="draft-restore-reasoningEnabled"
+                :disabled="!draftFieldChanged(item.model, 'reasoningEnabled')"
+                :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
+                @click="resetDraftField(item.model, 'reasoningEnabled')"
               >
                 <RotateCcw :size="11" />
               </button>
               <Switch
-                :model-value="draftForm(item.model)[f]"
-                @update:model-value="(v: boolean) => setDraftField(item.model, f, v)"
+                :model-value="draftForm(item.model).reasoningEnabled"
+                @update:model-value="(v: boolean) => setDraftField(item.model, 'reasoningEnabled', v)"
               />
             </div>
-          </div>
-        </div>
-
-        <div class="aim-field">
-          <label class="aim-label">{{ t('ai_model_cfg_reasoning', '推理（思考强度下发）') }}</label>
-          <div class="aim-switch-row">
-            <span class="aim-switch-name">{{ t('ai_model_cfg_reasoning_on', '启用推理') }}</span>
-            <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'reasoningEnabled')}`">
-              {{ fieldSourceLabel(draftFieldSource(item.model, 'reasoningEnabled')) }}
-            </span>
-            <button
-              type="button"
-              class="aim-field-restore"
-              data-action="draft-restore-reasoningEnabled"
-              :disabled="!draftFieldChanged(item.model, 'reasoningEnabled')"
-              :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
-              @click="resetDraftField(item.model, 'reasoningEnabled')"
+            <div class="aim-sub-label">
+              {{ t('ai_model_cfg_reasoning_protocol', '推理协议') }}
+              <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'reasoningProtocol')}`">
+                {{ fieldSourceLabel(draftFieldSource(item.model, 'reasoningProtocol')) }}
+              </span>
+              <button
+                type="button"
+                class="aim-field-restore"
+                data-action="draft-restore-reasoningProtocol"
+                :disabled="!draftFieldChanged(item.model, 'reasoningProtocol')"
+                :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
+                @click="resetDraftField(item.model, 'reasoningProtocol')"
+              >
+                <RotateCcw :size="11" />
+              </button>
+            </div>
+            <CustomSelect
+              :model-value="draftForm(item.model).reasoningProtocol"
+              @update:model-value="
+                (v: string) => setDraftField(item.model, 'reasoningProtocol', v as ReasoningProtocol)
+              "
             >
-              <RotateCcw :size="11" />
-            </button>
-            <Switch
-              :model-value="draftForm(item.model).reasoningEnabled"
-              @update:model-value="(v: boolean) => setDraftField(item.model, 'reasoningEnabled', v)"
+              {{ protocolLabel(draftForm(item.model).reasoningProtocol) }}
+              <template #options>
+                <CustomSelectOption
+                  v-for="p in REASONING_PROTOCOLS"
+                  :key="p"
+                  :value="p"
+                  :selected="draftForm(item.model).reasoningProtocol === p"
+                  @select="(v: string) => setDraftField(item.model, 'reasoningProtocol', v as ReasoningProtocol)"
+                >
+                  {{ protocolLabel(p) }}
+                </CustomSelectOption>
+              </template>
+            </CustomSelect>
+          </div>
+
+          <div class="aim-field">
+            <div class="aim-field-head">
+              <label class="aim-label">{{ t('ai_model_alias_edit', '显示别名') }}</label>
+              <button
+                type="button"
+                class="aim-field-restore"
+                data-action="draft-restore-alias"
+                :disabled="!draftFieldChanged(item.model, 'alias')"
+                :title="t('ai_draft_alias_restore_h', '清空别名（回到模型原名）')"
+                @click="setDraftAlias(item.model, '')"
+              >
+                <RotateCcw :size="11" />
+              </button>
+            </div>
+            <Input
+              :model-value="draftAlias[item.model] ?? ''"
+              class="aim-input"
+              :maxlength="ALIAS_MAX_LEN"
+              :placeholder="t('ai_model_alias_ph', '留空 = 用模型原名')"
+              @update:model-value="(v: string | number) => setDraftAlias(item.model, asText(v))"
             />
           </div>
-          <div class="aim-sub-label">
-            {{ t('ai_model_cfg_reasoning_protocol', '推理协议') }}
-            <span class="aim-src" :class="`aim-src--${draftFieldSource(item.model, 'reasoningProtocol')}`">
-              {{ fieldSourceLabel(draftFieldSource(item.model, 'reasoningProtocol')) }}
-            </span>
-            <button
-              type="button"
-              class="aim-field-restore"
-              data-action="draft-restore-reasoningProtocol"
-              :disabled="!draftFieldChanged(item.model, 'reasoningProtocol')"
-              :title="t('ai_model_field_restore_h', '只恢复该字段为预设值')"
-              @click="resetDraftField(item.model, 'reasoningProtocol')"
-            >
-              <RotateCcw :size="11" />
-            </button>
-          </div>
-          <CustomSelect
-            :model-value="draftForm(item.model).reasoningProtocol"
-            @update:model-value="(v: string) => setDraftField(item.model, 'reasoningProtocol', v as ReasoningProtocol)"
-          >
-            {{ protocolLabel(draftForm(item.model).reasoningProtocol) }}
-            <template #options>
-              <CustomSelectOption
-                v-for="p in REASONING_PROTOCOLS"
-                :key="p"
-                :value="p"
-                :selected="draftForm(item.model).reasoningProtocol === p"
-                @select="(v: string) => setDraftField(item.model, 'reasoningProtocol', v as ReasoningProtocol)"
-              >
-                {{ protocolLabel(p) }}
-              </CustomSelectOption>
-            </template>
-          </CustomSelect>
-        </div>
 
-        <div class="aim-field">
-          <div class="aim-field-head">
-            <label class="aim-label">{{ t('ai_model_alias_edit', '显示别名') }}</label>
-            <button
-              type="button"
-              class="aim-field-restore"
-              data-action="draft-restore-alias"
-              :disabled="!draftFieldChanged(item.model, 'alias')"
-              :title="t('ai_draft_alias_restore_h', '清空别名（回到模型原名）')"
-              @click="setDraftAlias(item.model, '')"
-            >
-              <RotateCcw :size="11" />
-            </button>
+          <div v-if="draftCardErrors(item.model).length" class="aim-form-error">
+            {{ draftCardErrors(item.model).join('；')
+            }}{{ t('ai_draft_invalid_suffix', '（本次不会被写入，请先修正）') }}
           </div>
-          <Input
-            :model-value="draftAlias[item.model] ?? ''"
-            class="aim-input"
-            :maxlength="ALIAS_MAX_LEN"
-            :placeholder="t('ai_model_alias_ph', '留空 = 用模型原名')"
-            @update:model-value="(v: string | number) => setDraftAlias(item.model, asText(v))"
-          />
-        </div>
-
-        <div v-if="draftCardErrors(item.model).length" class="aim-form-error">
-          {{ draftCardErrors(item.model).join('；') }}{{ t('ai_draft_invalid_suffix', '（本次不会被写入，请先修正）') }}
         </div>
       </div>
     </template>
@@ -2214,10 +2324,10 @@ watch(
   text-decoration: underline;
 }
 
-/* ===== 草稿态配置卡片（勾选即出现；字段样式复用上面 .aim-form 那套）===== */
+/* ===== 草稿态配置卡片：一行概要 + 可选展开的完整表单（字段样式复用上面 .aim-form 那套）===== */
 .aim-draft-card {
-  margin-top: 10px;
-  padding: 10px 12px;
+  margin-top: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface, transparent);
@@ -2235,26 +2345,28 @@ watch(
   }
 }
 /* 减少动效：设置页开关（html.reduce-motion）∪ 系统偏好，任一命中都不动 */
-html.reduce-motion .aim-draft-card {
+html.reduce-motion .aim-draft-card,
+html.reduce-motion .aim-draft-form {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .aim-draft-card {
+  .aim-draft-card,
+  .aim-draft-form {
     animation: none;
   }
 }
-.aim-draft-card-head {
+/* 折叠概要行：与已保存态的 .aim-row 同构 */
+.aim-draft-row {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 8px;
 }
-.aim-draft-card-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 展开的完整表单：同样 140ms 淡入 + 3px 位移（收起时直接卸载，不做假动画） */
+.aim-draft-form {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  animation: aim-draft-card-in 140ms ease-out;
 }
 
 /* 工具条 */
