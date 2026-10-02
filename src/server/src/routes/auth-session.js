@@ -34,6 +34,12 @@ router.delete('/sessions/:sessionId', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const { sessionId } = req.params;
 
+    // 非 UUID 的 sessionId 交给 DB 会抛 22P02（invalid input syntax for type uuid）并变成 500 ——
+    // 那是客户端输入问题，应当是 400。探针测试用非 UUID 会话 id 打到过这个 500。
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(sessionId))) {
+      return res.status(400).json({ error: 'Invalid session id' });
+    }
+
     // 验证会话属于当前用户
     const sessionResult = await pool.query(
       'SELECT id FROM user_sessions WHERE id = $1 AND user_id = $2',
