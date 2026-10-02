@@ -105,7 +105,11 @@ router.put('/', apiLimiter, async (req, res) => {
   try {
     const existingResult = await pool.query('SELECT * FROM ai_settings WHERE user_id = $1', [req.userId])
     const existing = existingResult.rows[0] || null
-    const s = sanitize(req.body, existing)
+    // ⚠️ 合并基准必须是**驼峰映射后**的对象：sanitize 内部是 `{ ...DEFAULTS, ...existing }`，
+    // 而 DEFAULTS 是驼峰键；直接传数据库原始行（snake_case：search_provider …）会导致
+    // 一个字段都合不上 ⇒ 每次 PUT 都把"本次没提交的字段"写回 DEFAULTS，
+    // 表现为「改 A 设置项，B 设置项被清空 / 刷新回未配置」（用户实测；已有回归测试钉住）。
+    const s = sanitize(req.body, existing ? rowToResponse(existing) : null)
 
     // 搜索列可能尚不存在（070 迁移未跑）：探测后决定 SQL 是否带搜索列，避免整单 500。
     let hasSearchCols = false
