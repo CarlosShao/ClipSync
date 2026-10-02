@@ -11,6 +11,13 @@
  *    **不编造**精确数字。所有非 null 的上下文窗口都能追溯到下面注释的官方文档或
  *    aiProviders.js 内置 MODEL_CONTEXT_WINDOWS（同一数字，避免两处互相矛盾）。
  *
+ * 🔤 模型名归一化（聚合网关前缀）：本文件所有"按名字匹配"的地方都走
+ *    modelNameCandidates（原文 → 去前缀尾部 → 末段，命中即用），因此
+ *    `step/step-3.7-flash` 与 `step-3.7-flash`、`cmdc/meta/muse-spark-1.1` 与
+ *    `muse-spark-1.1` 得到**完全相同的预设与分类**。原文永远先试 ⇒ 无前缀名字零回归。
+ *    分类另用 modelNameClassifyCandidates（保守：'/' 路径前缀不参与判定，防止前缀里的
+ *    厂商描述词把对话模型误判成 audio 等）。详见下方「模型名归一化」小节。
+ *
  * 推理协议（reasoningProtocol）白名单与语义（**契约 v2：等级原样透传，不再查映射表**）：
  *   - 'inherit'                  沿用既有行为。OpenAI 兼容族=不下发（既有行为就是不下发），
  *                                Anthropic 族=沿用原 thinking / output_config 逻辑。
@@ -60,6 +67,86 @@ export const ANTHROPIC_BUDGET_TOKENS = { low: 1024, medium: 4096, high: 8192, xh
 /** 需要数字预算（而非等级字符串）的协议：buildReasoningRequest 按此决定 value 的形态 */
 const NUMERIC_BUDGET_PROTOCOLS = new Set(['anthropic_thinking', 'qwen_enable_thinking'])
 
+// ==================== 模型名归一化（聚合网关前缀） ====================
+/**
+ * 根因（用户实测）：本地聚合网关（one-api / new-api 之类）的 `/v1/models` 返回的名字常带
+ * **厂商/路径前缀**：
+ *   cmdc/meta/muse-spark-1.1 · cmd/xai/grok-4.5 · step/step-3.7-flash · step/stepaudio-2.5-chat · azure:gpt-4o
+ * 而预设正则与适用性分类此前都是拿**模型名原文**去 match ⇒ 这批名字一条都命中不了
+ * （配置卡片显示"无预设"、上下文窗口/多模态/协议全空，分类也可能判错）。
+ *
+ * 修复口径（契约：只加"多级尝试"，**不改任何既有规则/字段值/协议判定**）：
+ * 所有"按模型名匹配"的地方统一按**逐级降级候选**尝试，命中即用：
+ *   1) 原文 —— **永远先试**，所以无前缀名字的行为与改造前逐字节一致（不可能回归）；
+ *   2) 逐级去掉前面的路径段：cmdc/meta/muse-spark-1.1 → meta/muse-spark-1.1 → muse-spark-1.1；
+ *   3) 末段天然落在最后一级（muse-spark-1.1 / grok-4.5 / step-3.7-flash）。
+ * 分隔符：'/' 与 ':'（两种常见网关写法）；大小写不敏感去重、保持顺序。
+ */
+const MODEL_NAME_SEP_RE = /[/:]+/
+
+function splitModelSegments(raw) {
+  return String(raw).split(MODEL_NAME_SEP_RE).map((s) => s.trim()).filter(Boolean)
+}
+
+/** 去重（大小写不敏感）+ 去空白 + 保序 */
+function dedupeModelNames(list) {
+  const out = []
+  const seen = new Set()
+  for (const v of list) {
+    const s = String(v == null ? '' : v).trim()
+    if (!s) continue
+    const k = s.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(s)
+  }
+  return out
+}
+
+/**
+ * 逐级降级候选名（预设匹配用；**原文优先**）。
+ * @param {string} name 模型名（可带 '网关前缀/' 或 'provider:' 前缀）
+ * @returns {string[]} 去重后的候选名（保序）；空名返回 []
+ */
+export function modelNameCandidates(name) {
+  const raw = String(name == null ? '' : name).trim()
+  if (!raw) return []
+  const segs = splitModelSegments(raw)
+  const list = [raw]
+  for (let i = 1; i < segs.length; i++) list.push(segs.slice(i).join('/'))
+  return dedupeModelNames(list)
+}
+
+/**
+ * 适用性分类专用候选（**保守**，防止"前缀里的词"造成误判）：
+ *   · 名字含 '/'：前缀是**路径**（my-voice-gateway/gpt-4o 的 voice 是厂商描述词）⇒
+ *     完全不用原文，只看去前缀后的尾部/末段；
+ *   · 名字不含 '/'：'':'' 更可能是**标签**（bge-m3:latest）⇒ 尾段优先、原文兜底
+ *     （既不会把 my-voice:gpt-4o 误判成 audio，又保住 bge-m3:latest → embedding）。
+ * @param {string} name 模型名
+ * @returns {string[]} 分类判定候选（保序）
+ */
+export function modelNameClassifyCandidates(name) {
+  const raw = String(name == null ? '' : name).trim()
+  if (!raw) return []
+  const all = modelNameCandidates(raw)
+  const tails = all.filter((c) => c !== raw)
+  if (raw.includes('/')) return tails.length > 0 ? tails : [raw]
+  return dedupeModelNames([...tails, raw])
+}
+
+/**
+ * 该模型名是否命中某个正则（逐级候选尝试）。
+ * @param {string} name 模型名
+ * @param {RegExp} regex 正则（调用方负责 lastIndex 安全的非 /g 正则）
+ * @param {object} [opts] { tailOnly: true } → 用分类专用保守候选
+ */
+export function matchesModelName(name, regex, { tailOnly = false } = {}) {
+  const list = tailOnly ? modelNameClassifyCandidates(name) : modelNameCandidates(name)
+  return list.some((candidate) => regex.test(candidate))
+}
+
+
 // ==================== 模型适用性分类（契约 v3） ====================
 /**
  * 适用性取值：chat（对话，默认）| audio（语音）| image（画图）| embedding（向量/重排）| other
@@ -91,14 +178,17 @@ const APPLICABILITY_RULES = [
 
 /**
  * 按模型名判定适用性（纯函数，无副作用）。
+ * 前缀归一化：走 modelNameClassifyCandidates 逐级候选（候选间"命中即用"，每个候选内仍按规则顺序），
+ * **保守** —— 带 '/' 的路径前缀不参与判定，避免 my-voice-gateway/gpt-4o 这类被前缀里的 voice 误判。
  * @param {string} model 模型标识
  * @returns {'chat'|'audio'|'image'|'embedding'|'other'} 未命中任何规则 → 'chat'
  */
 export function classifyApplicability(model) {
-  const m = String(model || '').trim().toLowerCase()
-  if (!m) return 'chat'
-  for (const rule of APPLICABILITY_RULES) {
-    if (rule.match.test(m)) return rule.kind
+  for (const candidate of modelNameClassifyCandidates(model)) {
+    const m = candidate.toLowerCase()
+    for (const rule of APPLICABILITY_RULES) {
+      if (rule.match.test(m)) return rule.kind
+    }
   }
   return 'chat'
 }
@@ -115,6 +205,19 @@ export function listApplicabilityRules() {
  */
 const MODEL_PRESET_RULES = [
   // ==================== StepFun（阶跃星辰） ====================
+  {
+    // StepAudio 系（阶跃语音）：只据**名字里的语音语义**置 supportsAudio=true，
+    // 上下文窗口/推理参数形态未核实 ⇒ 一律留空（不编造），协议保守 inherit。
+    // 判定顺序：先于 step-* 通配规则（'/^step[-_.]/' 本就匹配不到 'stepaudio…'，这里显式靠前更清晰）。
+    id: 'stepaudio',
+    match: /^stepaudio|^step-audio/i,
+    contextWindow: null,
+    maxOutput: null,
+    supportsAudio: true,
+    reasoningEnabled: false,
+    reasoningProtocol: 'inherit',
+    note: 'StepAudio 系（阶跃语音）：按名字置 supportsAudio，窗口/协议未核实 → 留空 + inherit',
+  },
   {
     id: 'step-explore',
     match: /^step-explore/i,
@@ -387,6 +490,28 @@ const MODEL_PRESET_RULES = [
     reasoningEnabled: false,
     note: '腾讯混元：推理参数形态未核实 → inherit',
   },
+
+  // ==================== 聚合网关上常见的第三方/自研模型族 ====================
+  // 说明（数据来源纪律）：这两族出现在用户的本地聚合网关里，但**官方规格无从核实**，
+  // 因此字段一律留空 / 保守值（不编造窗口与协议），规则的作用只是把"这条名字我们认识"
+  // 如实告诉前端（isPreset=true，卡片显示"预设"而不是"无预设"）。
+  // 用户可在按模型配置里自行补窗口/多模态/协议。
+  {
+    id: 'grok',
+    match: /^grok/i,
+    contextWindow: null,
+    reasoningProtocol: 'inherit',
+    reasoningEnabled: false,
+    note: 'xAI Grok 系（聚合网关常见，如 cmd/xai/grok-4.5）：窗口/协议未核实 → 留空 + inherit，不编造',
+  },
+  {
+    id: 'muse',
+    match: /^muse[-_]/i,
+    contextWindow: null,
+    reasoningProtocol: 'inherit',
+    reasoningEnabled: false,
+    note: 'Muse 系（cmdc/meta/muse-spark-*）：来源与规格未核实 → 留空 + inherit，不编造',
+  },
 ]
 
 /** 未命中任何规则时的保守默认值（全部「不下发」语义，绝不编造） */
@@ -406,28 +531,32 @@ const NEUTRAL_PRESET = {
 
 /**
  * 按模型名解析内置预设。
- * @param {string} model 模型标识（大小写不敏感）
+ * 前缀归一化：逐级候选（原文 → 去前缀尾部 → 末段）**命中即用**，
+ * 因此 `step/step-3.7-flash` 与 `step-3.7-flash` 得到完全相同的预设对象（isPreset 亦然）。
+ * @param {string} model 模型标识（大小写不敏感，可带聚合网关前缀）
  * @returns {object} 完整预设对象（含 matched / ruleId / note），未命中返回保守默认值
  */
 export function resolveModelPreset(model) {
-  const m = String(model || '').trim().toLowerCase()
-  if (!m) return { ...NEUTRAL_PRESET }
-  const rule = MODEL_PRESET_RULES.find((r) => r.match.test(m))
-  if (!rule) return { ...NEUTRAL_PRESET }
-  return {
-    ...NEUTRAL_PRESET,
-    ...rule,
-    matched: true,
-    ruleId: rule.id,
-    contextWindow: rule.contextWindow ?? null,
-    maxOutput: rule.maxOutput ?? null,
-    supportsText: rule.supportsText !== false,
-    supportsImage: rule.supportsImage === true,
-    supportsVideo: rule.supportsVideo === true,
-    supportsAudio: rule.supportsAudio === true,
-    reasoningEnabled: rule.reasoningEnabled === true,
-    reasoningProtocol: REASONING_PROTOCOLS.includes(rule.reasoningProtocol) ? rule.reasoningProtocol : 'inherit',
+  for (const candidate of modelNameCandidates(model)) {
+    const m = candidate.toLowerCase()
+    const rule = MODEL_PRESET_RULES.find((r) => r.match.test(m))
+    if (!rule) continue
+    return {
+      ...NEUTRAL_PRESET,
+      ...rule,
+      matched: true,
+      ruleId: rule.id,
+      contextWindow: rule.contextWindow ?? null,
+      maxOutput: rule.maxOutput ?? null,
+      supportsText: rule.supportsText !== false,
+      supportsImage: rule.supportsImage === true,
+      supportsVideo: rule.supportsVideo === true,
+      supportsAudio: rule.supportsAudio === true,
+      reasoningEnabled: rule.reasoningEnabled === true,
+      reasoningProtocol: REASONING_PROTOCOLS.includes(rule.reasoningProtocol) ? rule.reasoningProtocol : 'inherit',
+    }
   }
+  return { ...NEUTRAL_PRESET }
 }
 
 /** 暴露规则清单（仅调试/测试用；不含密钥） */
@@ -533,6 +662,9 @@ export default {
   THINKING_STRENGTHS,
   ANTHROPIC_BUDGET_TOKENS,
   APPLICABILITY_KINDS,
+  modelNameCandidates,
+  modelNameClassifyCandidates,
+  matchesModelName,
   resolveModelPreset,
   listModelPresetRules,
   classifyApplicability,

@@ -23,7 +23,8 @@ import { convertMessagesForAnthropic } from './messageConverter.js'
 // AN-03：ai_max_tokens 全链路统一钳制点（system_configs 5s TTL 缓存，fail-open 默认 4096）
 import { clampMaxTokens } from './aiRuntimeConfig.js'
 // 推理参数取值归一化（纯函数，无反向依赖，不会形成 import 环）
-import { resolveNumericBudget, resolveEffortString } from './modelPresets.js'
+// + 模型名逐级候选（聚合网关前缀归一化：step/step-explore 也必须命中硬闸门）
+import { resolveNumericBudget, resolveEffortString, modelNameCandidates } from './modelPresets.js'
 
 /**
  * 协议族：
@@ -852,23 +853,31 @@ const DEFAULT_CONTEXT_WINDOW = 128000
  * 与 getContextWindow 的唯一区别：**查不到时返回 null 而不是兜底值**，
  * 供「按模型配置」（utils/aiModelSettings.js）区分「内置已知」与「完全未知」：
  * 未知时 API 如实返回 null，让用户在配置入口自己填，而不是拿 128000 假装知道。
+ *
+ * 前缀归一化：聚合网关（one-api 类）返回的名字带厂商/路径前缀（step/step-3.7-flash、
+ * cmd/vendor/qwen3-max…），**原文查不到时逐级降级**（去前缀尾部 → 末段）再查，
+ * 与 utils/modelPresets.js 的预设解析同一套候选（utils/modelPresets.modelNameCandidates），
+ * 保证「带前缀」与「不带前缀」的同一模型得到同一个窗口（否则会出现"有预设但窗口空"的矛盾）。
+ * 原文永远先试 ⇒ 无前缀名字行为与改造前完全一致。
  * @param {string} model 模型标识
  * @returns {number|null} 内置表命中值，未命中 null
  */
 export function lookupBuiltinContextWindow(model) {
   if (!model) return null
-  const m = String(model).toLowerCase()
-  if (MODEL_CONTEXT_WINDOWS[m]) return MODEL_CONTEXT_WINDOWS[m]
-  for (const key of Object.keys(MODEL_CONTEXT_WINDOWS)) {
-    if (key.endsWith('*') && m.startsWith(key.slice(0, -1))) {
-      return MODEL_CONTEXT_WINDOWS[key]
+  for (const candidate of modelNameCandidates(model)) {
+    const m = candidate.toLowerCase()
+    if (MODEL_CONTEXT_WINDOWS[m]) return MODEL_CONTEXT_WINDOWS[m]
+    for (const key of Object.keys(MODEL_CONTEXT_WINDOWS)) {
+      if (key.endsWith('*') && m.startsWith(key.slice(0, -1))) {
+        return MODEL_CONTEXT_WINDOWS[key]
+      }
     }
-  }
-  const nameMatch = m.match(/(\d+)\s*(k|m)\b/)
-  if (nameMatch) {
-    const n = parseInt(nameMatch[1], 10)
-    const unit = nameMatch[2] === 'k' ? 1000 : 1000000
-    return n * unit
+    const nameMatch = m.match(/(\d+)\s*(k|m)\b/)
+    if (nameMatch) {
+      const n = parseInt(nameMatch[1], 10)
+      const unit = nameMatch[2] === 'k' ? 1000 : 1000000
+      return n * unit
+    }
   }
   return null
 }
@@ -1082,7 +1091,10 @@ export function buildUpstreamChat(cfg) {
     // Step Explore 官方文档明确说明不支持 thinking 参数，也不支持 output_config
     // （见本文件既有注释与 aiProviders.js 预设 anthropicEffortField 说明）⇒ 这是一道**硬闸门**：
     // 即便有人在按模型配置里给它显式指定了协议，也一个字都不下发（否则上游必然 400）。
-    const isStepExploreModel = /step-explore/i.test(model)
+    // 前缀归一化：聚合网关可能返回 'step/step-explore' / 'vendor:step-explore'，
+    // 逐级候选里任意一段命中 'step-explore' 都算（与预设解析同一套候选，避免"预设说不支持、
+    // 硬闸门却放行"的自相矛盾）。
+    const isStepExploreModel = modelNameCandidates(model).some((candidate) => /step-explore/i.test(candidate))
     if (isStepExploreModel) {
       // 不发送 thinking 或 output_config
     } else if (explicitReasoning) {
