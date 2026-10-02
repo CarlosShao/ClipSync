@@ -332,6 +332,10 @@ function resetForm() {
   formSelectedModels.value = []
   formManualModel.value = ''
   modelRefreshSeq.value = 0
+  // 草稿态刷新结果一并清空：取消后再开「添加供应商」是干净表单，不会带着上一次的候选/计数
+  draftCandidates.value = []
+  lastRefreshCount.value = null
+  modelsRefresh.value = { kind: 'idle', text: '' }
   formIsDefault.value = false
   formContextWindow.value = ''
   formApiFormat.value = 'openai'
@@ -349,6 +353,9 @@ function startEdit(p: AiProvider) {
   formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
   formManualModel.value = ''
   modelRefreshSeq.value = 0
+  // 草稿候选/计数退场：改由模型库面板按 providerId 接管
+  draftCandidates.value = []
+  lastRefreshCount.value = null
   formIsDefault.value = p.is_default
   formContextWindow.value = p.context_window != null ? String(p.context_window) : ''
   // 回显自定义供应商的协议格式（历史数据无 api_format 时默认 openai）
