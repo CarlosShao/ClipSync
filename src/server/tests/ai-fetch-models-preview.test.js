@@ -107,11 +107,14 @@ describe('① 本地/内网网关地址通过校验（用户反馈的正当自�
   }
 
   it('未保存预览路径同样不再以 SSRF 错误拒绝本地地址', async () => {
-    // 127.0.0.1:9 是必然拒连的本地端口：能走到"真实连接失败后回退默认模型"这一步，
-    // 就证明它已经穿过了地址校验（旧策略在这里会直接 400 blocked internal address）。
+    // 127.0.0.1:9 是必然拒连的本地端口。这里只断言"**地址策略**放行了它"（旧策略会直接
+    // 400 ai_base_url_blocked_address）。注意：上游连不上时新契约（本轮修复）会如实返回非 2xx，
+    // 绝不假成功 —— 所以不再断言 200。
     const res = await preview({ ...BASE, baseUrl: 'http://127.0.0.1:9/v1' })
-    expect(res.status, JSON.stringify(res.body)).toBe(200)
-    expect(res.body.code).toBeUndefined()
+    expect(res.status, JSON.stringify(res.body)).not.toBe(400)
+    expect(String(res.body.code || '')).not.toMatch(
+      /^ai_base_url_(blocked_address|local_disabled|host_not_allowed|scheme_not_allowed|userinfo_not_allowed|too_long|invalid)$/,
+    )
   })
 })
 

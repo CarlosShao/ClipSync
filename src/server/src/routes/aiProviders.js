@@ -7,10 +7,12 @@ import {
   getPreset,
   resolveFamily,
   buildUpstreamChat,
-  fetchProviderModels,
+  fetchProviderModelsStrict,
   checkUpstreamUrl,
   safeUpstreamFetch,
 } from '../utils/aiProviders.js'
+// 供应商摘要（probe / 失败响应同一套字段，前端同一套展示逻辑）
+import { providerBrief } from '../utils/aiFailure.js'
 import { getAiContext } from '../utils/aiContext.js'
 import { logger } from '../utils/logger.js'
 
@@ -251,33 +253,104 @@ router.put('/providers/:id', apiLimiter, async (req, res) => {
   }
 })
 
-// GET /api/ai/providers/:id/models - 拉取该供应商可用模型列表（刷新标签），并写回 models 字段
+/**
+ * 模型列表刷新失败的响应体：稳定 code + 上游原始 status/文案/错误码 + 供应商摘要 + 当前（未改动）
+ * 的已存列表。字段名与 utils/modelProbe.js 的 probe 失败响应保持一致（前端可复用同一套展示逻辑）。
+ */
+function modelsFailureBody(r, providerRow = null, extra = {}) {
+  const details = r.details || {}
+  return {
+    error: r.message,
+    code: r.code,
+    details,
+    upstreamStatus: details.upstreamStatus ?? null,
+    upstreamMessage: details.upstreamMessage ?? null,
+    upstreamErrorCode: details.upstreamErrorCode ?? null,
+    provider: providerBrief(providerRow),
+    ...extra,
+  }
+}
+
+/** 库里已存的 models（jsonb → 数组；异常形态一律当空数组，避免把脏数据回给前端） */
+function storedModelsOf(row) {
+  const v = row && row.models
+  if (Array.isArray(v)) return v
+  if (typeof v === 'string') {
+    try {
+      const parsed = JSON.parse(v)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+// GET /api/ai/providers/:id/models - 拉取该供应商可用模型列表（刷新），**只有成功才写回** models 字段
+//
+// 用户实测反馈（服务端在 Docker 里，Base URL = http://127.0.0.1:3800/v1 从容器视角必然连不上）：
+//   ① 假成功：旧实现 catch 吞掉上游错误 → 永远 200 → 前端弹「模型列表已刷新」却一个模型都没有；
+//   ② 数据破坏：旧实现无论成败都 `UPDATE ai_providers SET models = …` —— 一次网络抖动就把上一次
+//      成功刷出来的模型列表清空（注释里"避免反复拉取失败"是错的设计取向）。
+// 现在按上游真实结果分三种，语义互不混淆：
+//   · 成功且 N>0        → 200 { models, count:N, upstreamEmpty:false }，并写回 models
+//   · 成功且 N=0（合法）→ 200 { models:[], count:0, upstreamEmpty:true }，并写回 models
+//                          （前端按 warning 提示"上游返回 0 个模型"，不当成功）
+//   · 失败              → 4xx/5xx + code + details{upstreamStatus,upstreamMessage}，**绝不改库**
 router.get('/providers/:id/models', apiLimiter, async (req, res) => {
   try {
     const id = req.params.id
     const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [id, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found' })
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Provider not found', code: 'ai_no_provider' })
+    }
     const row = result.rows[0]
     if (!row.api_key_encrypted) {
-      return res.status(400).json({ error: 'No API key configured', models: [] })
+      return res.status(400).json({
+        error: 'No API key configured',
+        code: 'ai_no_api_key',
+        provider: providerBrief(row),
+        models: storedModelsOf(row),
+      })
     }
 
     const apiKey = decrypt(row.api_key_encrypted)
-    let models = []
-    try {
-      models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey, apiFormat: row.api_format })
-    } catch (e) {
-      logger.warn('Fetch provider models failed:', e.message)
+    const r = await fetchProviderModelsStrict({
+      provider: row.provider,
+      baseUrl: row.base_url,
+      apiKey,
+      apiFormat: row.api_format,
+    })
+
+    if (!r.ok) {
+      logger.warn(
+        `[aiProviders] refresh models failed: code=${r.code} provider=${row.name} ` +
+          `upstreamStatus=${r.details?.upstreamStatus ?? '-'} message=${r.message}`,
+      )
+      // ★ 失败**不写库**：把用户已存的列表原样带回去（前端继续展示它，并就近显示失败原因）
+      return res
+        .status(r.httpStatus || 502)
+        .json(modelsFailureBody(r, row, { models: storedModelsOf(row), modelsUnchanged: true }))
     }
-    // 持久化到 models 字段（即便为空也更新，避免反复拉取失败）
+
+    // ★ 只有上游返回结构合法数组（含合法空数组）才写回 models —— 误刷新不再毁数据
     await pool.query('UPDATE ai_providers SET models = $1, updated_at = NOW() WHERE id = $2', [
-      JSON.stringify(models),
+      JSON.stringify(r.models),
       id,
     ])
-    res.json({ models })
+    // added/previousCount：给前端"新增 N 个模型"的依据（相对刷新前库里的列表）
+    const previous = storedModelsOf(row)
+    res.json({
+      models: r.models,
+      count: r.count,
+      upstreamEmpty: r.upstreamEmpty,
+      upstreamStatus: r.upstreamStatus,
+      added: r.models.filter((m) => !previous.includes(m)).length,
+      previousCount: previous.length,
+    })
   } catch (err) {
     logger.error('Get provider models error:', err)
-    res.status(500).json({ error: 'Failed to fetch provider models' })
+    res.status(500).json({ error: 'Failed to fetch provider models', code: 'ai_failed' })
   }
 })
 
@@ -299,6 +372,10 @@ router.get('/providers/:id/models', apiLimiter, async (req, res) => {
 // 能打到的完全一致。
 // 明文 apiKey 仅在请求体内传输、用完即弃、不落库也不进日志，与 POST/PUT /providers 保存路径
 // 同等信任级别（key 本来就是靠请求体传给服务端加密入的库）。
+//
+// 失败语义与 GET /providers/:id/models 完全一致（同用 fetchProviderModelsStrict，本路径不写库）：
+// 上游失败 → 非 2xx + code + details{upstreamStatus,upstreamMessage}，**绝不假成功**；
+// 上游合法返回 0 个 → 200 { models: [], upstreamEmpty: true }（前端按 warning 提示）。
 router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
   try {
     const { providerId, provider, apiKey, baseUrl, apiFormat } = req.body || {}
@@ -318,25 +395,56 @@ router.post('/providers/fetch-models', apiLimiter, async (req, res) => {
       if (!vb.ok) {
         return res.status(400).json({ error: vb.error, code: vb.code, addressClass: vb.addressClass, models: [] })
       }
-      const models = await fetchProviderModels({
+      const r = await fetchProviderModelsStrict({
         provider,
         baseUrl: effectiveBaseUrl,
         apiKey: key,
         apiFormat: normalizeApiFormat(apiFormat, provider === 'custom') || 'openai',
       })
-      return res.json({ models })
+      if (!r.ok) return res.status(r.httpStatus || 502).json(modelsFailureBody(r, null, { models: [] }))
+      return res.json({
+        models: r.models,
+        count: r.count,
+        upstreamEmpty: r.upstreamEmpty,
+        upstreamStatus: r.upstreamStatus,
+      })
     }
 
     // ---- 模式 1：已保存供应商（用库里的加密 key / base_url）----
     const result = await pool.query('SELECT * FROM ai_providers WHERE id = $1 AND user_id = $2', [providerId, req.userId])
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Provider not found', models: [] })
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Provider not found', code: 'ai_no_provider', models: [] })
+    }
     const row = result.rows[0]
     if (!row.api_key_encrypted) {
-      return res.status(400).json({ error: 'No API key configured', models: [] })
+      return res.status(400).json({
+        error: 'No API key configured',
+        code: 'ai_no_api_key',
+        provider: providerBrief(row),
+        models: storedModelsOf(row),
+      })
     }
     const apiKeyStored = decrypt(row.api_key_encrypted)
-    const models = await fetchProviderModels({ provider: row.provider, baseUrl: row.base_url, apiKey: apiKeyStored, apiFormat: row.api_format })
-    res.json({ models })
+    const r = await fetchProviderModelsStrict({
+      provider: row.provider,
+      baseUrl: row.base_url,
+      apiKey: apiKeyStored,
+      apiFormat: row.api_format,
+    })
+    if (!r.ok) {
+      return res
+        .status(r.httpStatus || 502)
+        .json(modelsFailureBody(r, row, { models: storedModelsOf(row), modelsUnchanged: true }))
+    }
+    const previous = storedModelsOf(row)
+    res.json({
+      models: r.models,
+      count: r.count,
+      upstreamEmpty: r.upstreamEmpty,
+      upstreamStatus: r.upstreamStatus,
+      added: r.models.filter((m) => !previous.includes(m)).length,
+      previousCount: previous.length,
+    })
   } catch (err) {
     logger.error('Fetch models error:', err)
     res.status(500).json({ error: 'Failed to fetch provider models' })

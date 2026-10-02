@@ -831,6 +831,195 @@ describe('模型库 — 恢复与降级边界', () => {
   })
 })
 
+/* ===================== ⑳-㉔ 刷新模型列表：三态提示（本轮缺陷修复） =====================
+ * 用户实测：Base URL = http://127.0.0.1:3800/v1（服务端在 Docker 里 ⇒ 容器视角不可达），
+ * 点「刷新模型列表」→ 界面弹「模型列表已刷新」却一个模型都没有。旧实现把上游失败吞成"200 + 空
+ * 数组"，前端只能弹成功。现在服务端如实返回三态，前端也必须三态提示（0 个绝不报"已刷新"），
+ * 并把结果**就近持久**显示（toast 一闪而过不足以发现问题）。 */
+
+describe('AIProviderSettings — 刷新模型列表三态（不再假成功）', () => {
+  const statusEl = () => document.querySelector<HTMLElement>('.ai-refresh-status')
+  const statusText = () => statusEl()?.textContent || ''
+
+  /** 挂载设置组件并点「编辑」进入编辑态（无新输入 key ⇒ 走 GET /providers/:id/models） */
+  async function mountEditing() {
+    mocks.getProviders.mockResolvedValue({ ok: true, status: 200, data: { items: [PROVIDER], count: 1 } })
+    mocks.getPresets.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        items: [
+          { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+        ],
+      },
+    })
+    mocks.getSettings.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        defaultProviderId: PROVIDER_ID,
+        defaultModel: 'gpt-4o-mini',
+        selectedModels: {},
+        defaultMode: 'ask',
+        thinkingEnabled: false,
+        thinkingStrength: 'medium',
+        memoryEnabled: false,
+        customSystemPrompt: '',
+        searchProvider: '',
+        searchBaseUrl: '',
+        searchHasKey: false,
+      },
+    })
+    installApi([chatOn(), chatOff()])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    const refreshBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+    return { m, refreshBtn }
+  }
+
+  it('⑳ 成功且 N>0 → toast 报「新增 N 个」，就近状态显示总数', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: ['a', 'b', 'c'], count: 3, added: 2, previousCount: 1, upstreamEmpty: false },
+    })
+    const { m, refreshBtn } = await mountEditing()
+    refreshBtn.click()
+    await flush()
+
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      tf('ai_models_refreshed_n', '已刷新，新增 {added} 个模型（共 {n} 个）', { added: 2, n: 3 }),
+      'success',
+    )
+    expect(statusEl(), '刷新结果要就近持久显示，不能只有 toast').toBeTruthy()
+    expect(statusEl()!.className).toContain('ai-refresh-status--success')
+    expect(statusText()).toContain('3')
+    m.unmount()
+  })
+
+  it('㉑ 上游合法返回 0 个 → warning +「上游返回 0 个模型」，**绝不出现「已刷新」**', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: [], count: 0, upstreamEmpty: true },
+    })
+    const { m, refreshBtn } = await mountEditing()
+    refreshBtn.click()
+    await flush()
+
+    // 唯一一条 toast 必须是 warning 的"上游返回 0 个"，不能是成功
+    expect(mocks.showToast).toHaveBeenCalledTimes(1)
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      tf('ai_models_refresh_empty', '上游返回 0 个模型，请检查该网关是否提供 /v1/models'),
+      'warning',
+    )
+    // ✗ 旧缺陷：0 个时弹「模型列表已刷新」——它在 toast 与页面文本里都必须消失
+    expect(mocks.showToast).not.toHaveBeenCalledWith(t('ai_models_refreshed'), 'success')
+    expect(text()).not.toContain(t('ai_models_refreshed'))
+
+    expect(statusEl()!.className).toContain('ai-refresh-status--empty')
+    expect(statusText()).toContain('0')
+    expect(statusText()).toContain('/v1/models')
+    m.unmount()
+  })
+
+  it('㉒ 失败（容器+回环）→ error + 服务端建议**原样**展示 + 重试按钮', async () => {
+    const serverMessage =
+      '服务端运行在 Docker 容器中，127.0.0.1 指向容器自身（不是你的电脑），无法访问你机器上的网关；' +
+      '请把 Base URL 改成 http://host.docker.internal:3800/v1（本机 Docker Desktop 可直接解析），' +
+      '或改用宿主机的内网 IP，例如 http://192.168.1.10:3800/v1。'
+    mocks.getProviderModels.mockResolvedValue({
+      ok: false,
+      status: 502,
+      error: serverMessage,
+      data: {
+        error: serverMessage,
+        code: 'ai_base_url_loopback_in_container',
+        message: serverMessage,
+        details: { host: '127.0.0.1', inContainer: true },
+        provider: { id: PROVIDER_ID, name: 'My Provider', isDefault: true },
+        models: ['gpt-4o-mini'],
+        modelsUnchanged: true,
+      },
+    })
+    const { m, refreshBtn } = await mountEditing()
+    refreshBtn.click()
+    await flush()
+
+    // toast 与就近状态都展示服务端那句可直接照做的建议（原样，不换成通用模板）
+    expect(mocks.showToast).toHaveBeenCalledWith(serverMessage, 'error')
+    expect(mocks.showToast).not.toHaveBeenCalledWith(t('ai_models_refreshed'), 'success')
+    expect(text()).not.toContain(t('ai_models_refreshed'))
+
+    expect(statusEl()!.className).toContain('ai-refresh-status--error')
+    expect(statusText()).toContain(serverMessage)
+    expect(statusText(), '失败时说明"已保留原列表 N 个"（服务端不会覆盖）').toContain('1')
+    // 可就地重试
+    expect(document.querySelector('.ai-refresh-status-retry')).toBeTruthy()
+    m.unmount()
+  })
+
+  it('㉓ 失败（上游结构非法）→ 映射成人话并按供应商名点名，不是原始 code', async () => {
+    mocks.getProviderModels.mockResolvedValue({
+      ok: false,
+      status: 502,
+      error: 'Upstream /models response has no "data" array',
+      data: {
+        code: 'ai_upstream_invalid_response',
+        error: 'Upstream /models response has no "data" array',
+        details: { upstreamStatus: 200, upstreamMessage: '{"object":"list"}' },
+        provider: { id: PROVIDER_ID, name: 'My Provider', isDefault: true },
+      },
+    })
+    const { m, refreshBtn } = await mountEditing()
+    refreshBtn.click()
+    await flush()
+
+    const expected = tf(
+      'ai_fail_upstream_invalid_response',
+      '上游没有返回模型列表结构（{name}）：请确认 Base URL 指向 OpenAI 兼容网关，且该地址提供 /v1/models。',
+      { name: 'My Provider' },
+    )
+    expect(mocks.showToast).toHaveBeenCalledWith(expected, 'error')
+    expect(statusText()).toContain(expected)
+    m.unmount()
+  })
+
+  it('㉔ 失败后点「重试」→ 复用同一次刷新流程（成功则转为成功态）', async () => {
+    mocks.getProviderModels.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      error: 'boom',
+      data: { code: 'ai_upstream_unavailable', error: 'boom', models: [], modelsUnchanged: true },
+    })
+    const { m, refreshBtn } = await mountEditing()
+    refreshBtn.click()
+    await flush()
+    expect(statusEl()!.className).toContain('ai-refresh-status--error')
+
+    // 第二次（重试）成功
+    mocks.getProviderModels.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { models: ['x', 'y'], count: 2, added: 2, previousCount: 0, upstreamEmpty: false },
+    })
+    mocks.showToast.mockClear()
+    document.querySelector<HTMLButtonElement>('.ai-refresh-status-retry')!.click()
+    await flush()
+
+    expect(statusEl()!.className).toContain('ai-refresh-status--success')
+    expect(mocks.showToast).toHaveBeenCalledWith(
+      tf('ai_models_refreshed_n', '已刷新，新增 {added} 个模型（共 {n} 个）', { added: 2, n: 2 }),
+      'success',
+    )
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()

@@ -11,7 +11,9 @@
  *   ⑥ probe 限流与鉴权 → G 组
  *
  * 刷新事实的**读码结论**（本文件把它钉成不可回退的回归测试）：
- *   · GET  /api/ai/providers/:id/models  → 只 `UPDATE ai_providers SET models = …`（route:273）
+ *   · GET  /api/ai/providers/:id/models  → **只在上游返回结构合法数组时**才
+ *     `UPDATE ai_providers SET models = …`（上游失败 / 解析不出模型数组一律**不改库**；
+ *      本轮用户实测缺陷修复：旧实现的"无条件写回"会一次网络抖动就清空已存列表）
  *   · POST /api/ai/providers/fetch-models → **完全不写库**（route:302「不落地、不写库」）
  *   · PUT  /api/ai/providers/:id         → 写 ai_providers.models（用户显式保存，非刷新）
  *   · 全仓 `ai_model_settings` 的**唯一写入点**就是 PUT /api/ai/model-settings
@@ -28,6 +30,7 @@ import {
 } from '../src/utils/modelPresets.js'
 import { applySelectedModel } from '../src/utils/aiModelSettings.js'
 import { setProbeFetchImpl, resetProbeFetchImpl } from '../src/utils/modelProbe.js'
+import { setModelsFetchImpl, resetModelsFetchImpl } from '../src/utils/aiProviders.js'
 
 let app
 let auth
@@ -141,6 +144,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   resetProbeFetchImpl()
+  resetModelsFetchImpl()
   await pool.query('ALTER TABLE ai_model_settings DROP CONSTRAINT IF EXISTS tmp_v3_tx_guard').catch(() => {})
   for (const id of createdProviderIds) {
     await pool.query('DELETE FROM ai_providers WHERE id = $1', [id]).catch(() => {})
@@ -152,6 +156,7 @@ afterAll(async () => {
 
 afterEach(() => {
   resetProbeFetchImpl()
+  resetModelsFetchImpl()
 })
 
 // ============================================================
@@ -412,7 +417,7 @@ describe('D. 刷新只写 ai_providers.models，绝不动 ai_model_settings', ()
       model: 'r-alpha',
       models: ['r-alpha', 'r-beta'],
       provider: 'custom',
-      baseUrl: 'http://127.0.0.1:9/v1', // 必然拒连：走"拉取失败也要写回"的存储分支
+      baseUrl: 'http://127.0.0.1:9/v1', // 真实环境中必然拒连：本用例用注入假 fetch 控制成功/失败
       apiKey: 'sk-refresh',              // 刷新路径会 decrypt；必须存真加密值
     })
     // 用户自定义配置
@@ -434,14 +439,30 @@ describe('D. 刷新只写 ai_providers.models，绝不动 ai_model_settings', ()
     const before = await readRow(providerId, 'r-alpha')
     expect(before).toBeTruthy()
 
-    // 触发「刷新」的**存储分支**（GET /providers/:id/models 会写回 ai_providers.models）
+    // 触发「刷新」的**成功分支**：GET /providers/:id/models 只在上游返回结构合法数组时才写回
+    // ai_providers.models（用户实测缺陷修复：失败**不再**覆盖已存列表）
+    setModelsFetchImpl(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ object: 'list', data: [{ id: 'r-alpha' }, { id: 'r-gamma' }] }),
+    }))
     const refresh = await request(app).get(`/api/ai/providers/${providerId}/models`).set(auth)
     expect(refresh.status, JSON.stringify(refresh.body)).toBe(200)
-    expect(refresh.body.models).toEqual([])
+    expect(refresh.body.models).toEqual(['r-alpha', 'r-gamma'])
 
     // 刷新确实写了 ai_providers.models（证明这条分支真的跑了）
     const prov = await pool.query('SELECT models FROM ai_providers WHERE id = $1', [providerId])
-    expect(prov.rows[0].models).toEqual([])
+    expect(prov.rows[0].models).toEqual(['r-alpha', 'r-gamma'])
+
+    // ★ 失败刷新（上游连不通）→ 非 2xx 且**库里的列表一字未改**（旧实现会把它写成 []）
+    setModelsFetchImpl(async () => {
+      throw Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), { code: 'ECONNREFUSED' })
+    })
+    const failed = await request(app).get(`/api/ai/providers/${providerId}/models`).set(auth)
+    expect(failed.status, JSON.stringify(failed.body)).toBe(502)
+    expect(failed.body.code).toBe('ai_upstream_unavailable')
+    const provKept = await pool.query('SELECT models FROM ai_providers WHERE id = $1', [providerId])
+    expect(provKept.rows[0].models).toEqual(['r-alpha', 'r-gamma'])
 
     // 模型级配置逐字段未变（含 updated_at —— 刷新根本没碰这张表）
     const after = await readRow(providerId, 'r-alpha')
@@ -452,13 +473,14 @@ describe('D. 刷新只写 ai_providers.models，绝不动 ai_model_settings', ()
     expect(after.alias).toBe('别被刷新冲掉')
     expect(after.sort_order).toBe(7)
 
-    // 预览型刷新（POST fetch-models）**完全不写库**：连 models 都不动
+    // 预览型刷新（POST fetch-models）**完全不写库**：失败也一样（上游仍是上面那个拒连的假实现）
     await pool.query('UPDATE ai_providers SET models = $2::jsonb WHERE id = $1', [providerId, JSON.stringify(['r-alpha'])])
     const preview = await request(app)
       .post('/api/ai/providers/fetch-models')
       .set(auth)
       .send({ providerId })
-    expect(preview.status, JSON.stringify(preview.body)).toBe(200)
+    expect(preview.status, JSON.stringify(preview.body)).toBe(502)
+    expect(preview.body.code).toBe('ai_upstream_unavailable')
     const prov2 = await pool.query('SELECT models FROM ai_providers WHERE id = $1', [providerId])
     expect(prov2.rows[0].models).toEqual(['r-alpha'])
     expect(await readRow(providerId, 'r-alpha')).toEqual(after)
@@ -479,9 +501,16 @@ describe('D. 刷新只写 ai_providers.models，绝不动 ai_model_settings', ()
     })
     expect(off.status, JSON.stringify(off.body)).toBe(200)
 
-    // 刷新（写 ai_providers.models → []，把"刷新出来的模型清单"清掉）
+    // 刷新：上游这次**成功**返回了一个不含 d-off 的清单（写 ai_providers.models；
+    // 用户实测缺陷修复后，只有成功才写库，所以这里注入假 fetch 让上游成功）
+    setModelsFetchImpl(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ object: 'list', data: [{ id: 'd-base' }] }),
+    }))
     const refresh = await request(app).get(`/api/ai/providers/${providerId}/models`).set(auth)
-    expect(refresh.status).toBe(200)
+    expect(refresh.status, JSON.stringify(refresh.body)).toBe(200)
+    expect(refresh.body.models).toEqual(['d-base'])
 
     const res = await getSettings(providerId)
     expect(res.status).toBe(200)

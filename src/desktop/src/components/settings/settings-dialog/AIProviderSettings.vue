@@ -24,7 +24,7 @@ import {
 } from '@/api/ai'
 import type { AiProvider, AiProviderPreset, AiApiFormat, AiSettings } from '@/api/ai'
 import type { ApiResponse } from '@/api/client'
-import { aiFailureFrom, describeAiFailure, hasAiFailureMapping } from '@/utils/aiErrors'
+import { aiFailureFrom, describeAiFailure, hasAiFailureMapping, SERVER_MESSAGE_FIRST_CODES } from '@/utils/aiErrors'
 import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
 import {
   DEFAULT_THINKING_STRENGTH,
@@ -67,6 +67,11 @@ const formContextWindow = ref<string>('')
 const formApiFormat = ref<AiApiFormat>('openai')
 const saving = ref(false)
 const refreshingModels = ref(false)
+// 刷新模型列表的**持久**结果（就近显示在按钮下方）：用户实测反馈"toast 弹了已刷新，但一个模型都
+// 没刷出来" —— toast 一闪而过不足以让人发现失败。三态互不混淆：success / empty（上游合法返回 0 个，
+// 按 warning 处理，绝不显示"已刷新"）/ error（失败原因可就地看到 + 重试）。
+type ModelsRefreshKind = 'idle' | 'success' | 'empty' | 'error'
+const modelsRefresh = ref<{ kind: ModelsRefreshKind; text: string }>({ kind: 'idle', text: '' })
 const formError = ref('')
 const confirmingDeleteId = ref<string | null>(null)
 const testingId = ref<string | null>(null)
@@ -351,7 +356,17 @@ function onEnabledModelsChange(list: string[]) {
  */
 function providerErrorText(res: ApiResponse<unknown>, fallback: string): string {
   const payload = aiFailureFrom(res)
-  if (payload && hasAiFailureMapping(payload)) return describeAiFailure(payload, tf)
+  if (!payload) return tMsg(res.error) || fallback
+  // 未保存预览时服务端不知道供应商名字：用表单里填的，让文案能说清"是哪个供应商"
+  const enriched = { ...payload }
+  if (!enriched.provider?.name && formName.value.trim()) {
+    enriched.provider = { ...(enriched.provider || {}), name: formName.value.trim() }
+  }
+  // 容器 + 回环那条建议由服务端按**真实端口**生成（含可直接照做的替换地址），UI 原样展示，
+  // 比本地通用模板更具体；服务端没带 message 时才回退到映射表文案。
+  const serverMessage = String(enriched.message || '').trim()
+  if (SERVER_MESSAGE_FIRST_CODES.has(String(enriched.code || '')) && serverMessage) return serverMessage
+  if (hasAiFailureMapping(enriched)) return describeAiFailure(enriched, tf)
   return tMsg(res.error) || fallback
 }
 
@@ -374,6 +389,7 @@ async function refreshModels() {
   }
   refreshingModels.value = true
   formError.value = ''
+  const stamp = () => new Date().toLocaleString()
   try {
     const res = typedKey
       ? await fetchProviderModels({
@@ -383,16 +399,74 @@ async function refreshModels() {
           apiFormat: isCustom.value ? formApiFormat.value : undefined,
         })
       : await getProviderModels(editingId.value as string)
-    if (res.ok && res.data) {
-      // 刷新成功：把刷新序号 +1 交给模型库面板 —— 它会重新拉取配置（GET /api/ai/model-settings），
-      // 并把新模型里的对话模型默认勾选、音频/图像/嵌入折叠且不启用，同时给出一条可关闭的智能建议。
-      modelRefreshSeq.value += 1
-      toast.show(t('ai_models_refreshed'), 'success')
-    } else {
-      toast.show(providerErrorText(res, t('ai_models_refresh_fail')), 'error')
+
+    // ① 失败：**绝不显示"已刷新"**（本轮用户实测缺陷）。原因按 code 映射成人话（容器+回环那条
+    //    由服务端 message 原样给出），就近持久显示 + 可重试；服务端失败时不会覆盖已存列表。
+    if (!res.ok || !res.data) {
+      const reason = providerErrorText(res, t('ai_models_refresh_fail'))
+      const kept = Array.isArray(res.data?.models) ? res.data!.models.length : 0
+      modelsRefresh.value = {
+        kind: 'error',
+        text:
+          kept > 0
+            ? tf('ai_models_status_error_kept', '上次刷新 {time} 失败：{reason}（已保留原列表 {n} 个模型）', {
+                time: stamp(),
+                reason,
+                n: kept,
+              })
+            : tf('ai_models_status_error', '上次刷新 {time} 失败：{reason}', { time: stamp(), reason }),
+      }
+      toast.show(reason, 'error')
+      return
     }
+
+    const list = Array.isArray(res.data.models) ? res.data.models : []
+    // ② 上游**合法**返回 0 个模型：不是成功 —— 按 warning 提示（用户实测就是因为这里弹了 success
+    //    才一直发现不了问题），服务端已按契约把库里的列表更新为合法空列表。
+    if (res.data.upstreamEmpty === true || list.length === 0) {
+      // 库里的 models 已按契约被更新为合法空列表 → 让模型库面板重新拉取，UI 不显示与库里不一致的旧列表
+      modelRefreshSeq.value += 1
+      modelsRefresh.value = {
+        kind: 'empty',
+        text: tf('ai_models_status_empty', '上次刷新 {time}：上游返回 0 个模型，请检查该网关是否提供 /v1/models', {
+          time: stamp(),
+        }),
+      }
+      toast.show(t('ai_models_refresh_empty'), 'warning')
+      return
+    }
+
+    // ③ 成功且 N>0：added 由服务端按刷新前的已存列表算出（预览模式没给就只报总数）
+    const added = typeof res.data.added === 'number' ? res.data.added : null
+    modelRefreshSeq.value += 1
+    modelsRefresh.value = {
+      kind: 'success',
+      text:
+        added === null
+          ? tf('ai_models_status_success', '上次刷新 {time}：共 {n} 个模型（新增 {added} 个）', {
+              time: stamp(),
+              n: list.length,
+              added: list.length,
+            })
+          : tf('ai_models_status_success', '上次刷新 {time}：共 {n} 个模型（新增 {added} 个）', {
+              time: stamp(),
+              n: list.length,
+              added,
+            }),
+    }
+    toast.show(
+      added === null
+        ? tf('ai_models_refreshed_total', '已刷新，共 {n} 个模型', { n: list.length })
+        : tf('ai_models_refreshed_n', '已刷新，新增 {added} 个模型（共 {n} 个）', { added, n: list.length }),
+      'success',
+    )
   } catch (e: any) {
-    toast.show(tMsg(e?.message) || String(e), 'error')
+    const reason = tMsg(e?.message) || String(e)
+    modelsRefresh.value = {
+      kind: 'error',
+      text: tf('ai_models_status_error', '上次刷新 {time} 失败：{reason}', { time: stamp(), reason }),
+    }
+    toast.show(reason, 'error')
   } finally {
     refreshingModels.value = false
   }
@@ -668,6 +742,25 @@ onMounted(() => {
             <span class="ai-models-count">
               {{ tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.length }) }}
             </span>
+          </div>
+
+          <!-- 刷新结果**持久**提示（就近显示，不依赖一闪而过的 toast）：用户实测反馈"toast 弹了已刷新，
+               但一个模型都没刷出来"。三态：success / empty（上游合法返回 0 个）/ error（原因 + 重试） -->
+          <div
+            v-if="modelsRefresh.kind !== 'idle'"
+            class="ai-refresh-status"
+            :class="`ai-refresh-status--${modelsRefresh.kind}`"
+          >
+            <span class="ai-refresh-status-text">{{ modelsRefresh.text }}</span>
+            <button
+              v-if="modelsRefresh.kind === 'error'"
+              type="button"
+              class="ai-refresh-status-retry"
+              :disabled="refreshingModels"
+              @click="refreshModels"
+            >
+              {{ t('retry', '重试') }}
+            </button>
           </div>
 
           <!-- 模型库：单排胶囊（启用/停用）+ 行内图标操作（自检/配置/停用/清除自定义值）+ 折叠分组 -->
@@ -1423,5 +1516,46 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.55;
   color: var(--text-secondary);
+}
+
+/* ===== 刷新模型列表：结果就地持久显示 =====
+ * 用户实测："toast 说刷新成功，但一个模型都没刷出来"。toast 一闪而过，失败/空列表必须在按钮
+ * 下方留得住；失败时给"重试"。三态配色：成功=次要文字、空列表=警告色、失败=危险色。 */
+.ai-refresh-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.ai-refresh-status-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.ai-refresh-status--success .ai-refresh-status-text {
+  color: var(--text-secondary);
+}
+.ai-refresh-status--empty .ai-refresh-status-text {
+  color: var(--warning);
+}
+.ai-refresh-status--error .ai-refresh-status-text {
+  color: var(--danger);
+}
+.ai-refresh-status-retry {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  background: transparent;
+  color: var(--danger);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.ai-refresh-status-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

@@ -303,6 +303,26 @@ describe('checkUpstreamUrl — ② 仍然拒绝：协议 / 用户信息 / 主机
     }
   })
 
+  it('容器"宿主机"别名放行（否则我们给的排障建议自己就被拒了），但仍按解析结果判定', async () => {
+    // host.docker.internal / host.containers.internal 虽然落在 .internal 后缀里，但必须允许解析：
+    // 刷新失败提示让用户改成 http://host.docker.internal:<端口>/v1 —— 照做必须能生效。
+    const aliases = ['host.docker.internal', 'gateway.docker.internal', 'host.containers.internal']
+    for (const host of aliases) {
+      const ok = await checkUpstreamUrl(`http://${host}:3800/v1`, { lookup: resolvingTo('192.168.65.254') })
+      expect(ok.ok, host).toBe(true)
+      expect(ok.addressClass, host).toBe('private')
+      // 解析结果仍是私网 ⇒ 关掉本地放行时照样拒绝（别名不是免检通道）
+      const strict = await checkUpstreamUrl(`http://${host}:3800/v1`, {
+        allowLocal: false,
+        lookup: resolvingTo('192.168.65.254'),
+      })
+      expect(strict.code, host).toBe(UPSTREAM_URL_CODES.localDisabled)
+      // 解析到元数据地址时依旧拒绝
+      const meta = await checkUpstreamUrl(`http://${host}:3800/v1`, { lookup: resolvingTo('169.254.169.254') })
+      expect(meta.code, host).toBe(UPSTREAM_URL_CODES.blockedAddress)
+    }
+  })
+
   it('畸形 URL / 空串 → invalid', async () => {
     for (const u of ['not a url', 'http://', '://x', '']) {
       const r = await checkUpstreamUrl(u)

@@ -403,21 +403,35 @@ export function testProvider(id: string) {
   return api<{ ok: boolean; detail?: string; status?: number }>('POST', `/api/ai/providers/${id}/test`)
 }
 
-// 拉取某供应商可用模型列表（上游 /models 刷新），返回 { models: string[] }
+// 拉取某供应商可用模型列表（上游 /models 刷新）。
+// 成功：{ models, count, upstreamEmpty, added, previousCount }（upstreamEmpty=true 表示上游**合法**
+//   返回 0 个模型 —— UI 要按 warning 提示，不能当成功；见本轮用户实测缺陷修复）
+// 失败：非 2xx + { code, error, details:{upstreamStatus,upstreamMessage}, provider }（绝不假成功）
+export interface ProviderModelsResult {
+  models: string[]
+  count?: number
+  upstreamEmpty?: boolean
+  upstreamStatus?: number
+  /** 相对刷新前库里列表的新增数量（预览模式 2 未保存时可能没有） */
+  added?: number
+  previousCount?: number
+}
+
 export function getProviderModels(id: string) {
-  return api<{ models: string[] }>('GET', `/api/ai/providers/${id}/models`)
+  return api<ProviderModelsResult>('GET', `/api/ai/providers/${id}/models`)
 }
 
 // 预览/刷新模型列表（不落地）：直接用表单里填的值打上游 /models，
 // 因此**不需要先保存供应商**就能看到可用模型。
-// 服务端会对 baseUrl 做与保存路径同一套 SSRF 校验（禁内网/环回、DNS 全解析逐个校验）。
+// 服务端会对 baseUrl 做与保存路径同一套地址策略校验（默认放行环回/私网/ULA 的本地网关，
+// 仍禁云元数据/链路本地等；DNS 全解析逐个校验）；上游失败同样返回非 2xx（不会假成功）。
 export function fetchProviderModels(input: {
   provider: string
   apiKey: string
   baseUrl?: string
   apiFormat?: string
 }) {
-  return api<{ models: string[] }>('POST', '/api/ai/providers/fetch-models', input)
+  return api<ProviderModelsResult>('POST', '/api/ai/providers/fetch-models', input)
 }
 
 // AI 用户偏好

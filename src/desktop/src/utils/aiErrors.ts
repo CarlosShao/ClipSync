@@ -22,6 +22,8 @@ export interface AiFailurePayload {
   code?: string
   error?: string
   detail?: string
+  /** 服务端按真实参数生成的可读文案（如容器+回环提示，带真实端口）；见 SERVER_MESSAGE_FIRST_CODES */
+  message?: string
   provider?: AiFailureProvider | null
 }
 
@@ -122,6 +124,30 @@ const REASON: Record<string, { key: string; zh: string; en: string }> = {
     zh: 'Base URL 过长（超过 2048 字符）：请只填协议+主机+端口+路径前缀。',
     en: 'The Base URL is too long (over 2048 characters). Keep it to scheme + host + port + path prefix.',
   },
+  // ===== 刷新模型列表（上游 GET {baseUrl}/models）本轮新增/复用的 code =====
+  // 用户实测：服务端在 Docker 里 + Base URL 填 127.0.0.1:3800 ⇒ 必然连不上。旧实现把这理解成
+  // "刷新成功但 0 个模型"。现在如实返回失败，并由这里翻译成人话（含容器那条可直接照做的建议）。
+  ai_base_url_loopback_in_container: {
+    key: 'ai_fail_base_url_loopback_in_container',
+    // 服务端会带一条**含真实端口**的完整建议，UI 优先原样展示它；这条只是服务端没带 message 时的兜底
+    zh: '服务端运行在 Docker 容器中，127.0.0.1 指向容器自身，无法访问你机器上的网关；请改用 http://host.docker.internal:<端口>/v1（本机 Docker Desktop 可直接解析）或宿主机内网 IP（如 http://192.168.x.x:<端口>/v1）。',
+    en: 'The server runs in a Docker container, so 127.0.0.1 points at the container itself and cannot reach your machine. Use http://host.docker.internal:<port>/v1 (resolves out of the box on Docker Desktop) or your host LAN IP (e.g. http://192.168.x.x:<port>/v1).',
+  },
+  ai_upstream_invalid_response: {
+    key: 'ai_fail_upstream_invalid_response',
+    zh: '上游没有返回模型列表结构（{name}）：请确认 Base URL 指向 OpenAI 兼容网关，且该地址提供 /v1/models。',
+    en: 'The upstream did not return a model-list payload ({name}). Make sure the Base URL points to an OpenAI-compatible gateway exposing /v1/models.',
+  },
+  ai_upstream_http_error: {
+    key: 'ai_fail_upstream_http_error',
+    zh: '上游拒绝了模型列表请求（{name}）：请查看下方状态码与上游原文。',
+    en: 'The upstream rejected the model-list request ({name}). See the status code and upstream message below.',
+  },
+  ai_no_base_url: {
+    key: 'ai_fail_no_base_url',
+    zh: '该供应商没有配置 Base URL，无法拉取模型列表。',
+    en: 'This provider has no Base URL configured, so the model list cannot be fetched.',
+  },
   // 搜索源（SearXNG 等）测试失败：服务端 code=SEARCH_FAILED（地址策略拒绝时会给 ai_base_url_* 码）
   SEARCH_FAILED: {
     key: 'ai_fail_search_failed',
@@ -134,6 +160,12 @@ const REASON: Record<string, { key: string; zh: string; en: string }> = {
 export function hasAiFailureMapping(data: AiFailurePayload | null | undefined): boolean {
   return Boolean(REASON[String(data?.code || '')])
 }
+
+/**
+ * 这些 code 的文案由**服务端**按真实参数生成（例如容器回环提示里带真实端口与可照做的替换地址），
+ * UI 应优先原样展示响应体里的 `message`；只有服务端没带 message 时才回退到 REASON 的通用文案。
+ */
+export const SERVER_MESSAGE_FIRST_CODES: ReadonlySet<string> = new Set(['ai_base_url_loopback_in_container'])
 
 /**
  * 把服务端失败响应翻译成一句可行动的话。

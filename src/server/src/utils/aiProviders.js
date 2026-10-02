@@ -11,8 +11,11 @@
  */
 
 import { logger } from './logger.js'
+// 上游失败分类（稳定 code + HTTP 状态）：与 /models 刷新共用同一套词汇表，避免各写一套
+import { classifyAiFailure } from './aiFailure.js'
 import dns from 'node:dns'
 import net from 'node:net'
+import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import { Readable } from 'node:stream'
@@ -270,6 +273,19 @@ export const BLOCKED_HOSTNAMES = ['metadata.google.internal', 'metadata']
 /** 永远禁用的主机名后缀：内网/mDNS/集群内部域名（沿用既有拒绝项） */
 const BLOCKED_HOST_SUFFIXES = ['.local', '.internal', '.svc']
 
+/**
+ * 容器编排器注入的"宿主机"别名：它们虽然落在 .internal 后缀里，但必须**放行**——
+ * 否则我们给出的排障建议（"改用 http://host.docker.internal:<端口>/v1"）自己就被地址策略拒了，
+ * 用户照着做也修不好。放行的只是"允许做常规解析"，解析结果仍要过地址策略：
+ * Docker Desktop 下它解析到宿主机网关（私网 IP）→ 默认放行、AI_ALLOW_LOCAL_BASE_URL=false 时拒绝。
+ */
+const CONTAINER_HOST_ALIASES = [
+  'host.docker.internal',
+  'gateway.docker.internal',
+  'kubernetes.docker.internal',
+  'host.containers.internal', // Podman / docker-compose 的等价别名
+]
+
 /** 主机名是否为回环的固定别名（无需 DNS；开关关闭时按"本地地址被禁"拒绝） */
 function isLoopbackHostname(host) {
   const h = host.endsWith('.') ? host.slice(0, -1) : host
@@ -357,7 +373,9 @@ export async function checkUpstreamUrl(input, { allowLocal = allowLocalBaseUrl()
     )
   }
   const host = parsed.hostname.toLowerCase()
-  if (BLOCKED_HOSTNAMES.includes(host) || BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s))) {
+  const bareHost = host.endsWith('.') ? host.slice(0, -1) : host
+  const isContainerHostAlias = CONTAINER_HOST_ALIASES.includes(bareHost)
+  if (!isContainerHostAlias && (BLOCKED_HOSTNAMES.includes(host) || BLOCKED_HOST_SUFFIXES.some((s) => host.endsWith(s)))) {
     return reject(UPSTREAM_URL_CODES.host, `Base URL host "${host}" is not allowed`)
   }
   const bare = stripBrackets(host)
@@ -416,6 +434,53 @@ function guardedLookup(hostname, options, callback) {
     }
     callback(null, address, family)
   })
+}
+
+// ==================== 容器 + 回环地址的排障判定 ====================
+// 用户实测：服务端跑在 Docker 里，供应商 Base URL 填 http://127.0.0.1:3800/v1 —— 容器内的
+// 127.0.0.1 是**容器自己**，永远连不到宿主机上的网关。光说"连接失败"没用，必须给一句能直接
+// 照做的替换地址（host.docker.internal / 宿主机内网 IP）。
+
+/** 容器检测的显式覆盖：非 Docker 的容器运行时（或测试）可设 1/true；设 0/false 强制按宿主机处理 */
+export const AI_UPSTREAM_IN_CONTAINER_ENV = 'AI_UPSTREAM_IN_CONTAINER'
+
+/**
+ * 服务端是否运行在容器中（用于"127.0.0.1 指的是容器自己"这条排障提示）。
+ *
+ * 判定顺序（**可靠优先、不靠猜**）：
+ *   1) 显式环境变量 AI_UPSTREAM_IN_CONTAINER（运维/测试可覆盖，也覆盖非 Docker 运行时）；
+ *   2) Kubernetes：KUBERNETES_SERVICE_HOST（k8s 注入的固定环境变量）；
+ *   3) Docker / Podman：/.dockerenv 存在（Docker 官方镜像必有的标记文件）；
+ *   4) /proc/1/cgroup 命中 docker / kubepods / containerd / libpod（老内核 cgroup v1 兜底）。
+ * 刻意**不**用"HOSTNAME 像容器 id"这类启发式：hostname 用户可以随意设置，一旦误判就会把宿主机
+ * 部署说成容器部署、给出完全错误的排障建议（宁可漏报，不可误报）。
+ * @param {object} [deps] { fs, env } —— 便于离线测试注入
+ */
+export function isRunningInContainer(deps = {}) {
+  const env = deps.env || process.env
+  const fsImpl = deps.fs || fs
+  const explicit = String((env && env[AI_UPSTREAM_IN_CONTAINER_ENV]) ?? '').trim().toLowerCase()
+  if (explicit) return !['0', 'false', 'no', 'off'].includes(explicit)
+  if (env && env.KUBERNETES_SERVICE_HOST) return true
+  try {
+    if (fsImpl.existsSync('/.dockerenv')) return true
+  } catch {
+    /* 平台/权限差异：忽略，继续兜底判定 */
+  }
+  try {
+    if (/docker|kubepods|containerd|libpod/i.test(fsImpl.readFileSync('/proc/1/cgroup', 'utf8'))) return true
+  } catch {
+    /* Windows / macOS 宿主或无权读取：判定为非容器 */
+  }
+  return false
+}
+
+/** 主机名是否回环（127.0.0.0/8 / ::1 / localhost，含方括号与尾点形态） */
+export function isLoopbackUpstreamHost(host) {
+  const h = stripBrackets(String(host || '').trim().toLowerCase())
+  if (!h) return false
+  if (net.isIP(h)) return classifyUpstreamIp(h) === 'loopback'
+  return (h.endsWith('.') ? h.slice(0, -1) : h) === 'localhost'
 }
 
 /** 把 node:http(s) IncomingMessage 适配成调用方使用的 fetch Response 子集 */
@@ -1225,28 +1290,44 @@ export function buildUpstreamChat(cfg) {
   }
 }
 
-/**
- * 向上游拉取该供应商可用的模型列表（用于「一个配置支持多模型」的标签展示）。
- *
- * - OpenAI 兼容族：GET {baseUrl}/models，解析 data[].id（Authorization: Bearer）
- * - Anthropic 族：GET {baseUrl}/models（需 x-api-key + anthropic-version），解析 data[].id
- * - Responses 族：GET {baseUrl}/models，Authorization: Bearer
- * - 任何失败（无密钥 / 网络 / 鉴权）均回退到预设 defaultModel，保证至少有 1 个标签可点。
- *
- * @param {object} cfg { provider, baseUrl, apiKey, apiFormat }
- * @returns {Promise<string[]>} 模型标识数组
- */
-export async function fetchProviderModels(cfg) {
-  const { provider, baseUrl, apiKey, apiFormat } = cfg || {}
-  const preset = getPreset(provider)
-  if (!preset) return []
-  const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
-  // 自定义供应商未填 base_url 或没有密钥：无法拉取，回退预设默认模型
-  if (!resolvedBaseUrl || !apiKey) {
-    return preset.defaultModel ? [preset.defaultModel] : []
-  }
+// ==================== 上游 /models 拉取（严格模式） ====================
+// 用户实测反馈（本轮修复的两个缺陷）：
+//   · 假成功：Base URL = http://127.0.0.1:3800/v1（服务端在 Docker 里 ⇒ 必然连不上），点
+//     「刷新模型列表」界面弹「模型列表已刷新」却一个模型都没有。旧 fetchProviderModels 会
+//     **吞掉上游错误并回退 preset.defaultModel**（custom 预设没有默认模型 ⇒ 返回 []），调用方
+//     无法区分"失败 / 上游返回 0 个 / 上游返回 N 个"，于是永远 200 + 空数组。
+//   · 数据破坏：调用方无论成败都 `UPDATE models = [...]`，一次网络抖动就把上一次成功刷出来的
+//     模型列表清空。
+// 现在：fetchProviderModelsStrict 返回**结构化结果**（失败带稳定 code + 上游原始 status/文案），
+//      调用方只在上游返回结构合法数组时才写库（**合法空数组也算成功**，但带 upstreamEmpty 标记）。
 
-  const family = resolveFamily(provider, apiFormat)
+/** /models 拉取超时（毫秒）：与既有 8s 行为保持一致 */
+export const MODELS_FETCH_TIMEOUT_MS = 8000
+
+// ==================== 测试注入缝 ====================
+// 契约要求「用可注入的 fetch mock，不发真实外网」。默认实现 = safeUpstreamFetch（生产唯一路径，
+// 内含 assertSafeUpstreamUrl 的 SSRF 校验 + DNS rebinding 兜底）；只有测试会替换它。
+// 写法与 utils/modelProbe.js 的 setProbeFetchImpl/resetProbeFetchImpl 保持一致。
+let modelsFetchImpl = safeUpstreamFetch
+
+/** 仅测试使用：替换 /models 的出网实现；传 null/非法值恢复默认 safeUpstreamFetch */
+export function setModelsFetchImpl(fn) {
+  modelsFetchImpl = typeof fn === 'function' ? fn : safeUpstreamFetch
+}
+
+/** 仅测试使用：恢复默认出网实现 */
+export function resetModelsFetchImpl() {
+  modelsFetchImpl = safeUpstreamFetch
+}
+
+/** 当前出网实现（调试/断言用） */
+export function getModelsFetchImpl() {
+  return modelsFetchImpl
+}
+
+/** /models 请求头（OpenAI 兼容族 / Anthropic 族，沿用预设 authHeader 规则） */
+function buildModelsHeaders(preset, apiFormat, apiKey) {
+  const family = resolveFamily(preset.provider, apiFormat)
   const headers = {}
   if (family === 'anthropic') {
     if (preset.provider === 'custom') {
@@ -1258,33 +1339,193 @@ export async function fetchProviderModels(cfg) {
       headers['x-api-key'] = apiKey
       headers['anthropic-version'] = '2023-06-01'
     }
+    return headers
+  }
+  const authHeader = preset.authHeader || 'Authorization'
+  if (authHeader === 'Authorization') {
+    headers.Authorization = `Bearer ${apiKey}`
   } else {
-    const authHeader = preset.authHeader || 'Authorization'
-    if (authHeader === 'Authorization') {
-      headers.Authorization = `Bearer ${apiKey}`
-    } else {
-      headers[authHeader] = apiKey
-    }
+    headers[authHeader] = apiKey
+  }
+  return headers
+}
+
+/** 上游 /models 的 HTTP 状态 → 稳定 code + 建议的 HTTP 状态（词汇表与 utils/aiFailure.js 一致） */
+function classifyModelsHttpStatus(status) {
+  if (status === 401 || status === 403) return { code: 'ai_upstream_auth', httpStatus: 502 }
+  if (status === 404) return { code: 'ai_upstream_endpoint', httpStatus: 502 }
+  if (status === 429) return { code: 'ai_upstream_rate_limit', httpStatus: 502 }
+  if (status >= 500) return { code: 'ai_upstream_unavailable', httpStatus: 502 }
+  return { code: 'ai_upstream_http_error', httpStatus: 502 }
+}
+
+/**
+ * 上游错误体里的机器码（OpenAI 兼容形态 error.code / error.type）。
+ * 更全的解析在 utils/modelProbe.js 的 extractUpstreamError，但这里刻意不 import：
+ * modelProbe → aiProviders 已有依赖，反向 import 会形成 import 环。解析不出就返回 undefined。
+ */
+function upstreamErrorCodeOf(rawText) {
+  try {
+    const j = JSON.parse(rawText)
+    return j?.error?.code || j?.error?.type || j?.code || j?.type || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * 「容器 + 回环地址」的可操作提示（用户实测场景：容器里的 127.0.0.1 是容器自己）。
+ * 文案直接照做即可：带端口的 host.docker.internal 写法 + 宿主机内网 IP 写法。
+ */
+function loopbackInContainerMessage(modelsUrl) {
+  const u = new URL(modelsUrl)
+  const port = u.port || (u.protocol === 'https:' ? '443' : '80')
+  // 建议的是**用户该填的 Base URL**：剥掉我们内部拼上的 /models 后缀，否则用户会照着填成
+  // http://host.docker.internal:3800/v1/models（多一层路径，仍然连不上）
+  let path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/+$/, '') : ''
+  if (path.endsWith('/models')) path = path.slice(0, -'/models'.length)
+  return (
+    `服务端运行在 Docker 容器中，${u.hostname} 指向容器自身（不是你的电脑），无法访问你机器上的网关；` +
+    `请把 Base URL 改成 http://host.docker.internal:${port}${path}（本机 Docker Desktop 可直接解析；` +
+    `Linux 需给容器加 extra_hosts: "host.docker.internal:host-gateway"），` +
+    `或改用宿主机的内网 IP，例如 http://192.168.1.10:${port}${path}。`
+  )
+}
+
+/**
+ * 向上游拉取该供应商可用的模型列表（**严格模式**：不吞错、不回退预设默认模型）。
+ *
+ * - OpenAI 兼容族：GET {baseUrl}/models，解析 data[].id（Authorization: Bearer）
+ * - Anthropic 族：GET {baseUrl}/models（需 x-api-key + anthropic-version），解析 data[].id
+ * - Responses 族：GET {baseUrl}/models，Authorization: Bearer
+ *
+ * 返回值：
+ *   成功 → { ok:true, models:string[], count:number, upstreamEmpty:boolean, upstreamStatus:number }
+ *          models 已去重保序；upstreamEmpty=true 表示上游**合法**返回了 0 个模型（前端按 warning
+ *          提示，不能当成功）；upstreamStatus 是上游真实 HTTP 状态。
+ *   失败 → { ok:false, code:string, httpStatus:number, message:string, details:{...} }
+ *          code 复用 utils/aiFailure.js 的词汇表（ai_upstream_*）+ 本文件新增的
+ *          ai_upstream_invalid_response / ai_upstream_http_error /
+ *          ai_base_url_loopback_in_container；SSRF 策略拒绝时原样透传 ai_base_url_* 与 addressClass。
+ *          details 带 { upstreamStatus, upstreamMessage, upstreamErrorCode }（能原样给就原样给）。
+ *
+ * @param {object} cfg { provider, baseUrl, apiKey, apiFormat }
+ * @param {object} [opts] { fetchImpl, isInContainer } —— 测试注入缝；生产走默认实现
+ */
+export async function fetchProviderModelsStrict(cfg, opts = {}) {
+  const { provider, baseUrl, apiKey, apiFormat } = cfg || {}
+  const preset = getPreset(provider)
+  const fail = (code, httpStatus, message, details = {}) => ({ ok: false, code, httpStatus, message, details })
+  if (!preset) return fail('ai_no_provider', 400, `Unknown provider: ${provider}`)
+
+  const resolvedBaseUrl = (baseUrl || preset.defaultBaseUrl || '').replace(/\/+$/, '')
+  if (!resolvedBaseUrl) return fail('ai_no_base_url', 400, 'Base URL is required for this provider')
+  if (!apiKey) return fail('ai_no_api_key', 400, 'Provider has no API key configured')
+
+  // SSRF 预检：与保存路径 / 所有出站请求同一口径（拒绝时原样透传策略 code 与地址类别）
+  const check = await checkUpstreamUrl(resolvedBaseUrl)
+  if (!check.ok) {
+    return fail(check.code, 400, check.message, { addressClass: check.addressClass, host: check.host })
   }
 
+  const modelsUrl = `${resolvedBaseUrl}/models`
+  const fetchImpl = typeof opts.fetchImpl === 'function' ? opts.fetchImpl : modelsFetchImpl
+  const inContainer = typeof opts.isInContainer === 'boolean' ? opts.isInContainer : isRunningInContainer()
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 8000)
+  const timer = setTimeout(() => ctrl.abort(), MODELS_FETCH_TIMEOUT_MS)
   try {
-    const res = await safeUpstreamFetch(`${resolvedBaseUrl}/models`, { headers, signal: ctrl.signal })
-    if (!res.ok) throw new Error(`models endpoint status ${res.status}`)
-    const json = await res.json()
-    const list = Array.isArray(json?.data)
-      ? json.data.map((m) => m.id).filter(Boolean)
-      : []
-    // 去重并保持稳定顺序
-    const unique = Array.from(new Set(list))
-    return unique.length ? unique : (preset.defaultModel ? [preset.defaultModel] : [])
+    const res = await fetchImpl(
+      modelsUrl,
+      { headers: buildModelsHeaders(preset, apiFormat, apiKey), signal: ctrl.signal },
+      { timeoutMs: MODELS_FETCH_TIMEOUT_MS },
+    )
+    let rawText = ''
+    try {
+      rawText = typeof res.text === 'function' ? String(await res.text()) : ''
+    } catch {
+      rawText = ''
+    }
+
+    if (!res.ok) {
+      const { code, httpStatus } = classifyModelsHttpStatus(res.status)
+      return fail(code, httpStatus, `Upstream /models returned HTTP ${res.status}`, {
+        upstreamStatus: res.status,
+        upstreamMessage: rawText.slice(0, 500),
+        upstreamErrorCode: upstreamErrorCodeOf(rawText),
+      })
+    }
+
+    let json
+    try {
+      json = JSON.parse(rawText)
+    } catch {
+      return fail(
+        'ai_upstream_invalid_response',
+        502,
+        'Upstream /models did not return JSON; make sure the Base URL points at an OpenAI-compatible gateway that exposes GET {baseUrl}/models',
+        { upstreamStatus: res.status, upstreamMessage: rawText.slice(0, 500) },
+      )
+    }
+    if (!json || !Array.isArray(json.data)) {
+      return fail(
+        'ai_upstream_invalid_response',
+        502,
+        'Upstream /models response has no "data" array; expected {"object":"list","data":[{"id":"..."}]}',
+        { upstreamStatus: res.status, upstreamMessage: rawText.slice(0, 500) },
+      )
+    }
+    const list = json.data
+      .map((m) => (typeof m === 'string' ? m : typeof m?.id === 'string' ? m.id : ''))
+      .filter(Boolean)
+    const models = Array.from(new Set(list))
+    if (json.data.length > 0 && models.length === 0) {
+      return fail(
+        'ai_upstream_invalid_response',
+        502,
+        'Upstream /models returned entries without an "id" field; cannot read the model list',
+        { upstreamStatus: res.status, upstreamMessage: rawText.slice(0, 500) },
+      )
+    }
+    // 成功（含**合法空数组**）：调用方据此写库；models 为空时 upstreamEmpty=true，前端按 warning 提示
+    return { ok: true, models, count: models.length, upstreamEmpty: models.length === 0, upstreamStatus: res.status }
   } catch (e) {
-    logger.warn('fetchProviderModels fallback to preset default:', e.message)
-    return preset.defaultModel ? [preset.defaultModel] : []
+    // 策略兜底：safeUpstreamFetch 内部还会再跑一次 assertSafeUpstreamUrl，抛 ai_base_url_* 时原样透传
+    if (typeof e?.code === 'string' && e.code.startsWith('ai_base_url_')) {
+      return fail(e.code, 400, String(e.message || e), { addressClass: e.addressClass })
+    }
+    const { code, httpStatus } = classifyAiFailure(e)
+    const details = { upstreamMessage: String(e?.message || e) }
+    // ★ 连接级失败 + 回环地址 + 服务端在容器里：这正是用户实测的场景，给"照做即可"的替换地址
+    if (
+      inContainer &&
+      (code === 'ai_upstream_unavailable' || code === 'ai_upstream_timeout') &&
+      isLoopbackUpstreamHost(new URL(modelsUrl).hostname)
+    ) {
+      return fail('ai_base_url_loopback_in_container', 502, loopbackInContainerMessage(modelsUrl), {
+        ...details,
+        host: new URL(modelsUrl).hostname,
+        inContainer: true,
+      })
+    }
+    return fail(code, httpStatus, String(e?.message || e), details)
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * @deprecated 历史接口：失败时**吞掉错误并回退 preset.defaultModel**（这正是本轮修掉的"假成功"
+ * 根因），调用方无法区分"失败 / 上游返回 0 个 / N 个"。仅为兼容历史调用保留；新代码一律用
+ * fetchProviderModelsStrict（刷新模型列表等用户可见路径）。
+ * @param {object} cfg { provider, baseUrl, apiKey, apiFormat }
+ * @returns {Promise<string[]>}
+ */
+export async function fetchProviderModels(cfg) {
+  const preset = getPreset(cfg && cfg.provider)
+  const r = await fetchProviderModelsStrict(cfg)
+  if (r.ok) return r.models
+  logger.warn('[aiProviders] fetchProviderModels(deprecated) failed:', r.code, r.message)
+  return preset?.defaultModel ? [preset.defaultModel] : []
 }
 
 export default {
@@ -1295,6 +1536,12 @@ export default {
   buildUpstreamChat,
   messagesToResponsesInput,
   fetchProviderModels,
+  fetchProviderModelsStrict,
+  setModelsFetchImpl,
+  resetModelsFetchImpl,
+  getModelsFetchImpl,
+  isRunningInContainer,
+  isLoopbackUpstreamHost,
   safeUpstreamFetch,
   lookupBuiltinContextWindow,
   checkUpstreamUrl,
