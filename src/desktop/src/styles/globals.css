@@ -1126,16 +1126,16 @@ html.app-font-kai body samp {
   --normal-bg: var(--bg-surface);
   --normal-text: var(--text-primary);
   --normal-border: var(--border-default);
-  --success-bg: var(--bg-surface);
+  --success-bg: color-mix(in srgb, var(--success, #22c55e) 8%, var(--bg-surface));
   --success-text: var(--text-primary);
   --success-border: var(--success, #22c55e);
-  --error-bg: var(--bg-surface);
+  --error-bg: color-mix(in srgb, var(--danger) 8%, var(--bg-surface));
   --error-text: var(--text-primary);
   --error-border: var(--danger);
-  --warning-bg: var(--bg-surface);
+  --warning-bg: color-mix(in srgb, var(--warning) 8%, var(--bg-surface));
   --warning-text: var(--text-primary);
   --warning-border: var(--warning);
-  --info-bg: var(--bg-surface);
+  --info-bg: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
   --info-text: var(--text-primary);
   --info-border: var(--accent);
 }
@@ -1173,4 +1173,19 @@ html.app-font-kai body samp {
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
   }
+}
+/* 语义图标着色：这是"上一版看着还不错"的关键一条 —— 卡片保持中性、只给图标上语义色。
+   删旧皮肤段时被一并删掉了，这里显式补回（否则 richColors 关闭 ⇒ 图标全中性，状态感没了）。
+   配色全部走 token，因此与主题一致。 */
+[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon] {
+  color: var(--success, #22c55e) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon] {
+  color: var(--danger) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon] {
+  color: var(--warning) !important;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type='info'] [data-icon] {
+  color: var(--accent) !important;
 }
