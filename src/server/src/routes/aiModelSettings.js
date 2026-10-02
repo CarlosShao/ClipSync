@@ -42,6 +42,24 @@
  *      判定矩阵见 utils/modelProbe.js 文件头。绝不自动调用；apiLimiter + modelProbeLimiter
  *      （独立桶 10 次/分/用户）。
  *
+ *    ⚠️ 契约 v4（本轮新增，**新增而非替换**，上面 GET/PUT/probe 行为一字未改）：
+ *
+ *    POST /api/ai/model-settings/resolve        body { models: string[], providerId? }
+ *      → 200 { items: [ …与 GET 同字段、同值口径… ] }
+ *      **草稿态（新增供应商未保存、没有 providerId）也能拿到预设**：按显式模型名清单解析
+ *      生效项，纯读不落库。不给 providerId = 纯预设（isOverridden 恒 false）；给了 = 叠加
+ *      该 provider 下本人的覆盖行。模型名 1..500 个（去重），空/非数组 → 400（稳定 code）；
+ *      providerId 非本人/不存在 → 404。值口径与 GET **共用** resolveItems/toItem/
+ *      mergeModelSettings（契约明确要求复用，不另写一套解析 ⇒ 两边不可能漂）。
+ *
+ *    PUT /api/ai/model-settings/batch           body { providerId, items: [ { model, patch } ] }
+ *      → 200 { ok: true, updated: N, items: [ …生效后的结果，顺序与入参一致… ] }
+ *      语义与单条 PUT **完全一致**（共用 validatePatch / materialize /
+ *      applyModelSettingInTx，含 enabled↔selected_models 联动）；先全量校验，任一条非法
+ *      ⇒ 整批不落库 + 400（带 index/field）；随后在一个事务里逐条写入，任何一条 DB 失败
+ *      ⇒ 整体 ROLLBACK。items 1..200 条；providerId 非本人 → 404；
+ *      apiLimiter + modelBatchLimiter（独立桶 10 次/分/用户）。
+ *
  * 安全：
  *   · 归属校验落在 SQL 层（provider_id + user_id 同条件），他人/不存在的 provider 一律 404
  *     （不返回 403，避免泄漏资源存在性 —— 与 tests/ai-idor-and-tools.test.js 既有范式一致）。
@@ -50,7 +68,7 @@
  */
 import { Router } from 'express'
 import { pool } from '../db/pool.js'
-import { apiLimiter, modelProbeLimiter } from '../middleware/rateLimiter.js'
+import { apiLimiter, modelProbeLimiter, modelBatchLimiter } from '../middleware/rateLimiter.js'
 import { decrypt } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -80,6 +98,9 @@ const MAX_OUTPUT_MAX = 200000
 const ALIAS_MAX_LEN = 80
 const SORT_ORDER_MIN = -10000
 const SORT_ORDER_MAX = 10000
+// 契约 v4：草稿态 resolve 的模型数上限 / 批量保存的条数上限
+const RESOLVE_MAX_MODELS = 500
+const BATCH_MAX_ITEMS = 200
 
 const BOOLEAN_FIELDS = ['supportsText', 'supportsImage', 'supportsVideo', 'supportsAudio', 'reasoningEnabled']
 
@@ -246,6 +267,149 @@ async function loadOwnedProvider(userId, providerId, executor = pool) {
   return rows[0] || null
 }
 
+/**
+ * 【契约 v4 复用点 1】把「模型名清单」解析成生效项（内置预设 ← 用户覆盖行）。
+ *
+ * GET /（用候选集合调用）与 POST /resolve（草稿态显式清单调用）**共用这一个函数**，
+ * 保证两条路径的值口径永不漂（契约明确要求「必须复用，不要另写一套」）。**纯读，不写任何表**。
+ *
+ * @param {string} userId 当前用户
+ * @param {string|null} providerId 为 null 时 = 纯预设（草稿态：还没有 providerId）
+ * @param {string[]} models 已清洗的模型名（返回顺序 = 入参顺序）
+ * @param {Array<object>} [preloadedRows] 调用方已查好的覆盖行（GET 已经查过一次，避免重复查库）
+ * @returns {Promise<Array<object>>} API item 数组
+ */
+async function resolveItems(userId, providerId, models, preloadedRows = null) {
+  const overrideRows = preloadedRows || (providerId ? await fetchProviderOverrideRows(userId, providerId) : [])
+  const byModel = new Map(overrideRows.map((r) => [r.model, r]))
+  return models.map((model) => toItem(mergeModelSettings(model, resolveModelPreset(model), byModel.get(model) || null)))
+}
+
+/**
+ * 清洗 /resolve 的模型名清单：非空、长度 1..200、去重（保持首次出现顺序）。
+ * @returns {{error:object}|{list:string[]}}
+ */
+function sanitizeModelList(models) {
+  if (!Array.isArray(models)) {
+    return { error: { error: 'MODELS_NOT_ARRAY', code: 'MODELS_NOT_ARRAY', message: 'models 必须是数组' } }
+  }
+  if (models.length === 0) {
+    return { error: { error: 'MODELS_EMPTY', code: 'MODELS_EMPTY', message: 'models 至少需要 1 个模型名' } }
+  }
+  if (models.length > RESOLVE_MAX_MODELS) {
+    return {
+      error: { error: 'MODELS_TOO_MANY', code: 'MODELS_TOO_MANY', message: `models 最多 ${RESOLVE_MAX_MODELS} 个，收到 ${models.length} 个` },
+    }
+  }
+  const list = []
+  const seen = new Set()
+  for (let i = 0; i < models.length; i++) {
+    const raw = models[i]
+    if (typeof raw !== 'string') {
+      return { error: { error: 'INVALID_MODEL', code: 'INVALID_MODEL', index: i, message: `models[${i}] 必须是字符串` } }
+    }
+    const m = raw.trim()
+    if (m.length === 0 || m.length > MODEL_MAX_LEN) {
+      return {
+        error: { error: 'INVALID_MODEL', code: 'INVALID_MODEL', index: i, message: `models[${i}] 长度必须在 1..${MODEL_MAX_LEN}` },
+      }
+    }
+    if (!seen.has(m)) {
+      seen.add(m)
+      list.push(m)
+    }
+  }
+  return { list }
+}
+
+/**
+ * 【契约 v4 复用点 2】**事务内**写入单条模型配置（单条 PUT 与 PUT /batch 共用）。
+ *
+ * 语义与单条 PUT 完全一致（契约要求「同一套校验、同一套 materialize、同样的 enabled 联动」）：
+ *   预设 ← 已有覆盖 ← patch → 整行 upsert；patch 含 enabled 时在同一 client 上联动
+ *   ai_settings.selected_models[providerId]（先写联动、后写模型行 ⇒ 任何失败整体回滚）。
+ *
+ * @param {object} ctx { client, userId, providerId, sel:{locked,value} }
+ *   sel 是批内共享的 selected_models 状态：只锁一次行、并在批内累进最新值（避免同一批次里
+ *   多条 enabled 互相覆盖，或读到池连接上看不见的未提交值）。
+ * @param {string} modelName 已清洗的模型名
+ * @param {object} patchObj 已校验通过的 patch
+ * @returns {Promise<object>} 生效后的 API item
+ */
+async function applyModelSettingInTx(ctx, modelName, patchObj) {
+  const preset = resolveModelPreset(modelName)
+  const existingRow = await fetchModelSettingsRow(ctx.userId, ctx.providerId, modelName, ctx.client)
+  const current = mergeModelSettings(modelName, preset, existingRow)
+  const next = materialize(current, patchObj, preset)
+
+  // ---- enabled 副作用：同步 ai_settings.selected_models[providerId]（仅在显式提交 enabled 时）----
+  if (Object.prototype.hasOwnProperty.call(patchObj, 'enabled')) {
+    if (!ctx.sel.locked) {
+      // 确保该用户有 ai_settings 行，再 FOR UPDATE 锁住，避免与 /api/ai/settings 的保存并发丢更新
+      await ctx.client.query(
+        `INSERT INTO ai_settings (user_id, selected_models, created_at, updated_at)
+         VALUES ($1, '{}'::jsonb, NOW(), NOW())
+         ON CONFLICT (user_id) DO NOTHING`,
+        [ctx.userId],
+      )
+      const selRes = await ctx.client.query('SELECT selected_models FROM ai_settings WHERE user_id = $1 FOR UPDATE', [ctx.userId])
+      ctx.sel.value = selRes.rows[0]?.selected_models || {}
+      ctx.sel.locked = true
+    }
+    const nextSelected = applySelectedModel(ctx.sel.value, ctx.providerId, modelName, next.enabled === true)
+    if (JSON.stringify(nextSelected) !== JSON.stringify(ctx.sel.value)) {
+      await ctx.client.query(
+        'UPDATE ai_settings SET selected_models = $2::jsonb, updated_at = NOW() WHERE user_id = $1',
+        [ctx.userId, JSON.stringify(nextSelected)],
+      )
+      ctx.sel.value = nextSelected
+    }
+  }
+
+  const { rows } = await ctx.client.query(
+    // ⚠️ 契约 v2：不再写 reasoning_levels（已废弃的等级映射表），该列保留在库中但不再读写。
+    // 新建行吃列 DEFAULT('{}'::jsonb)，已有行的历史值原样留着（不删列 = 不做破坏性迁移）。
+    `INSERT INTO ai_model_settings (
+       user_id, provider_id, model, context_window, max_output,
+       supports_text, supports_image, supports_video, supports_audio,
+       reasoning_enabled, reasoning_protocol,
+       enabled, alias, sort_order,
+       created_at, updated_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+     ON CONFLICT (user_id, provider_id, model) DO UPDATE SET
+       context_window = EXCLUDED.context_window,
+       max_output = EXCLUDED.max_output,
+       supports_text = EXCLUDED.supports_text,
+       supports_image = EXCLUDED.supports_image,
+       supports_video = EXCLUDED.supports_video,
+       supports_audio = EXCLUDED.supports_audio,
+       reasoning_enabled = EXCLUDED.reasoning_enabled,
+       reasoning_protocol = EXCLUDED.reasoning_protocol,
+       enabled = EXCLUDED.enabled,
+       alias = EXCLUDED.alias,
+       sort_order = EXCLUDED.sort_order,
+       updated_at = NOW()
+     RETURNING *`,
+    [
+      ctx.userId,
+      ctx.providerId,
+      modelName,
+      next.contextWindow,
+      next.maxOutput,
+      next.supportsText,
+      next.supportsImage,
+      next.supportsVideo,
+      next.supportsAudio,
+      next.reasoningEnabled,
+      next.reasoningProtocol,
+      next.enabled === true,
+      next.alias,
+      next.sortOrder,
+    ],
+  )
+  return toItem(mergeModelSettings(modelName, preset, rows[0]))
+}
+
 // GET /api/ai/model-settings?providerId=<uuid>
 router.get('/', apiLimiter, async (req, res) => {
   try {
@@ -270,10 +434,8 @@ router.get('/', apiLimiter, async (req, res) => {
     }
 
     const models = collectModelCandidates(providerRow, selectedModels, overrideRows)
-    const items = sortItems(models.map((model) => {
-      const row = overrideRows.find((r) => r.model === model) || null
-      return toItem(mergeModelSettings(model, resolveModelPreset(model), row))
-    }))
+    // 契约 v4：改用与 /resolve 共用的 resolveItems（同一条代码路径 ⇒ 两边口径不可能漂）
+    const items = sortItems(await resolveItems(req.userId, providerId, models, overrideRows))
     res.json({ items })
   } catch (err) {
     logger.error('List AI model settings error:', err)
@@ -310,77 +472,12 @@ router.put('/', apiLimiter, async (req, res) => {
       return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
     }
 
-    const preset = resolveModelPreset(modelName)
-    const existingRow = await fetchModelSettingsRow(req.userId, providerId, modelName)
-    const current = mergeModelSettings(modelName, preset, existingRow)
-    const next = materialize(current, patchObj, preset)
-
-    // ---- enabled 副作用：同步 ai_settings.selected_models[providerId]（仅在显式提交 enabled 时）----
-    const hasEnabled = Object.prototype.hasOwnProperty.call(patchObj, 'enabled')
-    if (hasEnabled) {
-      // 确保该用户有 ai_settings 行，再 FOR UPDATE 锁住，避免与 /api/ai/settings 的保存并发丢更新
-      await client.query(
-        `INSERT INTO ai_settings (user_id, selected_models, created_at, updated_at)
-         VALUES ($1, '{}'::jsonb, NOW(), NOW())
-         ON CONFLICT (user_id) DO NOTHING`,
-        [req.userId],
-      )
-      const selRes = await client.query('SELECT selected_models FROM ai_settings WHERE user_id = $1 FOR UPDATE', [req.userId])
-      const selected = selRes.rows[0]?.selected_models || {}
-      const nextSelected = applySelectedModel(selected, providerId, modelName, next.enabled === true)
-      if (JSON.stringify(nextSelected) !== JSON.stringify(selected)) {
-        // 先写联动、后写模型行：任何后续失败都会整体 ROLLBACK（测试用注入约束失败钉死这一点）
-        await client.query(
-          'UPDATE ai_settings SET selected_models = $2::jsonb, updated_at = NOW() WHERE user_id = $1',
-          [req.userId, JSON.stringify(nextSelected)],
-        )
-      }
-    }
-
-    const { rows } = await client.query(
-      // ⚠️ 契约 v2：不再写 reasoning_levels（已废弃的等级映射表），该列保留在库中但不再读写。
-      // 新建行吃列 DEFAULT('{}'::jsonb)，已有行的历史值原样留着（不删列 = 不做破坏性迁移）。
-      `INSERT INTO ai_model_settings (
-         user_id, provider_id, model, context_window, max_output,
-         supports_text, supports_image, supports_video, supports_audio,
-         reasoning_enabled, reasoning_protocol,
-         enabled, alias, sort_order,
-         created_at, updated_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
-       ON CONFLICT (user_id, provider_id, model) DO UPDATE SET
-         context_window = EXCLUDED.context_window,
-         max_output = EXCLUDED.max_output,
-         supports_text = EXCLUDED.supports_text,
-         supports_image = EXCLUDED.supports_image,
-         supports_video = EXCLUDED.supports_video,
-         supports_audio = EXCLUDED.supports_audio,
-         reasoning_enabled = EXCLUDED.reasoning_enabled,
-         reasoning_protocol = EXCLUDED.reasoning_protocol,
-         enabled = EXCLUDED.enabled,
-         alias = EXCLUDED.alias,
-         sort_order = EXCLUDED.sort_order,
-         updated_at = NOW()
-       RETURNING *`,
-      [
-        req.userId,
-        providerId,
-        modelName,
-        next.contextWindow,
-        next.maxOutput,
-        next.supportsText,
-        next.supportsImage,
-        next.supportsVideo,
-        next.supportsAudio,
-        next.reasoningEnabled,
-        next.reasoningProtocol,
-        next.enabled === true,
-        next.alias,
-        next.sortOrder,
-      ],
-    )
+    // 契约 v4：写入逻辑抽成 applyModelSettingInTx，与 PUT /batch 共用同一条代码路径
+    const ctx = { client, userId: req.userId, providerId, sel: { locked: false, value: null } }
+    const item = await applyModelSettingInTx(ctx, modelName, patchObj)
 
     await client.query('COMMIT')
-    res.json({ ok: true, item: toItem(mergeModelSettings(modelName, preset, rows[0])) })
+    res.json({ ok: true, item })
   } catch (err) {
     if (client) {
       try {
@@ -390,6 +487,139 @@ router.put('/', apiLimiter, async (req, res) => {
       }
     }
     logger.error('Put AI model settings error:', err)
+    res.status(500).json({ error: 'Failed to save AI model settings' })
+  } finally {
+    if (client) client.release()
+  }
+})
+
+// POST /api/ai/model-settings/resolve  body { models: string[], providerId? }
+//
+// 契约 v4：**草稿态也能拿到模型预设/配置**（新增供应商还没保存、没有 providerId 时，
+// 用户从刷新出来的 N 个候选里勾选一个 → 立刻要出现配置卡片）。所以这里按显式模型名清单
+// 解析生效项，**纯读、不落库**：
+//   · 不给 providerId → 纯内置预设（草稿态路径，isOverridden 恒 false）；
+//   · 给了 providerId → 叠加该 provider 下该用户的覆盖行（与 GET 完全同一套 merge 语义）。
+// 值口径与 GET 共用 resolveItems/toItem/mergeModelSettings，**不另写一套解析**。
+router.post('/resolve', apiLimiter, async (req, res) => {
+  try {
+    const { models, providerId } = req.body || {}
+
+    const sanitized = sanitizeModelList(models)
+    if (sanitized.error) return res.status(400).json(sanitized.error)
+
+    // providerId 可选；给了就必须是本人在库的 provider（沿用既有 IDOR 口径：一律 404）
+    let ownedProviderId = null
+    if (providerId !== undefined && providerId !== null && providerId !== '') {
+      if (typeof providerId !== 'string' || !UUID_RE.test(providerId)) {
+        return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
+      }
+      const providerRow = await loadOwnedProvider(req.userId, providerId)
+      if (!providerRow) {
+        return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
+      }
+      ownedProviderId = providerId
+    }
+
+    const items = await resolveItems(req.userId, ownedProviderId, sanitized.list)
+    res.json({ items })
+  } catch (err) {
+    logger.error('Resolve AI model settings error:', err)
+    res.status(500).json({ error: 'Failed to resolve AI model settings' })
+  }
+})
+
+// PUT /api/ai/model-settings/batch  body { providerId, items: [ { model, patch } ] }
+//
+// 契约 v4：一次请求保存多个模型（草稿态攒了一堆配置，保存时不想发 N 个请求）。
+//   · 语义与单条 PUT **完全一致**（共用 validatePatch / materialize / applyModelSettingInTx）；
+//   · 先全量校验（纯校验，不开事务）→ 任一条非法 ⇒ 整批不落库 + 400（带第几条 / 哪个字段）；
+//   · 事务内逐条写入；任何一条 DB 失败 ⇒ 整体 ROLLBACK（含 selected_models 联动）；
+//   · 返回 items 顺序与入参严格一致；独立限流桶 modelBatchLimiter（10 次/分/用户）。
+router.put('/batch', apiLimiter, modelBatchLimiter, async (req, res) => {
+  let client = null
+  try {
+    const { providerId, items } = req.body || {}
+
+    if (typeof providerId !== 'string' || !UUID_RE.test(providerId)) {
+      return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
+    }
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'ITEMS_NOT_ARRAY', code: 'ITEMS_NOT_ARRAY', message: 'items 必须是数组' })
+    }
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'ITEMS_EMPTY', code: 'ITEMS_EMPTY', message: 'items 至少需要 1 条' })
+    }
+    if (items.length > BATCH_MAX_ITEMS) {
+      return res.status(400).json({
+        error: 'ITEMS_TOO_MANY',
+        code: 'ITEMS_TOO_MANY',
+        message: `items 最多 ${BATCH_MAX_ITEMS} 条，收到 ${items.length} 条`,
+      })
+    }
+
+    // ---- 先全量校验：任一条非法 ⇒ 直接 400，**一条都不落库** ----
+    const prepared = []
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i]
+      if (!it || typeof it !== 'object' || Array.isArray(it)) {
+        return res.status(400).json({
+          error: 'INVALID_BATCH_ITEM',
+          code: 'INVALID_BATCH_ITEM',
+          index: i,
+          message: `items[${i}] 必须是 { model, patch } 对象`,
+        })
+      }
+      if (typeof it.model !== 'string' || it.model.trim().length === 0 || it.model.trim().length > MODEL_MAX_LEN) {
+        return res.status(400).json({
+          error: 'INVALID_BATCH_ITEM',
+          code: 'INVALID_MODEL',
+          index: i,
+          field: 'model',
+          message: `items[${i}].model 必填，长度 1..${MODEL_MAX_LEN}`,
+        })
+      }
+      const patchObj = it.patch === undefined || it.patch === null ? {} : it.patch
+      const invalid = validatePatch(patchObj)
+      if (invalid) {
+        return res.status(400).json({
+          error: 'INVALID_BATCH_ITEM',
+          code: invalid.error,
+          index: i,
+          field: invalid.field,
+          message: `items[${i}].${invalid.field || 'patch'} 非法：${invalid.message}`,
+        })
+      }
+      prepared.push({ model: it.model.trim(), patch: patchObj })
+    }
+
+    // ---- 事务内逐条写入（与单条 PUT 完全同一条代码路径）----
+    client = await pool.connect()
+    await client.query('BEGIN')
+
+    const providerRow = await loadOwnedProvider(req.userId, providerId, client)
+    if (!providerRow) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
+    }
+
+    const ctx = { client, userId: req.userId, providerId, sel: { locked: false, value: null } }
+    const outItems = []
+    for (const p of prepared) {
+      outItems.push(await applyModelSettingInTx(ctx, p.model, p.patch))
+    }
+
+    await client.query('COMMIT')
+    res.json({ ok: true, updated: outItems.length, items: outItems })
+  } catch (err) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK')
+      } catch (_) {
+        /* 连接已坏时忽略：原始错误更重要 */
+      }
+    }
+    logger.error('Batch put AI model settings error:', err)
     res.status(500).json({ error: 'Failed to save AI model settings' })
   } finally {
     if (client) client.release()

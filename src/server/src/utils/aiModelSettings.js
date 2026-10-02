@@ -24,11 +24,15 @@ import {
   REASONING_PROTOCOLS,
 } from './modelPresets.js'
 
-/** 读取某用户某供应商某模型的覆盖行（不存在/表不存在/查库失败 → null） */
-export async function fetchModelSettingsRow(userId, providerId, model) {
+/**
+ * 读取某用户某供应商某模型的覆盖行（不存在/表不存在/查库失败 → null）
+ * @param {object} [executor] pg Pool/PoolClient。**事务内必须传 client**：池连接看不到同事务里
+ *   尚未提交的写入，批量 upsert 中重复模型的第二次合并会读到旧值（契约 v4 的 batch 依赖此参数）。
+ */
+export async function fetchModelSettingsRow(userId, providerId, model, executor = pool) {
   if (!userId || !providerId || !model) return null
   try {
-    const { rows } = await pool.query(
+    const { rows } = await executor.query(
       `SELECT * FROM ai_model_settings
         WHERE user_id = $1 AND provider_id = $2 AND model = $3
         LIMIT 1`,
@@ -41,11 +45,14 @@ export async function fetchModelSettingsRow(userId, providerId, model) {
   }
 }
 
-/** 读取某用户某供应商的全部覆盖行（表不存在/查库失败 → []） */
-export async function fetchProviderOverrideRows(userId, providerId) {
+/**
+ * 读取某用户某供应商的全部覆盖行（表不存在/查库失败 → []）
+ * @param {object} [executor] pg Pool/PoolClient（事务内请传 client，理由同上）
+ */
+export async function fetchProviderOverrideRows(userId, providerId, executor = pool) {
   if (!userId || !providerId) return []
   try {
-    const { rows } = await pool.query(
+    const { rows } = await executor.query(
       `SELECT * FROM ai_model_settings WHERE user_id = $1 AND provider_id = $2`,
       [userId, providerId],
     )

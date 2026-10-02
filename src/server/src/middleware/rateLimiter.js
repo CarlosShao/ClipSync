@@ -37,6 +37,9 @@ const memoryStores = {
   // 模型能力自检探测（POST /api/ai/model-settings/probe）：会真实打一次上游、消耗用户额度，
   // 因此独立桶 + 更严阈值（10 次/分/用户），且与 apiLimiter 分桶互不挤兑
   modelProbe: new Map(),
+  // 模型配置批量保存（PUT /api/ai/model-settings/batch，契约 v4）：单次请求最多 200 条写入，
+  // 独立桶 + 更严阈值（10 次/分/用户），避免一条请求把库打爆、也避免挤兑 apiLimiter 额度
+  modelBatch: new Map(),
 };
 
 /**
@@ -447,6 +450,19 @@ export const modelProbeLimiter = createRateLimiter({
 });
 
 /**
+ * 模型配置批量保存限流（PUT /api/ai/model-settings/batch，契约 v4）
+ * 每用户 10 次/分钟（匿名回退 IP 分桶）：单次请求最多写 200 条模型配置，
+ * 独立桶 + 固定阈值（不走 runtimeLimits 动态键）避免被放大；与 apiLimiter 分桶互不挤兑。
+ */
+export const modelBatchLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many batch model-setting requests, please try again later',
+  keyGenerator: (req) => (req.userId ? `user:${req.userId}` : clientIp(req)),
+  storeName: 'modelBatch',
+});
+
+/**
  * AN-07：管理台专用限流（/api/admin 全量挂载，见 index.js）
  * 比公共 API 更严的敏感口径：按 IP 100 次/分钟（固定阈值，不走 runtimeLimits 动态键——
  * 防止管理台误操作把自己的防线调高/关闭；rate_limit_disabled 总开关仍生效）。
@@ -585,6 +601,7 @@ export default {
   strictLimiter,
   feedbackLimiter,
   modelProbeLimiter,
+  modelBatchLimiter,
   uploadLimiter,
   adminLimiter,
   adminStrictLimiter,
