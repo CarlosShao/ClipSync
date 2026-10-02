@@ -53,6 +53,7 @@ import paymentRoutes from './routes/payments.js';
 import paymentWebhookRoutes from './routes/paymentWebhooks.js';
 import invoiceRoutes from './routes/invoices.js';
 import surveyRoutes from './routes/surveys.js';
+import feedbackRoutes from './routes/feedback.js';
 import favoritesRoutes from './routes/favorites.js';
 import protectionRoutes from './routes/protection.js';
 import templatesRoutes from './routes/templates.js';
@@ -473,6 +474,14 @@ app.use('/api/payments', apiLimiter, authenticateToken, csrfProtection, paymentR
 // 发票管理路由
 app.use('/api/invoices', apiLimiter, authenticateToken, csrfProtection, invoiceRoutes);
 app.use('/api/surveys', apiLimiter, authenticateToken, surveyRoutes);
+
+// 应用内反馈工单（桌面端「设置 → 关于 ClipSync → 发送反馈」）：中间件组合与
+// /api/ai/settings 对齐（authenticateToken + apiLimiter + 真 CSRF）；路由内部另挂
+// 工单专用限流 feedbackLimiter 防刷。落库为主、发企业邮箱尽力而为。
+app.use('/api/feedback', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {
+  req.userId = req.user.userId;
+  next();
+}, feedbackRoutes);
 
 // 收藏夹管理路由
 app.use('/api/favorites', authenticateToken, apiLimiter, csrfProtection, (req, res, next) => {

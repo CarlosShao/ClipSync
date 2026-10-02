@@ -31,6 +31,9 @@ const memoryStores = {
   // 完全隔离计数，避免管理台高频巡检与客户端流量互相挤兑（CO-51 同原则）
   admin: new Map(),
   adminStrict: new Map(),
+  // 应用内反馈工单（POST /api/feedback）：独立桶 + 独立阈值，避免与 strictLimiter
+  // 的敏感操作额度互相挤兑（CO-51 同原则）
+  feedback: new Map(),
 };
 
 /**
@@ -414,6 +417,19 @@ export const strictLimiter = createRateLimiter({
 });
 
 /**
+ * 应用内反馈工单限流（POST /api/feedback）
+ * 每用户 5 条/分钟（匿名回退 IP 分桶）：反馈是人工处理的，正常用户不会连发，
+ * 但接口是「写库 + 发邮件」的组合，必须挡住脚本刷屏（邮件通道也有配额）。
+ */
+export const feedbackLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: 'Too many feedback submissions, please try again later',
+  keyGenerator: (req) => (req.userId ? `user:${req.userId}` : clientIp(req)),
+  storeName: 'feedback',
+});
+
+/**
  * AN-07：管理台专用限流（/api/admin 全量挂载，见 index.js）
  * 比公共 API 更严的敏感口径：按 IP 100 次/分钟（固定阈值，不走 runtimeLimits 动态键——
  * 防止管理台误操作把自己的防线调高/关闭；rate_limit_disabled 总开关仍生效）。
@@ -550,6 +566,7 @@ export default {
   checkWsConnectionLimit,
   removeWsConnection,
   strictLimiter,
+  feedbackLimiter,
   uploadLimiter,
   adminLimiter,
   adminStrictLimiter,
