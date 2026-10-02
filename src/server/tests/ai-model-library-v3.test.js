@@ -163,12 +163,14 @@ afterEach(() => {
 // A. 新列：默认值 / 读写 / 校验
 // ============================================================
 describe('A. 契约 v3 新列（enabled / alias / sortOrder / applicability）', () => {
-  it('无覆盖行时：enabled=true、alias/sortOrder=null，并带 applicability', async () => {
+  it('无覆盖行时：alias/sortOrder=null、并带 applicability', async () => {
     const providerId = await createProvider({ model: 'gpt-4o', models: ['gpt-4o', 'whisper-1'] })
     const res = await getSettings(providerId)
     expect(res.status, JSON.stringify(res.body)).toBe(200)
     const gpt = res.body.items.find((i) => i.model === 'gpt-4o')
-    expect(gpt.enabled).toBe(true)
+    // ⚠️ 契约 v5 修正：无覆盖行且不在 selected_models 里 ⇒ enabled=false
+    //（v3 曾写"无行默认 true"，导致刷新出来的模型全部显示已选中 —— 见 ai-model-enabled-source-v5.test.js）
+    expect(gpt.enabled).toBe(false)
     expect(gpt.alias).toBeNull()
     expect(gpt.sortOrder).toBeNull()
     expect(gpt.applicability).toBe('chat')

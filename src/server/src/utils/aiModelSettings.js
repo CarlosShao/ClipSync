@@ -66,11 +66,72 @@ export async function fetchProviderOverrideRows(userId, providerId, executor = p
 const hasValue = (v) => v !== null && v !== undefined
 
 /**
+ * 读取该用户的 `ai_settings.selected_models`（"聊天模型选择器"的事实来源）。
+ * 缺表/缺行/查库失败一律返回 {}（fail-open：宁可判"没选中"，也不会把刷新出的模型误判成已启用）。
+ * 供 GET /model-settings 与 POST /resolve 复用同一份读取口径（契约 v5）。
+ * @param {string} userId 当前用户
+ * @param {object} [executor] pg Pool/PoolClient
+ * @returns {Promise<object>}
+ */
+export async function fetchSelectedModels(userId, executor = pool) {
+  if (!userId) return {}
+  try {
+    const { rows } = await executor.query('SELECT selected_models FROM ai_settings WHERE user_id = $1', [userId])
+    const sel = rows[0]?.selected_models
+    return sel && typeof sel === 'object' && !Array.isArray(sel) ? sel : {}
+  } catch (err) {
+    logger.warn('[aiModelSettings] read selected_models failed, treat as empty:', err.message)
+    return {}
+  }
+}
+
+/**
+ * 该模型是否在 `ai_settings.selected_models[providerId]` 里（契约 v5 的 enabled 事实来源之一）。
+ * 形态兼容与 applySelectedModel 同族 —— 历史上三种都出现过：
+ *   · 字符串（当前桌面端主形态 { providerId: model }）
+ *   · 数组（多选客户端 { providerId: [m1, m2] }）
+ *   · 对象（{ providerId: { model } / { modelId } }）
+ * @param {object} selected ai_settings.selected_models
+ * @param {string} providerId 供应商 id
+ * @param {string} model 模型名
+ * @returns {boolean}
+ */
+export function isModelSelected(selected, providerId, model) {
+  if (!selected || typeof selected !== 'object' || Array.isArray(selected)) return false
+  if (!providerId || !model) return false
+  const cur = selected[providerId]
+  if (cur === undefined || cur === null) return false
+  if (typeof cur === 'string') return cur === model
+  if (Array.isArray(cur)) {
+    return cur.some((v) => (typeof v === 'string' ? v : v?.model ?? v?.modelId) === model)
+  }
+  if (typeof cur === 'object') return (cur.model ?? cur.modelId) === model
+  return false
+}
+
+/**
  * 合并「预设 ← 覆盖行」为生效值（纯函数，便于单测）。
  * isPreset：命中了内置预设规则；isOverridden：存在用户覆盖行。
+ *
+ * ⚠️ `enabled` 的唯一事实来源（**契约 v5**，纠正 v3 的"无行默认 true"错误设计）：
+ *   1) 有 ai_model_settings 行            → row.enabled（显式覆盖优先，行是用户真实意图的落点）；
+ *   2) 无行 + 在 selected_models[providerId] 里 → true （用户真勾选过）；
+ *   3) 无行 + 不在 selected_models 里        → **false**（刷新出来的模型天生没有行 ⇒ 默认未选中）。
+ * v3 老口径让"上游刷新出的 169 个模型全部 enabled=true"，用户刷新后胶囊全变选中 —— 本次修正。
+ *
+ * ⚠️ 该解析**只在调用方显式提供 `selectedModels` 上下文时生效**：
+ *   · 读路径（GET / resolve）必须传（见 routes/aiModelSettings.js resolveItems）；
+ *   · 写入路径（PUT / batch 的 materialize 基线）**不传** ⇒ 新建行的 enabled 仍取列默认
+ *     （NOT NULL DEFAULT TRUE），保持写入语义一字不变（契约 v5 明确要求"不要动写路径"）。
+ *
+ * @param {string} model 模型名
+ * @param {object} [preset] 预设（缺省按名字解析）
+ * @param {object|null} [row] ai_model_settings 覆盖行
+ * @param {object} [opts] { selectedModels, providerId } —— 提供 selectedModels（含空对象）才启用 v5 规则
  */
-export function mergeModelSettings(model, preset, row) {
+export function mergeModelSettings(model, preset, row, opts = {}) {
   const p = preset || resolveModelPreset(model)
+  const hasSelectionContext = opts && opts.selectedModels !== undefined && opts.selectedModels !== null
   const contextWindowFromRow = hasValue(row?.context_window) && Number.isFinite(Number(row.context_window))
   const presetContextWindow = hasValue(p.contextWindow) ? Number(p.contextWindow) : null
   const builtinContextWindow = lookupBuiltinContextWindow(model)
@@ -88,6 +149,12 @@ export function mergeModelSettings(model, preset, row) {
     ? row.reasoning_protocol
     : (REASONING_PROTOCOLS.includes(p.reasoningProtocol) ? p.reasoningProtocol : 'inherit')
 
+  // enabled：行优先 → selected_models 推断（契约 v5，见上方注释）
+  let enabled
+  if (row) enabled = row.enabled !== false
+  else if (hasSelectionContext) enabled = isModelSelected(opts.selectedModels, opts.providerId, model)
+  else enabled = true // 无行且未提供选择上下文（写入路径基线）：保持列默认语义，不动写路径
+
   return {
     model,
     contextWindow,
@@ -100,9 +167,7 @@ export function mergeModelSettings(model, preset, row) {
     supportsAudio: row ? row.supports_audio === true : p.supportsAudio === true,
     reasoningEnabled: row ? row.reasoning_enabled === true : p.reasoningEnabled === true,
     reasoningProtocol: protocol,
-    // ===== 契约 v3（迁移 083）=====
-    // enabled 无行默认 TRUE（= 内置预设/刷新出来的模型默认启用）；只有显式 false 才算停用。
-    enabled: row ? row.enabled !== false : true,
+    enabled,
     alias: row && typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : null,
     // ⚠️ 必须先判 null/undefined 再 Number()：Number(null) === 0 会把"未排序"写成 0（踩过）
     sortOrder:
@@ -122,7 +187,14 @@ export function mergeModelSettings(model, preset, row) {
   }
 }
 
-/** 一步到位：读覆盖行 → 合并 → 生效值（聊天链路与路由共用） */
+/**
+ * 一步到位：读覆盖行 → 合并 → 生效值（聊天链路/能力自检共用）。
+ *
+ * ⚠️ 这里**不传 selected_models 上下文**：本函数的消费方（runChatLoop / probe）只用
+ * reasoningProtocol / reasoningEnabled / contextWindow，从不读 `enabled`；而 enabled 的
+ * v5 口径需要额外一次 ai_settings 查询。若将来有调用方需要 v5 的 `enabled`，
+ * 请改用 mergeModelSettings(..., { selectedModels: await fetchSelectedModels(userId), providerId })。
+ */
 export async function loadEffectiveModelSettings({ userId, providerId, model }) {
   const preset = resolveModelPreset(model)
   const row = await fetchModelSettingsRow(userId, providerId, model)
@@ -226,9 +298,11 @@ export function applySelectedModel(selected, providerId, model, enabled) {
 export default {
   fetchModelSettingsRow,
   fetchProviderOverrideRows,
+  fetchSelectedModels,
   mergeModelSettings,
   loadEffectiveModelSettings,
   collectModelCandidates,
   resolveContextWindowOverride,
   applySelectedModel,
+  isModelSelected,
 }

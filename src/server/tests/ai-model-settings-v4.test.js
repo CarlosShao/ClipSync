@@ -116,7 +116,7 @@ afterEach(() => {
 // A. POST /resolve（草稿态预设解析，纯读）
 // ============================================================
 describe('A. POST /api/ai/model-settings/resolve', () => {
-  it('不给 providerId：返回纯预设（enabled=true / alias=null / isOverridden=false / applicability 正确）', async () => {
+  it('不给 providerId：返回纯预设（enabled=false / alias=null / isOverridden=false / applicability 正确）', async () => {
     const res = await resolveModels({ models: ['gpt-4o', 'step-explore', 'whisper-1', 'text-embedding-3-small', 'claude-3-5-sonnet-latest'] })
     expect(res.status, JSON.stringify(res.body)).toBe(200)
     const by = Object.fromEntries(res.body.items.map((i) => [i.model, i]))
@@ -125,7 +125,8 @@ describe('A. POST /api/ai/model-settings/resolve', () => {
     expect(by['gpt-4o'].supportsImage).toBe(true)
     expect(by['gpt-4o'].reasoningProtocol).toBe('inherit')
     expect(by['gpt-4o'].applicability).toBe('chat')
-    expect(by['gpt-4o'].enabled).toBe(true)
+    // ⚠️ 契约 v5：草稿态（无 providerId）一律 enabled=false —— 草稿候选默认不选中
+    expect(by['gpt-4o'].enabled).toBe(false)
     expect(by['gpt-4o'].alias).toBeNull()
     expect(by['gpt-4o'].sortOrder).toBeNull()
     expect(by['gpt-4o'].isPreset).toBe(true)
@@ -267,7 +268,8 @@ describe('A. POST /api/ai/model-settings/resolve', () => {
       expect(unk.isOverridden).toBe(false)
       expect(unk.contextWindow).toBeNull()
       expect(unk.reasoningProtocol).toBe('inherit')
-      expect(unk.enabled).toBe(true)
+      // 契约 v5：草稿态一律 false（未选中）
+      expect(unk.enabled).toBe(false)
     }
   })
 

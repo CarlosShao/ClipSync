@@ -14,7 +14,12 @@
  *      ⚠️ 契约 v2：**不再返回 reasoningLevels**（用户要求「不用管映射，把思考强度映射
  *      那个配置去掉」）。思考等级（low|medium|high|xhigh|max）经 /api/ai/settings 的
  *      thinkingStrength 全局原样下发，不再有按模型的等级映射。
- *      ⚠️ 契约 v3：新增 enabled（逻辑删，无行默认 true）/ alias / sortOrder / applicability；
+ *      ⚠️ 契约 v3：新增 enabled（逻辑删）/ alias / sortOrder / applicability；
+ *      ⚠️ 契约 v5（**纠正 v3 的错误设计**）：`enabled` 的**唯一事实来源**是
+ *        「有覆盖行 → row.enabled；无行但在 selected_models[providerId] 里 → true；
+ *          无行且不在 selected_models 里 → false」。
+ *        v3 曾写成"无行默认 true" ⇒ 上游刷新出来的模型天生没有行 ⇒ 169 个胶囊全被算作
+ *        "已启用/选中"（用户实测炸两次的根因）。GET 与 POST /resolve 必须完全一致。
  *      排序 = sort_order 升序（NULL 最后）→ 再按模型名字典序。
  *
  *    PUT /api/ai/model-settings
@@ -79,6 +84,7 @@ import {
 import {
   fetchModelSettingsRow,
   fetchProviderOverrideRows,
+  fetchSelectedModels,
   mergeModelSettings,
   collectModelCandidates,
   applySelectedModel,
@@ -246,7 +252,9 @@ function materialize(current, patch, preset) {
     reasoningProtocol: has('reasoningProtocol')
       ? (patch.reasoningProtocol === null ? 'inherit' : patch.reasoningProtocol)
       : current.reasoningProtocol,
-    // 契约 v3：enabled 无行默认 true；patch 传 null = 回到默认（启用）
+    // 契约 v5：**写入语义不变** —— 显式传 enabled 才改（null = 回到列默认"启用"）；
+    // 不传则沿用写入基线（`current.enabled`：已有行取其值，新行取列 DEFAULT TRUE）。
+    // 「读出来算什么」由 mergeModelSettings 的 selected_models 上下文决定（见 resolveItems）。
     enabled: has('enabled') ? (patch.enabled === null ? true : patch.enabled === true) : current.enabled !== false,
     alias,
     sortOrder: has('sortOrder')
@@ -268,21 +276,28 @@ async function loadOwnedProvider(userId, providerId, executor = pool) {
 }
 
 /**
- * 【契约 v4 复用点 1】把「模型名清单」解析成生效项（内置预设 ← 用户覆盖行）。
+ * 【契约 v4/v5 复用点 1】把「模型名清单」解析成生效项（内置预设 ← 用户覆盖行 ← 选中态）。
  *
  * GET /（用候选集合调用）与 POST /resolve（草稿态显式清单调用）**共用这一个函数**，
  * 保证两条路径的值口径永不漂（契约明确要求「必须复用，不要另写一套」）。**纯读，不写任何表**。
  *
+ * 契约 v5：`enabled` 由**选中态上下文**决定（唯一事实来源）：
+ *   有行 → row.enabled；无行 → 在 selected_models[providerId] 里为 true，否则 **false**。
+ *   草稿态（providerId 为空）传 selectedModels = {} ⇒ 一律 false（草稿候选默认不选中）。
+ *
  * @param {string} userId 当前用户
  * @param {string|null} providerId 为 null 时 = 纯预设（草稿态：还没有 providerId）
  * @param {string[]} models 已清洗的模型名（返回顺序 = 入参顺序）
- * @param {Array<object>} [preloadedRows] 调用方已查好的覆盖行（GET 已经查过一次，避免重复查库）
+ * @param {object} [opts]
+ * @param {Array<object>|null} [opts.overrideRows] 调用方已查好的覆盖行（避免重复查库）
+ * @param {object} [opts.selectedModels] 该用户的 ai_settings.selected_models（**v5 必传**；缺省 {}）
  * @returns {Promise<Array<object>>} API item 数组
  */
-async function resolveItems(userId, providerId, models, preloadedRows = null) {
-  const overrideRows = preloadedRows || (providerId ? await fetchProviderOverrideRows(userId, providerId) : [])
-  const byModel = new Map(overrideRows.map((r) => [r.model, r]))
-  return models.map((model) => toItem(mergeModelSettings(model, resolveModelPreset(model), byModel.get(model) || null)))
+async function resolveItems(userId, providerId, models, { overrideRows = null, selectedModels = {} } = {}) {
+  const rows = overrideRows || (providerId ? await fetchProviderOverrideRows(userId, providerId) : [])
+  const byModel = new Map(rows.map((r) => [r.model, r]))
+  const selectionCtx = { selectedModels: selectedModels || {}, providerId: providerId || null }
+  return models.map((model) => toItem(mergeModelSettings(model, resolveModelPreset(model), byModel.get(model) || null, selectionCtx)))
 }
 
 /**
@@ -330,7 +345,8 @@ function sanitizeModelList(models) {
  *   ai_settings.selected_models[providerId]（先写联动、后写模型行 ⇒ 任何失败整体回滚）。
  *
  * @param {object} ctx { client, userId, providerId, sel:{locked,value} }
- *   sel 是批内共享的 selected_models 状态：只锁一次行、并在批内累进最新值（避免同一批次里
+ *   sel 是批内共享的 selected_models 状态：调用方**预加载**当前值（fetchSelectedModels），
+ *   写 enabled 联动时再 FOR UPDATE 锁一次行、并在批内累进最新值（避免同一批次里
  *   多条 enabled 互相覆盖，或读到池连接上看不见的未提交值）。
  * @param {string} modelName 已清洗的模型名
  * @param {object} patchObj 已校验通过的 patch
@@ -339,7 +355,13 @@ function sanitizeModelList(models) {
 async function applyModelSettingInTx(ctx, modelName, patchObj) {
   const preset = resolveModelPreset(modelName)
   const existingRow = await fetchModelSettingsRow(ctx.userId, ctx.providerId, modelName, ctx.client)
-  const current = mergeModelSettings(modelName, preset, existingRow)
+  // 契约 v5：「不传 enabled 不动」——不动的是**当前解析值**（行优先，其次 selected_models 选中态），
+  // 而不是列默认 true。否则「只改上下文窗口」会给刷新出来的模型凭空建一条 enabled=true 的行，
+  // 把它变成"已选中"（这正是用户被炸的同一类症状，只是触发路径从刷新变成了编辑）。
+  const current = mergeModelSettings(modelName, preset, existingRow, {
+    selectedModels: ctx.sel.value || {},
+    providerId: ctx.providerId,
+  })
   const next = materialize(current, patchObj, preset)
 
   // ---- enabled 副作用：同步 ai_settings.selected_models[providerId]（仅在显式提交 enabled 时）----
@@ -424,18 +446,14 @@ router.get('/', apiLimiter, async (req, res) => {
 
     const overrideRows = await fetchProviderOverrideRows(req.userId, providerId)
 
-    // 用户选中的模型快照（ai_settings.selected_models[providerId]），缺表/缺行按未配置处理
-    let selectedModels = {}
-    try {
-      const { rows } = await pool.query('SELECT selected_models FROM ai_settings WHERE user_id = $1', [req.userId])
-      selectedModels = rows[0]?.selected_models || {}
-    } catch (e) {
-      logger.warn('[aiModelSettings] read selected_models failed:', e.message)
-    }
+    // 用户选中的模型快照（ai_settings.selected_models[providerId]）：契约 v5 起它是
+    // 「无覆盖行的模型算不算已启用」的唯一事实来源（缺表/缺行按未选中处理）
+    const selectedModels = await fetchSelectedModels(req.userId)
 
     const models = collectModelCandidates(providerRow, selectedModels, overrideRows)
-    // 契约 v4：改用与 /resolve 共用的 resolveItems（同一条代码路径 ⇒ 两边口径不可能漂）
-    const items = sortItems(await resolveItems(req.userId, providerId, models, overrideRows))
+    // 契约 v4/v5：改用与 /resolve 共用的 resolveItems（同一条代码路径 ⇒ 两边口径不可能漂）；
+    // 把选中态上下文一并传下去，enabled 按 v5 规则解析
+    const items = sortItems(await resolveItems(req.userId, providerId, models, { overrideRows, selectedModels }))
     res.json({ items })
   } catch (err) {
     logger.error('List AI model settings error:', err)
@@ -473,7 +491,13 @@ router.put('/', apiLimiter, async (req, res) => {
     }
 
     // 契约 v4：写入逻辑抽成 applyModelSettingInTx，与 PUT /batch 共用同一条代码路径
-    const ctx = { client, userId: req.userId, providerId, sel: { locked: false, value: null } }
+    // 契约 v5：预加载选中态（写入基线也按 v5 解析 enabled ⇒ 用 client 读，批内能看到自己未提交的联动）
+    const ctx = {
+      client,
+      userId: req.userId,
+      providerId,
+      sel: { locked: false, value: await fetchSelectedModels(req.userId, client) },
+    }
     const item = await applyModelSettingInTx(ctx, modelName, patchObj)
 
     await client.query('COMMIT')
@@ -521,7 +545,11 @@ router.post('/resolve', apiLimiter, async (req, res) => {
       ownedProviderId = providerId
     }
 
-    const items = await resolveItems(req.userId, ownedProviderId, sanitized.list)
+    // 契约 v5：enabled 由选中态决定 —— 草稿态（没有 providerId）**不查** selected_models
+    // 并传空对象 ⇒ 一律 enabled:false（与前端草稿"默认不选中"一致，且少一次库查询）；
+    // 给了 providerId 就按「行 → selected_models → false」解析。
+    const selectedModels = ownedProviderId ? await fetchSelectedModels(req.userId) : {}
+    const items = await resolveItems(req.userId, ownedProviderId, sanitized.list, { selectedModels })
     res.json({ items })
   } catch (err) {
     logger.error('Resolve AI model settings error:', err)
@@ -603,7 +631,13 @@ router.put('/batch', apiLimiter, modelBatchLimiter, async (req, res) => {
       return res.status(404).json({ error: 'PROVIDER_NOT_FOUND', message: '供应商不存在' })
     }
 
-    const ctx = { client, userId: req.userId, providerId, sel: { locked: false, value: null } }
+    // 契约 v5：预加载选中态（写入基线也按 v5 解析 enabled ⇒ 用 client 读，批内能看到自己未提交的联动）
+    const ctx = {
+      client,
+      userId: req.userId,
+      providerId,
+      sel: { locked: false, value: await fetchSelectedModels(req.userId, client) },
+    }
     const outItems = []
     for (const p of prepared) {
       outItems.push(await applyModelSettingInTx(ctx, p.model, p.patch))
