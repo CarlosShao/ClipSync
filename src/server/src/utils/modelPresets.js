@@ -60,6 +60,54 @@ export const ANTHROPIC_BUDGET_TOKENS = { low: 1024, medium: 4096, high: 8192, xh
 /** 需要数字预算（而非等级字符串）的协议：buildReasoningRequest 按此决定 value 的形态 */
 const NUMERIC_BUDGET_PROTOCOLS = new Set(['anthropic_thinking', 'qwen_enable_thinking'])
 
+// ==================== 模型适用性分类（契约 v3） ====================
+/**
+ * 适用性取值：chat（对话，默认）| audio（语音）| image（画图）| embedding（向量/重排）| other
+ *
+ * 用途（**只是给前端的判断依据，服务端不据此强制禁用任何模型** —— 契约 v3 明确要求）：
+ * 前端把 audio / image / embedding 类的模型默认不勾选、折叠在「非对话模型」分区里，
+ * 避免用户在聊天选择器里看到一个永远不能对话的 tts/embedding 模型。
+ *
+ * 分类依据（模型名正则；大小写不敏感；顺序 = audio → image → embedding → 其余 chat）：
+ *   audio     *-tts*、*asr*、*audio*、*speech*、*voice*、*realtime*、whisper*、cosyvoice*
+ *   image     *image-*、dall*、flux*、*edit-*、*vision-gen*
+ *   embedding *embed*、bge*、*rerank*
+ *   chat      其余一切（含 vision 理解型多模态：qwen-vl / gpt-4o / claude —— 它们**能对话**，
+ *             只是支持图片输入，属于 chat，不是画图模型）
+ *
+ * 说明：'other' 保留在枚举里（前端分区/未来扩展），当前规则集不产出它 —— 契约 v3 的口径是
+ * 「其余 → chat」，任何未命中上面前缀的模型都是 chat，不能把不确定的模型塞进 other。
+ */
+export const APPLICABILITY_KINDS = ['chat', 'audio', 'image', 'embedding', 'other']
+
+const APPLICABILITY_RULES = [
+  // 语音类：语音合成 / 识别 / 实时语音（cosyvoice 是阿里 TTS 模型名，不含 voice 边界）
+  { kind: 'audio', match: /(^|[-_/])(tts|asr|speech|voice|realtime)([-_/]|$)|audio|whisper|cosyvoice/i, note: 'tts/asr/speech/voice/realtime/whisper/audio/cosyvoice' },
+  // 画图类：图像生成 / 图像编辑（注意 vision 理解型模型不在此列）
+  { kind: 'image', match: /dall|flux|imagen|vision-gen|(^|[-_/])image([-_/]|$)|image-|(^|[-_/])edit([-_/]|$)|edit-/i, note: 'dall/flux/imagen/image-/edit-/vision-gen' },
+  // 向量/重排类
+  { kind: 'embedding', match: /embed|(^|[-_/])bge([-_/]|$)|rerank/i, note: 'embed/bge/rerank' },
+]
+
+/**
+ * 按模型名判定适用性（纯函数，无副作用）。
+ * @param {string} model 模型标识
+ * @returns {'chat'|'audio'|'image'|'embedding'|'other'} 未命中任何规则 → 'chat'
+ */
+export function classifyApplicability(model) {
+  const m = String(model || '').trim().toLowerCase()
+  if (!m) return 'chat'
+  for (const rule of APPLICABILITY_RULES) {
+    if (rule.match.test(m)) return rule.kind
+  }
+  return 'chat'
+}
+
+/** 暴露分类规则（仅调试/测试用） */
+export function listApplicabilityRules() {
+  return APPLICABILITY_RULES.map((r) => ({ kind: r.kind, pattern: r.match.source, note: r.note }))
+}
+
 /**
  * 预设规则表（**有序**，首个命中即返回；越具体越靠前）。
  * 每项字段：match 正则、上下文窗口、最大输出、四种模态能力、推理协议/开关、依据 note。
@@ -413,13 +461,15 @@ export function listModelPresetRules() {
  * @param {object} p
  * @param {object} p.settings 生效配置（mergeModelSettings 的产物）
  * @param {string} [p.strength] 'low'|'medium'|'high'|'xhigh'|'max'
+ * @param {boolean} [p.force] 能力自检专用：忽略 reasoningEnabled，只要协议是显式协议就产出参数。
+ *   正常聊天链路**不要**传（默认 false = 尊重 reasoning_enabled 开关）。
  * @returns {{protocol:string,strength:string,value:(string|number),budgetTokens:number}|null}
  */
-export function buildReasoningRequest({ settings, strength } = {}) {
+export function buildReasoningRequest({ settings, strength, force = false } = {}) {
   if (!settings) return null
   const protocol = settings.reasoningProtocol || 'inherit'
   if (protocol === 'inherit' || protocol === 'none') return null
-  if (settings.reasoningEnabled !== true) return null
+  if (!force && settings.reasoningEnabled !== true) return null
   if (!REASONING_PROTOCOLS.includes(protocol)) return null
   // 非法/缺失等级 → 兜底 medium（与 ai_settings.thinking_strength 的 DEFAULT 一致）
   const s = THINKING_STRENGTHS.includes(strength) ? strength : 'medium'
@@ -482,8 +532,11 @@ export default {
   REASONING_PROTOCOLS,
   THINKING_STRENGTHS,
   ANTHROPIC_BUDGET_TOKENS,
+  APPLICABILITY_KINDS,
   resolveModelPreset,
   listModelPresetRules,
+  classifyApplicability,
+  listApplicabilityRules,
   buildReasoningRequest,
   buildThinkingOptions,
   resolveNumericBudget,

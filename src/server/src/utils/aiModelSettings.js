@@ -20,6 +20,7 @@ import { logger } from './logger.js'
 import { lookupBuiltinContextWindow } from './aiProviders.js'
 import {
   resolveModelPreset,
+  classifyApplicability,
   REASONING_PROTOCOLS,
 } from './modelPresets.js'
 
@@ -92,6 +93,18 @@ export function mergeModelSettings(model, preset, row) {
     supportsAudio: row ? row.supports_audio === true : p.supportsAudio === true,
     reasoningEnabled: row ? row.reasoning_enabled === true : p.reasoningEnabled === true,
     reasoningProtocol: protocol,
+    // ===== 契约 v3（迁移 083）=====
+    // enabled 无行默认 TRUE（= 内置预设/刷新出来的模型默认启用）；只有显式 false 才算停用。
+    enabled: row ? row.enabled !== false : true,
+    alias: row && typeof row.alias === 'string' && row.alias.trim() ? row.alias.trim() : null,
+    // ⚠️ 必须先判 null/undefined 再 Number()：Number(null) === 0 会把"未排序"写成 0（踩过）
+    sortOrder:
+      row && row.sort_order !== null && row.sort_order !== undefined && Number.isFinite(Number(row.sort_order))
+        ? Math.floor(Number(row.sort_order))
+        : null,
+    // 适用性由模型名推导（不落库）：只是给前端「默认不勾选/折叠」的依据，
+    // 服务端**不**据此强制禁用（契约 v3 明确要求）。
+    applicability: classifyApplicability(model),
     // ⚠️ 已废弃：ai_model_settings.reasoning_levels（等级映射表）不再读取、不再对外暴露。
     // 契约 v2 起思考等级原样透传（见 utils/modelPresets.js 头部说明）；
     // 列本身保留在库里但不参与任何计算（不删列 = 不做破坏性迁移）。
@@ -159,6 +172,50 @@ export function resolveContextWindowOverride(providerOverride, settings) {
   return hasValue(settings?.contextWindow) ? Math.floor(Number(settings.contextWindow)) : null
 }
 
+/**
+ * 停用/启用某个模型时同步维护 `ai_settings.selected_models[providerId]`（纯函数，便于单测）。
+ *
+ * 为什么要有这个联动（契约 v3）：桌面端的「聊天模型选择器」读的就是 selected_models
+ * （`useAiChat` → settings.selectedModels[providerId]），把 enabled 的副作用落到同一份数据上，
+ * **既有选择器不用改前端就能跟着停用/启用变化**。
+ *
+ * 形态兼容（历史数据三种都存在）：
+ *   · 字符串（当前桌面端主形态：{ providerId: model }）→ 启用=写入该模型；停用=若正是该模型则删键
+ *   · 数组（某些客户端多选）                          → 启用=加入；停用=移除（空数组则删键）
+ *   · 对象（{ model } / { modelId }）                 → 同字符串口径
+ * 返回值是**新对象**（不改动入参），且顺序稳定；调用方用 JSON 比较决定是否落库。
+ *
+ * @param {object} selected 现有 ai_settings.selected_models
+ * @param {string} providerId 供应商 id
+ * @param {string} model 模型名
+ * @param {boolean} enabled true=启用（加入）/ false=停用（移除）
+ * @returns {object} 新的 selected_models
+ */
+export function applySelectedModel(selected, providerId, model, enabled) {
+  const base = selected && typeof selected === 'object' && !Array.isArray(selected) ? { ...selected } : {}
+  if (!providerId || !model) return base
+  const cur = base[providerId]
+
+  if (Array.isArray(cur)) {
+    const set = new Set(cur.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()))
+    if (enabled) set.add(model)
+    else set.delete(model)
+    const arr = [...set]
+    if (arr.length === 0) delete base[providerId]
+    else base[providerId] = arr
+    return base
+  }
+
+  if (enabled) {
+    base[providerId] = model
+    return base
+  }
+
+  const curModel = typeof cur === 'string' ? cur : (cur && typeof cur === 'object' ? (cur.model ?? cur.modelId) : null)
+  if (curModel === model) delete base[providerId]
+  return base
+}
+
 export default {
   fetchModelSettingsRow,
   fetchProviderOverrideRows,
@@ -166,4 +223,5 @@ export default {
   loadEffectiveModelSettings,
   collectModelCandidates,
   resolveContextWindowOverride,
+  applySelectedModel,
 }

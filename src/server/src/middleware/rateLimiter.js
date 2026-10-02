@@ -34,6 +34,9 @@ const memoryStores = {
   // 应用内反馈工单（POST /api/feedback）：独立桶 + 独立阈值，避免与 strictLimiter
   // 的敏感操作额度互相挤兑（CO-51 同原则）
   feedback: new Map(),
+  // 模型能力自检探测（POST /api/ai/model-settings/probe）：会真实打一次上游、消耗用户额度，
+  // 因此独立桶 + 更严阈值（10 次/分/用户），且与 apiLimiter 分桶互不挤兑
+  modelProbe: new Map(),
 };
 
 /**
@@ -430,6 +433,20 @@ export const feedbackLimiter = createRateLimiter({
 });
 
 /**
+ * 模型能力自检探测限流（POST /api/ai/model-settings/probe）
+ * 每用户 10 次/分钟（匿名回退 IP 分桶）：该端点会**真实调用用户的模型供应商**一次
+ * （消耗额度 + 上游可能限流），所以必须有独立、更严的桶；固定阈值不走 runtimeLimits
+ * 动态键 —— 自检是低频操作，不允许被管理台配置放大。
+ */
+export const modelProbeLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: 'Too many model probe requests, please try again later',
+  keyGenerator: (req) => (req.userId ? `user:${req.userId}` : clientIp(req)),
+  storeName: 'modelProbe',
+});
+
+/**
  * AN-07：管理台专用限流（/api/admin 全量挂载，见 index.js）
  * 比公共 API 更严的敏感口径：按 IP 100 次/分钟（固定阈值，不走 runtimeLimits 动态键——
  * 防止管理台误操作把自己的防线调高/关闭；rate_limit_disabled 总开关仍生效）。
@@ -567,6 +584,7 @@ export default {
   removeWsConnection,
   strictLimiter,
   feedbackLimiter,
+  modelProbeLimiter,
   uploadLimiter,
   adminLimiter,
   adminStrictLimiter,
