@@ -210,3 +210,54 @@ describe('enable_subscription 打开 → 正常链路不受影响', () => {
     expect(isFlagEnforced('enable_subscription')).toBe(true);
   });
 });
+
+/**
+ * H1（2026-09-29 审计）：凭据半配置时不得收钱。
+ *
+ * 「下单只需 appId + 应用私钥」与「回调验签需要支付宝公钥」是两套独立判定。
+ * 只挡住前者就会出现：用户扫码付**真钱** → 每次回调都被 503/401 拒绝 →
+ * 订阅永远不开（支付宝重试 24h 后放弃），全链路只留一行 error 日志。
+ *
+ * 关键不只是「返回 503」，还有**库里一张单都不多**：闸必须在建单之前，
+ * 否则会留下付不掉的 pending 单（那正是 /subscribe 端点被诟病的老毛病）。
+ */
+describe('H1：回调无法验签时绝不收钱', () => {
+  it('有 APP_ID + 私钥但缺公钥 → 503 ALIPAY_NOTIFY_NOT_CONFIGURED，且不多建订单', async () => {
+    const saved = process.env.ALIPAY_PUBLIC_KEY;
+    delete process.env.ALIPAY_PUBLIC_KEY;
+    try {
+      const before = await countOrders();
+      const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('ALIPAY_NOTIFY_NOT_CONFIGURED');
+      expect(await countOrders()).toBe(before);
+    } finally {
+      process.env.ALIPAY_PUBLIC_KEY = saved;
+    }
+  });
+
+  it('公钥只有空白字符（env 存在但没填值）同样被拦下', async () => {
+    const saved = process.env.ALIPAY_PUBLIC_KEY;
+    process.env.ALIPAY_PUBLIC_KEY = '   ';
+    try {
+      const before = await countOrders();
+      const res = await request(app).post('/api/payments/create-order').set(auth).send({ planId });
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('ALIPAY_NOTIFY_NOT_CONFIGURED');
+      expect(await countOrders()).toBe(before);
+    } finally {
+      process.env.ALIPAY_PUBLIC_KEY = saved;
+    }
+  });
+
+  it('公钥恢复后同一入参立刻 200（闸只认配置，不误杀正常支付）', async () => {
+    const res = await request(app)
+      .post('/api/payments/create-order').set(auth)
+      .send({ planId, billingCycle: 'monthly' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.order.paymentParams.cashierUrl).toContain('openapi.alipay.com/gateway.do');
+  });
+});

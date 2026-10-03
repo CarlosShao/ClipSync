@@ -248,6 +248,8 @@ describe('支付宝工具 - 收银台 URL', () => {
     // 金额必须两位小数（支付宝要求，19.9 → "19.90"）
     expect(biz.total_amount).toBe('19.90');
     expect(biz.out_trade_no).toBe('ORD123');
+    // H2：必须带渠道侧可支付窗口，且短于本地 24h 关单窗口（见 PAYMENT_TIMEOUT_EXPRESS 注释）
+    expect(biz.timeout_express).toBe('1h');
     expect(q.get('sign')).toBeTruthy();
   });
 
@@ -467,5 +469,274 @@ describe('支付宝工具 - 退款 refundTrade（#10）', () => {
     await expect(mod.refundTrade({ outTradeNo: 'ORD1', refundAmount: -1 })).rejects.toThrow(/refundAmount/);
     await expect(mod.refundTrade({ outTradeNo: 'ORD1', refundAmount: 'abc' })).rejects.toThrow(/refundAmount/);
     expect(fn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * C1（2026-09-29 审计发现）：响应验签与业务取数曾经不是同一份数据。
+ *
+ * `payload = json[responseKey]` 走 `JSON.parse`（重复键取**最后一个**），
+ * 而 `extractResponseNode` 用 `indexOf` 取**第一个**。攻击者能篡改出站响应时，
+ * 可用「截获的真签名节点 A（第一个）+ 伪造的成功节点 B（第二个）」让验签通过、
+ * 业务却读到 B —— `queryTrade` 即返回 TRADE_SUCCESS，未付款开通订阅。
+ *
+ * 修法：验签前拒绝重复键；业务数据只从**验签过的字节**反序列化。
+ * 这两条共同保证「验签的对象」与「使用的对象」恒为同一个。
+ */
+describe('支付宝工具 - 响应取数必须来自验签字节（C1）', () => {
+  const QUERY_KEY = 'alipay_trade_query_response';
+
+  function configuredEnv() {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+  }
+
+  function stubText(body) {
+    const fn = vi.fn(async () => ({ text: async () => body }));
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+
+  it('重复响应键 → 直接拒绝（这是 C1 的利用形态：真签名节点 + 伪造成功节点）', async () => {
+    configuredEnv();
+    // 节点 A：真实的「交易不存在」错误响应，带真签名
+    const nodeA = JSON.stringify({ code: '40004', msg: 'Business Failed', sub_code: 'ACQ.TRADE_NOT_EXIST' });
+    // 节点 B：伪造的成功响应（无签名，仅靠「JSON.parse 取最后一个」生效）
+    const nodeB = JSON.stringify({ code: '10000', trade_status: 'TRADE_SUCCESS', total_amount: '19.90' });
+    stubText(`{"${QUERY_KEY}":${nodeA},"${QUERY_KEY}":${nodeB},"sign":"${signWith(nodeA)}"}`);
+    const mod = await loadModule();
+
+    await expect(mod.queryTrade('ORD_C1')).rejects.toThrow(/duplicate/i);
+  });
+
+  it('第三次出现同一个键同样拒绝（不是只查第二个）', async () => {
+    configuredEnv();
+    const nodeA = JSON.stringify({ code: '40004', msg: 'Business Failed' });
+    const nodeB = JSON.stringify({ code: '10000', trade_status: 'TRADE_SUCCESS' });
+    stubText(
+      `{"${QUERY_KEY}":${nodeA},"junk":1,"${QUERY_KEY}":${nodeB},"junk2":2,"${QUERY_KEY}":${nodeB},"sign":"${signWith(nodeA)}"}`
+    );
+    const mod = await loadModule();
+
+    await expect(mod.queryTrade('ORD_C1')).rejects.toThrow(/duplicate/i);
+  });
+
+  it('正常单键响应不受影响：验签通过且业务字段可用（防改坏正常支付）', async () => {
+    configuredEnv();
+    const node = JSON.stringify({
+      code: '10000',
+      msg: 'Success',
+      trade_no: '2026092922001456789',
+      out_trade_no: 'ORD_OK',
+      trade_status: 'TRADE_SUCCESS',
+      total_amount: '9.90',
+    });
+    stubText(`{"${QUERY_KEY}":${node},"sign":"${signWith(node)}"}`);
+    const mod = await loadModule();
+
+    const r = await mod.queryTrade('ORD_OK');
+    expect(r.paid).toBe(true);
+    expect(r.tradeStatus).toBe('TRADE_SUCCESS');
+    expect(r.tradeNo).toBe('2026092922001456789');
+    expect(r.raw.total_amount).toBe('9.90'); // 未付款状态同样要能读到
+  });
+
+  it('未付款（WAIT_BUYER_PAY）不应被判成已付', async () => {
+    configuredEnv();
+    const node = JSON.stringify({ code: '10000', trade_status: 'WAIT_BUYER_PAY', out_trade_no: 'ORD_WAIT' });
+    stubText(`{"${QUERY_KEY}":${node},"sign":"${signWith(node)}"}`);
+    const mod = await loadModule();
+
+    const r = await mod.queryTrade('ORD_WAIT');
+    expect(r.paid).toBe(false);
+    expect(r.tradeStatus).toBe('WAIT_BUYER_PAY');
+  });
+
+  it('报文被篡改（改了节点内容但签名照旧）→ 仍然验签失败', async () => {
+    configuredEnv();
+    const genuine = JSON.stringify({ code: '10000', trade_status: 'WAIT_BUYER_PAY', total_amount: '9.90' });
+    const tampered = JSON.stringify({ code: '10000', trade_status: 'TRADE_SUCCESS', total_amount: '9.90' });
+    stubText(`{"${QUERY_KEY}":${tampered},"sign":"${signWith(genuine)}"}`);
+    const mod = await loadModule();
+
+    await expect(mod.queryTrade('ORD_TAMPER')).rejects.toThrow(/signature invalid/i);
+  });
+});
+
+/**
+ * H2（2026-09-29 审计）：超时关单必须在渠道侧先关，否则本地已 cancelled
+ * 而支付宝侧仍可支付 → 用户付款成功但订单永远无法履约，且退款接口拒收 cancelled 单。
+ *
+ * `closeTrade` 是这条链路的下半段。它必须：
+ *   · 只在渠道明确「没有这笔交易」或「已关闭」时算成功（可安全本地关单）
+ *   · 其它任何错误（尤其「已付款/已完成」类）一律抛出，让调用方**不要**关本地单
+ */
+describe('支付宝工具 - 关单 closeTrade（H2）', () => {
+  const CLOSE_KEY = 'alipay_trade_close_response';
+
+  function stubGateway(payload) {
+    const valueText = JSON.stringify(payload);
+    const body = `{"${CLOSE_KEY}":${valueText},"sign":"${signWith(valueText)}"}`;
+    const fn = vi.fn(async () => ({ text: async () => body }));
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+
+  function configuredEnv() {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+  }
+
+  function errorBody(code, subCode, subMsg) {
+    const valueText = JSON.stringify({ code, msg: 'Business Failed', sub_code: subCode, sub_msg: subMsg });
+    return `{"${CLOSE_KEY}":${valueText},"sign":"${signWith(valueText)}"}`;
+  }
+
+  it('method=alipay.trade.close，biz_content 只带 out_trade_no', async () => {
+    configuredEnv();
+    const fn = stubGateway({ code: '10000', msg: 'Success', trade_no: 'T1', out_trade_no: 'ORD123' });
+    const mod = await loadModule();
+
+    const r = await mod.closeTrade('ORD123');
+
+    const form = new URLSearchParams(fn.mock.calls[0][1].body);
+    expect(form.get('method')).toBe('alipay.trade.close');
+    expect(JSON.parse(form.get('biz_content'))).toEqual({ out_trade_no: 'ORD123' });
+    expect(r.closed).toBe(true);
+    expect(r.alreadyClosed).toBeUndefined();
+  });
+
+  it('渠道没有这笔交易（ACQ.TRADE_NOT_EXIST）→ 视为已不可支付，可安全关单', async () => {
+    configuredEnv();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => errorBody('40004', 'ACQ.TRADE_NOT_EXIST', '交易不存在') })));
+    const mod = await loadModule();
+
+    const r = await mod.closeTrade('ORD123');
+    expect(r.closed).toBe(true);
+    expect(r.alreadyClosed).toBe(true);
+    expect(r.subCode).toBe('ACQ.TRADE_NOT_EXIST');
+  });
+
+  it('渠道已关闭（ACQ.TRADE_HAS_CLOSE）→ 同样可安全关单', async () => {
+    configuredEnv();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => errorBody('40004', 'ACQ.TRADE_HAS_CLOSE', '交易已关闭') })));
+    const mod = await loadModule();
+
+    const r = await mod.closeTrade('ORD123');
+    expect(r.closed).toBe(true);
+    expect(r.alreadyClosed).toBe(true);
+  });
+
+  it('其它错误（如交易已完成）→ 必须抛出，绝不能被当成"可安全关单"', async () => {
+    configuredEnv();
+    // 关键安全断言：把「已付款/已完成」类错误当良性会让本地订单被错误关掉
+    for (const subCode of ['ACQ.TRADE_HAS_FINISHED', 'ACQ.TRADE_STATUS_ERROR', 'SYSTEM_ERROR']) {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ text: async () => errorBody('40004', subCode, '不可关单') })));
+      const mod = await loadModule();
+      await expect(mod.closeTrade('ORD123')).rejects.toMatchObject({ subCode });
+    }
+  });
+
+  it('缺订单号时不发请求', async () => {
+    configuredEnv();
+    const fn = stubGateway({ code: '10000', msg: 'Success' });
+    const mod = await loadModule();
+
+    await expect(mod.closeTrade('')).rejects.toThrow(/outTradeNo/);
+    await expect(mod.closeTrade()).rejects.toThrow(/outTradeNo/);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('响应未签名 → 抛错（不能凭未验签报文认定渠道已关单）', async () => {
+    configuredEnv();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ text: async () => JSON.stringify({ [CLOSE_KEY]: { code: '10000', msg: 'Success' } }) }))
+    );
+    const mod = await loadModule();
+
+    await expect(mod.closeTrade('ORD123')).rejects.toThrow(/no sign/);
+  });
+});
+
+/**
+ * H1（2026-09-29 审计）：启动期凭据自检。
+ *
+ * 「有 appId + 私钥」≠「回调能验签」。最能坑人的是把**应用公钥**当成
+ * **支付宝公钥**填进去 —— 格式完全合法，静态检查看不出来，但回调验签 100% 失败
+ * → 用户付了真钱、订阅永远不开。检测手段：Alipay 模型下两者不是一对，
+ * 因此「用应用私钥签 → 用配置的公钥验」正常情况下应当**失败**；
+ * 若竟然验通，就说明填错了。
+ */
+describe('支付宝工具 - 凭据自检 checkAlipayCredentials（H1）', () => {
+  // 另一对独立密钥，模拟"支付宝的公钥"
+  const { publicKey: ALIPAY_SIDE_PUB } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  });
+
+  it('正确配置（公钥是另一对）→ ok=true，无问题', async () => {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    process.env.ALIPAY_PUBLIC_KEY = ALIPAY_SIDE_PUB; // 与 privBody 不成对 = 正确形态
+
+    const mod = await loadModule();
+    const r = mod.checkAlipayCredentials();
+    expect(r.problems).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('公钥误填成「应用公钥」（与私钥成对）→ ok=false 且明确指出填错了', async () => {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    process.env.ALIPAY_PUBLIC_KEY = PUB; // ← 这是应用公钥，最典型的错法
+
+    const mod = await loadModule();
+    const r = mod.checkAlipayCredentials();
+    expect(r.ok).toBe(false);
+    expect(r.problems.join(' ')).toMatch(/应用公钥/);
+  });
+
+  it('缺公钥 / 只有空白 → 报告未配置（与 create-order 的闸同口径）', async () => {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    delete process.env.ALIPAY_PUBLIC_KEY;
+
+    const mod = await loadModule();
+    expect(mod.checkAlipayCredentials().problems.join(' ')).toMatch(/ALIPAY_PUBLIC_KEY 未配置/);
+
+    process.env.ALIPAY_PUBLIC_KEY = '   ';
+    expect(mod.checkAlipayCredentials().problems.join(' ')).toMatch(/ALIPAY_PUBLIC_KEY 未配置/);
+  });
+
+  it('缺 APP_ID / 缺私钥 / 私钥格式坏 → 逐项报告，且不抛异常', async () => {
+    const mod = await loadModule();
+
+    // 三个都缺
+    delete process.env.ALIPAY_APP_ID;
+    delete process.env.ALIPAY_PRIVATE_KEY;
+    delete process.env.ALIPAY_PUBLIC_KEY;
+    const all = mod.checkAlipayCredentials();
+    expect(all.ok).toBe(false);
+    expect(all.problems.length).toBe(3);
+
+    // 私钥是垃圾串（粘贴截断 / 漏头）
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = 'not-a-real-key';
+    process.env.ALIPAY_PUBLIC_KEY = ALIPAY_SIDE_PUB;
+    const bad = mod.checkAlipayCredentials();
+    expect(bad.ok).toBe(false);
+    expect(bad.problems.join(' ')).toMatch(/无法用于签名|无法解析/);
+  });
+
+  it('自检本身绝不抛异常（启动期不能因凭据问题崩掉整个 API）', async () => {
+    process.env.ALIPAY_APP_ID = '';
+    process.env.ALIPAY_PRIVATE_KEY = '';
+    process.env.ALIPAY_PUBLIC_KEY = '';
+    const mod = await loadModule();
+    expect(() => mod.checkAlipayCredentials()).not.toThrow();
   });
 });

@@ -25,6 +25,17 @@ const GATEWAY_SANDBOX = 'https://openapi-sandbox.dl.alipaydev.com/gateway.do';
 const PRODUCT_CODE_PAGE_PAY = 'FAST_INSTANT_TRADE_PAY';
 
 /**
+ * 渠道侧可支付窗口（`timeout_express`），也是本地关单扫描的时序基准。
+ *
+ * ⚠️ **不变量：渠道侧超时必须明显短于本地关单窗口**（见 `orderCloseSweep.js` 的 24h）。
+ * 反过来（不设或设得比本地更长）就会出现「本地已 cancelled、支付宝侧仍可支付」→
+ * 用户第 25 小时付款成功、钱进了商户账户、订单却已是 cancelled 无法履约，
+ * 而所有退款入口都拒收 cancelled 单 → 系统内没有任何一条路径能把钱退回去。
+ * 2026-09-29 审计 H2 / 审计报告 S1-1 均指向此处。
+ */
+const PAYMENT_TIMEOUT_EXPRESS = '1h';
+
+/**
  * 读取运行时配置。**每次调用都读 process.env**，不缓存：
  * 管理台改配置后重启即可生效，避免「改了没反应」的排查陷阱。
  */
@@ -44,17 +55,91 @@ function getConfig() {
 
 /**
  * 是否已配置到「可以发起真实支付」的程度。
- * 只判断下单必需的 appId + 应用私钥；回调验签另需公钥（见 isNotifyConfigured）。
+ * 只判断下单必需的 appId + 应用私钥；回调验签另需公钥（见 isAlipayNotifyConfigured）。
+ *
+ * 注意用 `trim()` 判定：只有空白字符等价于未配置 —— `toPem()` 会把它 trim 成空串，
+ * 运行时必然抛错。若只写 `Boolean(x)`，`'   '` 会被判成「已配置」而放过。
  */
 export function isAlipayConfigured() {
   const { appId, privateKey } = getConfig();
-  return Boolean(appId && privateKey);
+  return Boolean(String(appId || '').trim() && String(privateKey || '').trim());
 }
 
-/** 回调验签所需的公钥是否已配置。 */
+/** 回调验签所需的公钥是否已配置（同样按 trim 判定，理由见上）。 */
 export function isAlipayNotifyConfigured() {
   const { publicKey } = getConfig();
-  return Boolean(publicKey);
+  return Boolean(String(publicKey || '').trim());
+}
+
+/**
+ * 启动期凭据自检（2026-09-29 审计 H1）。
+ *
+ * **只返回问题清单、自己绝不抛错**：凭据有问题时宁可让服务正常起来、
+ * 由 `create-order` 的闸明确拒收钱，也不要让整个 API 起不来（支付只是站点的一个功能）。
+ *
+ * 检查四件事：
+ *   1. 三个必填项是否非空（仅空白等同未配置）
+ *   2. 私钥能否真的签出签名（格式问题：PKCS#1 vs PKCS#8、漏 PEM 头、复制截断）
+ *   3. 公钥能否被 crypto 解析为 RSA 公钥
+ *   4. **公钥是否被误填成「应用公钥」** —— 这条最容易犯且最难自查：
+ *      Alipay 模型下 `ALIPAY_PUBLIC_KEY` 是**支付宝的公钥**，与我们的应用私钥
+ *      **不是一对**，因此「用应用私钥签 → 用它验」正常情况下应当**失败**。
+ *      如果竟然验通，说明填的是应用公钥/自己的公钥 → 回调验签将 100% 失败
+ *      → 用户付了真钱但订阅永远不开。
+ *
+ * @returns {{ok:boolean, problems:string[]}}
+ */
+export function checkAlipayCredentials() {
+  const problems = [];
+  const { appId, privateKey, publicKey } = getConfig();
+
+  if (!String(appId || '').trim()) problems.push('ALIPAY_APP_ID 未配置');
+  if (!String(privateKey || '').trim()) problems.push('ALIPAY_PRIVATE_KEY 未配置');
+  if (!String(publicKey || '').trim()) {
+    problems.push('ALIPAY_PUBLIC_KEY 未配置 —— 回调无法验签，create-order 会拒绝收钱');
+  }
+  if (problems.length) return { ok: false, problems };
+
+  // 2) 私钥可签？ + 3) 公钥可解析？
+  const probeStr = buildSignString({ probe: 'startup-selfcheck' });
+  let probeSig = null;
+  try {
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(probeStr, 'utf8');
+    probeSig = signer.sign(toPem(privateKey, 'PRIVATE'), 'base64');
+  } catch (err) {
+    problems.push(`ALIPAY_PRIVATE_KEY 无法用于签名：${err.message}`);
+  }
+
+  let publicKeyParsed = false;
+  try {
+    const keyObj = crypto.createPublicKey(toPem(publicKey, 'PUBLIC'));
+    if (keyObj.asymmetricKeyType !== 'rsa') {
+      problems.push(`ALIPAY_PUBLIC_KEY 不是 RSA 公钥（实际类型 ${keyObj.asymmetricKeyType}）`);
+    } else {
+      publicKeyParsed = true;
+    }
+  } catch (err) {
+    problems.push(`ALIPAY_PUBLIC_KEY 无法解析：${err.message}`);
+  }
+
+  // 4) 误填「应用公钥」检测（见函数头第 4 条）
+  if (probeSig && publicKeyParsed) {
+    try {
+      const verifier = crypto.createVerify('RSA-SHA256');
+      verifier.update(probeStr, 'utf8');
+      if (verifier.verify(toPem(publicKey, 'PUBLIC'), probeSig, 'base64')) {
+        problems.push(
+          'ALIPAY_PUBLIC_KEY 看起来是**应用公钥**（与 ALIPAY_PRIVATE_KEY 成对）——' +
+            '这里要填的是**支付宝公钥**。当前配置下回调验签会 100% 失败'
+        );
+      }
+    } catch {
+      /* 解析异常已在上一步报告 */
+    }
+  }
+
+  return { ok: problems.length === 0, problems };
 }
 
 /**
@@ -271,9 +356,25 @@ async function callGateway(method, bizContent, notifyUrl) {
   // 响应键名规则：方法名把点换成下划线，再加 _response
   //   例：alipay.trade.query → alipay_trade_query_response
   const responseKey = `${method.replace(/\./g, '_')}_response`;
-  const payload = json[responseKey];
-  if (!payload) {
+
+  // ⚠️ 验签前必须先证明响应里该键**只出现一次**。
+  //
+  // 否则 S3 响应验签可被绕过：JSON 的重复键语义是「后者覆盖前者」
+  // （`JSON.parse` 取最后一个），而 `extractResponseNode` 用 `indexOf` 取**第一个**。
+  // 攻击者只要构造：
+  //   {"<responseKey>":<截获的真签名节点 A>,
+  //    "<responseKey>":<伪造的成功节点 B>,
+  //    "sign":<A 的真签名>}
+  // 就能让「验签的对象 = A（通过）」而「业务取数的对象 = B（伪造）」，
+  // 从而让 `queryTrade` 返回 TRADE_SUCCESS → 未付款即开通订阅。
+  // 回归用例见 tests/alipay.test.js「重复响应键必须被拒」。
+  const dupMarker = `"${responseKey}":`;
+  const firstAt = text.indexOf(dupMarker);
+  if (firstAt < 0) {
     throw new Error(`alipay response missing ${responseKey}: ${text.slice(0, 200)}`);
+  }
+  if (text.indexOf(dupMarker, firstAt + 1) !== -1) {
+    throw new Error(`alipay response for ${method} has duplicate ${responseKey} key`);
   }
 
   // S3：响应必须验签后才可信（含错误响应——伪造 code!=10000 可制造假故障）。
@@ -284,6 +385,18 @@ async function callGateway(method, bizContent, notifyUrl) {
   const nodeContent = extractResponseNode(text, responseKey);
   if (!nodeContent || !verifyResponseSignature(nodeContent, json.sign)) {
     throw new Error(`alipay response signature invalid for ${method}`);
+  }
+
+  // ⚠️ 业务数据**只能**来自验签通过的那份字节，绝不再从 `json[responseKey]` 取。
+  // 二者曾经是同一个对象，但在重复键下会分叉 —— 见上方重复键说明。
+  let payload;
+  try {
+    payload = JSON.parse(nodeContent);
+  } catch {
+    throw new Error(`alipay response node for ${method} is not valid JSON`);
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`alipay response node for ${method} is not an object`);
   }
 
   if (payload.code && payload.code !== '10000') {
@@ -317,6 +430,8 @@ export function buildPagePayUrl({ outTradeNo, totalAmount, subject, notifyUrl, r
     total_amount: Number(totalAmount).toFixed(2),
     subject: String(subject || 'ClipSync 订阅').slice(0, 256),
     product_code: PRODUCT_CODE_PAGE_PAY,
+    // 渠道侧可支付窗口：必须短于本地关单窗口（见 PAYMENT_TIMEOUT_EXPRESS 注释）
+    timeout_express: PAYMENT_TIMEOUT_EXPRESS,
     // 4 = 订单码-可定义宽度的嵌入式二维码（把二维码前置到商户页面）
     qr_pay_mode: '4',
     qrcode_width: '200',
@@ -349,6 +464,35 @@ export async function queryTrade(outTradeNo) {
     tradeNo: payload.trade_no,
     raw: payload,
   };
+}
+
+/**
+ * 关闭渠道侧交易（`alipay.trade.close`）。
+ *
+ * 用途：本地要关掉一笔超时未付的订单时，**必须先在渠道侧关掉**，
+ * 否则支付宝侧仍可支付 → 用户付款成功而本地订单已 cancelled，钱收了权益不发
+ * （2026-09-29 审计 H2）。
+ *
+ * ⚠️ 调用前**必须先 `queryTrade` 确认未付款**：已付款的交易调 close 也会失败，
+ * 但不能据此当作"可安全关单"。本函数只把「渠道本来就没有这笔交易」与
+ * 「渠道已关闭」视为可安全关单的良性结果，其余错误一律抛出，由调用方跳过本地关单。
+ *
+ * @param {string} outTradeNo 商户订单号
+ * @returns {Promise<{closed:boolean, alreadyClosed?:boolean, subCode?:string, tradeNo?:string, payload?:object}>}
+ */
+export async function closeTrade(outTradeNo) {
+  if (!outTradeNo) throw new Error('closeTrade: outTradeNo is required');
+  try {
+    const payload = await callGateway('alipay.trade.close', { out_trade_no: outTradeNo });
+    return { closed: true, tradeNo: payload.trade_no || null, payload };
+  } catch (err) {
+    // 这两种 subCode 都表示「渠道侧此刻已不可支付」，可安全本地关单
+    const benign = ['ACQ.TRADE_NOT_EXIST', 'ACQ.TRADE_HAS_CLOSE'];
+    if (benign.includes(err.subCode)) {
+      return { closed: true, alreadyClosed: true, subCode: err.subCode };
+    }
+    throw err;
+  }
 }
 
 /**
@@ -408,8 +552,10 @@ export async function refundTrade({ outTradeNo, refundAmount, outRequestNo }) {
 export default {
   isAlipayConfigured,
   isAlipayNotifyConfigured,
+  checkAlipayCredentials,
   buildPagePayUrl,
   queryTrade,
+  closeTrade,
   refundTrade,
   signParams,
   verifyParams,

@@ -39,6 +39,7 @@ import { startVersionCleanupScheduler } from './utils/versionManager.js';
 import { startFileRetentionCleanup } from './services/fileRetentionCleanup.js';
 import { startDeviceOnlineSweep, stopDeviceOnlineSweep } from './services/deviceOnlineSweep.js';
 import { startOrderCloseSweep, stopOrderCloseSweep } from './services/orderCloseSweep.js';
+import { checkAlipayCredentials } from './utils/alipay.js';
 import pool from './db/pool.js';
 import migrate from './db/migrate.js';
 import { csrfProtection, handleGetCsrfToken } from './middleware/csrf.js';
@@ -673,6 +674,32 @@ if (!isClusteredPrimary) {
         registered: registeredKeys.size,
         orphan: orphanPermKeys.map((p) => p.permKey),
       });
+    }
+
+    // ============================================
+    // H1 支付凭据启动自检（不阻断启动，2026-09-29 审计）
+    //
+    // 「有 appId + 私钥」与「回调能验签」是两套独立判定。半配置（尤其把
+    // **应用公钥**误当**支付宝公钥**填）会稳定造成「用户付了真钱、订阅永远不开」，
+    // 全链路只留一行 error 日志。
+    //
+    // 这里只记日志、绝不 process.exit：支付只是站点的一个功能，凭据坏了不该让整个 API
+    // 起不来；真正的兜底是 create-order 的闸（缺公钥直接 503 拒收钱）。
+    // ============================================
+    try {
+      const alipayCheck = checkAlipayCredentials();
+      if (alipayCheck.ok) {
+        logger.info('[alipay] 凭据自检通过（APP_ID / 应用私钥 / 支付宝公钥均可用）');
+      } else {
+        for (const problem of alipayCheck.problems) {
+          logger.error(`[alipay] 凭据自检未通过：${problem}`);
+        }
+        logger.error(
+          '[alipay] 结论：create-order 将拒绝支付宝渠道（绝不收自己无法验签回调的钱）'
+        );
+      }
+    } catch (err) {
+      logger.error('[alipay] 凭据自检自身异常（不影响启动）', { error: err.message });
     }
 
     if (process.env.NODE_ENV !== 'test') {

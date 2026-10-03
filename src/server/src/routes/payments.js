@@ -3,7 +3,7 @@ import pool from '../db/pool.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
-import { buildPagePayUrl, queryTrade, isAlipayConfigured } from '../utils/alipay.js';
+import { buildPagePayUrl, queryTrade, isAlipayConfigured, isAlipayNotifyConfigured } from '../utils/alipay.js';
 import { markOrderPaid } from '../services/orderFulfillment.js';
 import { computeProration, decidePlanChange, roundToCent } from '../services/proration.js';
 import { refundPaidOrder, RefundError, locateOrder } from '../services/refund.js';
@@ -125,6 +125,22 @@ router.post('/create-order', authenticateToken, async (req, res) => {
       return res.status(503).json({
         error: 'Payment channel not configured',
         code: 'ALIPAY_NOT_CONFIGURED',
+      });
+    }
+
+    // H1（2026-09-29 审计）：下单只需要 appId + 应用私钥，而**回调验签需要支付宝公钥**
+    // —— `isAlipayConfigured()` 与 `isAlipayNotifyConfigured()` 是两套独立判定。
+    // 若公钥缺失 / 被贴成「应用公钥」/ 格式不被 toPem 接受，就会出现：
+    //   用户扫码付**真钱** → 每一次回调都被 503/401 拒绝 → 订阅永远不开，
+    //   全链路只留一行 error 日志，前端一直转圈。
+    // 宁可不收钱，也不收钱不开货 —— 故在此一并拦住（fail-closed）。
+    if (paymentMethod === 'alipay' && !isAlipayNotifyConfigured()) {
+      logger.error(
+        '[payments] ALIPAY_PUBLIC_KEY missing; refusing to take money we cannot verify callbacks for'
+      );
+      return res.status(503).json({
+        error: 'Payment channel cannot verify callbacks',
+        code: 'ALIPAY_NOTIFY_NOT_CONFIGURED',
       });
     }
 
