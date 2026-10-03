@@ -62,6 +62,36 @@ export function resolveRequestLocale(req) {
 }
 
 /**
+ * 解析"目标语言固定"的页内变体的显式语言覆盖（`/inline` 的 body 字段 `languageOverride`）。
+ *
+ * 用途（契约）：详情抽屉的 `drawerTranslate`（提取并翻译为**英文**）这类变体的目标语言与界面语言无关；
+ * 若照界面语言在末尾追加「只允许用简体中文回答」，中文界面下会与功能直接冲突 ⇒ 该变体显式声明
+ * `languageOverride: 'en'` 即可 opt-out。
+ *
+ * 返回值：能识别成中/英的语言标签（`'en'` / `'en-US'` / `'zh'` / `'zh-Hans'`…）→ 'en'/'zh'；
+ *   `null` / 缺省 / 非法值（`'fr'`、数字、随机串…）→ **null**（调用方回落到 `X-UI-Locale`）。
+ * ⚠️ 非法值**刻意不报 400**：它是可选字段，静默按界面语言处理更稳（老客户端、前端手滑、
+ *    未来新增语言都不至于把功能打断）；真正需要强约束的地方是"别把冲突语言塞给模型"，而非参数校验。
+ */
+export function normalizeLanguageOverride(raw) {
+  return normalizeLocale(raw)
+}
+
+/**
+ * 生效语言 = 显式覆盖优先，否则界面语言（**二者只选一个**）。
+ * 为什么要统一成一个值（而不是"末尾用覆盖、最前仍用界面语言"）：
+ *   提示词里"最前说中文、末尾说英文"会自相矛盾，模型容易两头摇摆（甚至把冲突原样吐给用户）。
+ *   因此 /inline 在最前 system 段、上下文段标签、末尾强化、以及 runChatLoop 的 locale 上
+ *   **统一使用生效语言**；未声明覆盖时它就等于界面语言（既有行为不变）。
+ * @param {'zh'|'en'|string} uiLocale X-UI-Locale 归一化结果
+ * @param {*} override body 里的 languageOverride（可能是任意脏值）
+ * @returns {'zh'|'en'}
+ */
+export function resolveEffectiveLocale(uiLocale, override) {
+  return normalizeLanguageOverride(override) || resolveLocale(uiLocale)
+}
+
+/**
  * 语言强制指令（system 段；放在系统提示词末尾）。
  *
  * ⚠️ 措辞刻意**强硬**：用户实测「英文界面下页内小功能仍输出中文」——弱措辞（"Always respond in
@@ -317,6 +347,8 @@ export default {
   normalizeLocale,
   resolveLocale,
   resolveRequestLocale,
+  normalizeLanguageOverride,
+  resolveEffectiveLocale,
   languageDirective,
   trailingLanguageRequirement,
   appendTrailingLanguageRequirement,

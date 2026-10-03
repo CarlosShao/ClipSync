@@ -501,3 +501,104 @@ describe('E. 末尾强化：语言要求出现在最后一条消息末尾（含�
     expect(zhSim).toContain('"id"')
   })
 })
+
+// ============================================================
+// F. /inline 的 languageOverride：目标语言固定的变体 opt-out（只影响 /inline）
+// ============================================================
+describe('F. /inline languageOverride（drawerTranslate 这类固定目标语言变体）', () => {
+  const allText = (i = 0) =>
+    (hoisted.captured[i]?.messages || [])
+      .map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '')))
+      .join('\n')
+  const tailOf = (i = 0) => {
+    const msgs = hoisted.captured[i]?.messages || []
+    const last = msgs[msgs.length - 1]
+    if (!last) return null
+    if (typeof last.content === 'string') return last.content
+    if (Array.isArray(last.content)) return last.content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n')
+    return ''
+  }
+
+  it('① languageOverride=en + 中文界面头 ⇒ 末尾是英文强化，且全量 messages 不含中文强化句', async () => {
+    const providerId = await createProvider()
+    hoisted.captured.length = 0
+    const res = await post('/api/ai/inline', {
+      providerId,
+      prompt: '提取关键信息并翻译为英文：\n- 会议时间 15:00',
+      context: '详情抽屉上下文',
+      languageOverride: 'en',
+    }, withZh) // 界面中文
+    // 上游故意不可达（127.0.0.1:9）⇒ 502 是预期的；这里只要求**不是 400**（字段被接受）
+    expect(res.status, JSON.stringify(res.body)).not.toBe(400)
+
+    expect(tailOf().endsWith(EN_TRAILING), '末尾必须是**英文**强化句').toBe(true)
+    // 全量 messages（含最前 system 段）里都不许出现中文强化句 —— 避免"最前中文、末尾英文"自相矛盾
+    expect(allText()).not.toContain(ZH_TRAILING)
+    expect(allText()).not.toContain(ZH_DIRECTIVE)
+    expect(allText()).toContain(EN_TRAILING)
+  })
+
+  it('② languageOverride=zh + 英文界面头 ⇒ 末尾是中文强化，且不含英文强化句', async () => {
+    const providerId = await createProvider()
+    hoisted.captured.length = 0
+    const res = await post('/api/ai/inline', {
+      providerId,
+      prompt: '审查以下设置项',
+      context: '',
+      languageOverride: 'zh',
+    }, withEn) // 界面英文
+    expect(res.status, JSON.stringify(res.body)).not.toBe(400) // 上游不可达 ⇒ 502 预期
+    expect(tailOf().endsWith(ZH_TRAILING)).toBe(true)
+    expect(allText()).not.toContain(EN_TRAILING)
+    expect(allText()).not.toContain(EN_DIRECTIVE)
+  })
+
+  it('③ 缺省 / null / 非法值 ⇒ 回落到 X-UI-Locale（且非法值不 400）', async () => {
+    const providerId = await createProvider()
+
+    // 缺省 + 英文头 ⇒ 英文（既有行为）
+    hoisted.captured.length = 0
+    expect((await post('/api/ai/inline', { providerId, prompt: 'p', context: '' }, withEn)).status).not.toBe(400)
+    expect(tailOf().endsWith(EN_TRAILING)).toBe(true)
+
+    // null + 中文头 ⇒ 中文
+    hoisted.captured.length = 0
+    expect((await post('/api/ai/inline', { providerId, prompt: 'p', context: '', languageOverride: null }, withZh)).status).not.toBe(400)
+    expect(tailOf().endsWith(ZH_TRAILING)).toBe(true)
+
+    // 非法值 'fr' + 中文头 ⇒ **不 400**，按界面语言（中文）
+    hoisted.captured.length = 0
+    const fr = await post('/api/ai/inline', { providerId, prompt: 'p', context: '', languageOverride: 'fr' }, withZh)
+    expect(fr.status, JSON.stringify(fr.body)).not.toBe(400) // 非法值**不 400**
+    expect(tailOf().endsWith(ZH_TRAILING)).toBe(true)
+
+    // 非法值（数字 / 脏串）+ 英文头 ⇒ 同样按界面语言（英文）
+    hoisted.captured.length = 0
+    expect((await post('/api/ai/inline', { providerId, prompt: 'p', context: '', languageOverride: 42 }, withEn)).status).not.toBe(400)
+    expect(tailOf().endsWith(EN_TRAILING)).toBe(true)
+    hoisted.captured.length = 0
+    expect((await post('/api/ai/inline', { providerId, prompt: 'p', context: '', languageOverride: 'klingon' }, withEn)).status).not.toBe(400)
+    expect(tailOf().endsWith(EN_TRAILING)).toBe(true)
+  })
+
+  it('④ 只影响 /inline：其它端点忽略该字段（/summarize、/suggest、/chat 回归）', async () => {
+    const providerId = await createProvider()
+
+    hoisted.captured.length = 0
+    await post('/api/ai/summarize', { providerId, content: '内容', languageOverride: 'en' }, withZh)
+    expect(tailOf().endsWith(ZH_TRAILING), '/summarize 必须仍按界面语言（中文）').toBe(true)
+    expect(allText()).not.toContain(EN_TRAILING)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/suggest', { providerId, content: '内容', languageOverride: 'en' }, withZh)
+    expect(tailOf().endsWith(ZH_TRAILING), '/suggest 必须仍按界面语言（中文）').toBe(true)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/chat', {
+      providerId,
+      messages: [{ role: 'user', content: '你好' }],
+      options: { mode: 'ask', languageOverride: 'en' },
+    }, withZh)
+    expect(tailOf().endsWith(ZH_TRAILING), '/chat 必须仍按界面语言（中文）').toBe(true)
+  })
+})

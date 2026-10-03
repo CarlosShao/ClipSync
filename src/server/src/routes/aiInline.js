@@ -9,7 +9,14 @@ import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
 // 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
 import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
 // 契约 v6：X-UI-Locale → 生成内容的语言（页内结果卡的每个变体都走这里）
-import { resolveRequestLocale, languageDirective, inlineContextSystemPrompt, appendTrailingLanguageRequirement } from '../utils/aiLocale.js'
+// + languageOverride：**目标语言固定**的变体（如详情抽屉「提取并翻译为英文」）显式 opt-out
+import {
+  resolveRequestLocale,
+  resolveEffectiveLocale,
+  languageDirective,
+  inlineContextSystemPrompt,
+  appendTrailingLanguageRequirement,
+} from '../utils/aiLocale.js'
 
 const router = Router()
 
@@ -19,7 +26,7 @@ router.post('/', apiLimiter, async (req, res) => {
   // catch 里也要用它构造失败响应（告知用户是哪个供应商出了问题），所以提到 try 外
   let providerRow = null
   try {
-    const { providerId, prompt, context, maxTokens } = req.body || {}
+    const { providerId, prompt, context, maxTokens, languageOverride } = req.body || {}
     if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt is required' })
 
     providerRow = await resolveUserProvider(req.userId, providerId)
@@ -42,7 +49,13 @@ router.post('/', apiLimiter, async (req, res) => {
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     const effModel = await resolveEffectiveModel({ userId: req.userId, providerId, providerRow })
     if (effModel?.model) providerRow.model = effModel.model
-    const locale = resolveRequestLocale(req)
+    // 语言：界面语言（X-UI-Locale）× 可选 languageOverride（**只本路由支持**）。
+    // 「目标语言固定」的变体（详情抽屉 drawerTranslate=提取并翻译为英文）会带 languageOverride:'en'
+    // ⇒ 中文界面下也按英文要求作答（否则末尾会出现"只允许用简体中文回答"与翻译功能直接冲突）。
+    // 非法/缺省值静默回落到界面语言（不 400，见 utils/aiLocale.normalizeLanguageOverride 注释）。
+    // ⚠️ 生效语言**一个值贯穿全请求**（最前 system 段 / 上下文标签 / 末尾强化 / runChatLoop）：
+    //    避免"最前说中文、末尾说英文"的自相矛盾。
+    const effectiveLocale = resolveEffectiveLocale(resolveRequestLocale(req), languageOverride)
     const MAX_INPUT = 24000
     const truncatedPrompt = prompt.slice(0, MAX_INPUT)
     const truncatedContext = typeof context === 'string' && context ? context.slice(0, MAX_INPUT) : ''
@@ -59,13 +72,13 @@ router.post('/', apiLimiter, async (req, res) => {
     // /inline 的各个"变体"（AI 诊断同步 / 审查设置 / 总结今日 / AI 整理收藏 / 生成模板 /
     // 收藏摘要 / 详情抽屉…）都由桌面端拼 prompt 文本，服务端看不到变体名；两处约束统一生效 ⇒
     // 逐个变体都被覆盖（无需按变体分支）。
-    messages.push({ role: 'system', content: languageDirective(locale).trim() })
+    messages.push({ role: 'system', content: languageDirective(effectiveLocale).trim() })
     if (truncatedContext) {
-      messages.push({ role: 'system', content: inlineContextSystemPrompt(locale, truncatedContext) })
+      messages.push({ role: 'system', content: inlineContextSystemPrompt(effectiveLocale, truncatedContext) })
     }
     messages.push({ role: 'user', content: truncatedPrompt })
     // ⚠️ 末尾强化：追加到最后一条 user 消息末尾（三种协议下都真正位于最后）
-    appendTrailingLanguageRequirement(messages, locale)
+    appendTrailingLanguageRequirement(messages, effectiveLocale)
 
     const { finalContent } = await runChatLoop({
       messages,
@@ -77,7 +90,7 @@ router.post('/', apiLimiter, async (req, res) => {
       userId: req.userId,
       sendDelta: () => {},
       role: 'user',
-      locale,
+      locale: effectiveLocale,
     })
 
     return res.json({ ok: true, text: (finalContent || '').trim() })
