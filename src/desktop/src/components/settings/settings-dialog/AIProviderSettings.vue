@@ -396,9 +396,6 @@ function startEdit(p: AiProvider) {
   savedEnabledModels.value = []
   // 已保存流程的「选中」一律以服务端 enabled 为准，草稿选中集合在这里不使用
   formSelectedModels.value = []
-  formCandidates.value = []
-  formPrimaryModel.value = ''
-  savedEnabledModels.value = []
   formManualModel.value = ''
   modelRefreshSeq.value = 0
   // 草稿候选/计数退场：改由模型库面板按 providerId 接管
@@ -458,6 +455,66 @@ function onEnabledModelsChange(list: string[]) {
 function onDraftRemoveModel(model: string) {
   formSelectedModels.value = formSelectedModels.value.filter((m) => m !== model)
 }
+
+/* ---------- 主模型（ai_providers.model）：AI 小功能固定用它 ----------
+ * 所有页内 AI 小功能（摘要 / 建议 / 诊断 / 整理 / 相似度 / OCR）发请求时**不带模型名**，服务端固定取
+ * 供应商记录上的 model。以前界面上看不见也改不了它（卡片显示的是候选清单第一项），只能新建供应商绕过。
+ * 这里把它显式暴露：候选清单里可搜索选择，也允许手填 / 历史值（不静默清空）。
+ */
+const primaryQuery = ref('')
+/** 需要二次确认：主模型不在候选清单里（手填或历史脏值），保存前让用户明确确认 */
+const primaryConfirm = ref(false)
+
+/** 可选候选：已保存态 = 候选清单；草稿态 = 刷新结果 ∪ 已勾选的模型 */
+const primaryCandidates = computed(() => {
+  const base = editingId.value ? formCandidates.value : [...draftCandidates.value, ...formSelectedModels.value]
+  return [...new Set(base.filter((m) => typeof m === 'string' && m.trim() !== '').map((m) => m.trim()))]
+})
+
+/** 下拉里按搜索词过滤（169 个候选也要能搜） */
+const primaryOptions = computed(() => {
+  const q = primaryQuery.value.trim().toLowerCase()
+  if (!q) return primaryCandidates.value
+  return primaryCandidates.value.filter((m) => m.toLowerCase().includes(q))
+})
+
+/** 实际提交的主模型：显式值优先；新建且没选过就退到第一个勾选的模型 */
+const effectivePrimary = computed(
+  () => formPrimaryModel.value.trim() || (editingId.value ? '' : (formSelectedModels.value[0] ?? '')),
+)
+
+/** 当前值不在候选清单里（历史脏值 / 手填）→ 显示标记，但**绝不清空** */
+const primaryNotInCandidates = computed(
+  () =>
+    effectivePrimary.value !== '' &&
+    primaryCandidates.value.length > 0 &&
+    !primaryCandidates.value.includes(effectivePrimary.value),
+)
+
+function onPrimaryPick(m: string) {
+  formPrimaryModel.value = m
+  primaryConfirm.value = false
+}
+
+/** 保存入口：主模型必填；不在候选清单里时先要一次明确确认（不静默清空、也不偷偷写脏值） */
+function requestSave() {
+  const primary = effectivePrimary.value
+  if (!primary) {
+    formError.value = t('ai_primary_model_required', '请填写 AI 小功能使用的模型（主模型）')
+    return
+  }
+  if (primaryNotInCandidates.value && !primaryConfirm.value) {
+    primaryConfirm.value = true
+    return
+  }
+  primaryConfirm.value = false
+  void save()
+}
+
+// 草稿态：勾了模型但还没定主模型时，默认用第一个勾选的（用户仍可改）
+watch(formSelectedModels, (list) => {
+  if (!editingId.value && !formPrimaryModel.value && list.length > 0) formPrimaryModel.value = list[0]
+})
 
 /** 草稿态候选芯片 = 上游候选 ∪ 手工添加的模型（手工的也要可见、可点取消） */
 const draftChipList = computed(() => {
@@ -776,9 +833,8 @@ async function save() {
     //   · models = **候选清单**（上游刷新出的全部模型）：新建用草稿刷新结果（没有就只放主模型），
     //              编辑保持原候选清单。**绝不**把选中集合写进 models —— 选中由服务端 enabled 承载
     //              （草稿里勾选的会在下面用 PUT /batch 落库）。
-    const primary = isCreate
-      ? formSelectedModels.value[0]
-      : formPrimaryModel.value || formCandidates.value[0] || ''
+    // 主模型：以显式字段为准（requestSave 已保证非空）；新建没有显式值时退到第一个勾选的模型
+    const primary = effectivePrimary.value || formSelectedModels.value[0] || formCandidates.value[0] || ''
     const candidates = isCreate
       ? draftCandidates.value.length > 0
         ? [...draftCandidates.value]
@@ -905,6 +961,10 @@ onMounted(() => {
               {{ presetLabel(p.provider) }} ·
               <template v-if="Array.isArray(p.models) && p.models.length > 1">
                 {{ tf('ai_provider_models_count', `${p.models[0]} 等 ${p.models.length} 个模型`, { first: p.models[0], n: p.models.length }) }}
+                <!-- 候选清单第一项**不是**主模型：把真正给 AI 小功能用的模型也说清楚 -->
+                <span class="ai-prov-primary" :title="t('ai_provider_primary_h')" data-action="card-primary-model">
+                  · {{ tf('ai_provider_primary_short', '小功能用：{model}', { model: p.model }) }}
+                </span>
               </template>
               <template v-else>{{ p.model }}</template>
             </div>
@@ -1173,12 +1233,80 @@ onMounted(() => {
                 class="ai-draft-cfg-save shrink-0 whitespace-nowrap"
                 data-action="draft-save"
                 :disabled="saving"
-                @click="save"
+                @click="requestSave"
               >
                 {{ saving ? t('ai_saving') : t('ai_save') }}
               </Button>
             </div>
           </template>
+
+          <!-- 主模型（ai_providers.model）：AI 小功能固定用它。可搜索选择，也允许手填/历史值（不静默清空） -->
+          <div class="ai-primary-field">
+            <label class="ai-label">{{ t('ai_primary_model_label', 'AI 小功能使用的模型（主模型）') }}</label>
+            <CustomSelect
+              v-if="primaryCandidates.length > 0"
+              class="ai-primary-select"
+              :model-value="effectivePrimary"
+              @update:model-value="onPrimaryPick"
+            >
+              {{ effectivePrimary || t('ai_primary_model_ph', '模型名') }}
+              <template #options>
+                <div class="ai-primary-search">
+                  <Input v-model="primaryQuery" :placeholder="t('ai_primary_model_search_ph', '搜索模型')" />
+                </div>
+                <CustomSelectOption
+                  v-for="m in primaryOptions"
+                  :key="m"
+                  :value="m"
+                  :selected="m === effectivePrimary"
+                  @select="onPrimaryPick"
+                >
+                  {{ m }}
+                </CustomSelectOption>
+                <div v-if="primaryOptions.length === 0" class="ai-primary-empty">
+                  {{ t('ai_model_none_match', '没有匹配的模型') }}
+                </div>
+              </template>
+            </CustomSelect>
+            <Input v-else v-model="formPrimaryModel" :placeholder="t('ai_primary_model_ph', '模型名')" />
+            <div class="sg-hint">
+              {{ t('ai_primary_model_hint', 'AI 摘要 / 建议 / 诊断等页内功能固定用这个模型；聊天用你在聊天里选的模型。') }}
+            </div>
+            <div v-if="primaryCandidates.length === 0" class="sg-hint">
+              {{ t('ai_primary_model_empty_hint', '先刷新模型列表可选；也可以直接手工填一个模型名。') }}
+            </div>
+            <div v-if="primaryNotInCandidates" class="ai-primary-warn" data-action="primary-not-in-list">
+              {{ t('ai_primary_model_not_in_list', '不在当前候选中') }}
+            </div>
+            <!-- 不在候选清单里：保存前要一次明确确认（不静默清空、也不偷偷写脏值） -->
+            <div v-if="primaryConfirm" class="ai-primary-confirm" data-action="primary-confirm">
+              <span class="ai-primary-confirm-text">
+                {{
+                  tf('ai_primary_model_confirm', '「{model}」不在当前候选清单里：仍要用它作为 AI 小功能的模型吗？', {
+                    model: effectivePrimary,
+                  })
+                }}
+              </span>
+              <Button
+                size="sm"
+                class="shrink-0 whitespace-nowrap"
+                data-action="primary-confirm-ok"
+                :disabled="saving"
+                @click="requestSave"
+              >
+                {{ t('ai_primary_model_confirm_ok', '仍然保存') }}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                class="shrink-0 whitespace-nowrap"
+                :disabled="saving"
+                @click="primaryConfirm = false"
+              >
+                {{ t('cancel_btn', '取消') }}
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div class="ai-field">
@@ -1204,7 +1332,7 @@ onMounted(() => {
         <div v-if="formError" class="ai-error">{{ formError }}</div>
 
         <div class="ai-form-actions">
-          <Button class="min-w-[100px]" :disabled="saving" @click="save">{{ saving ? t('ai_saving') : t('ai_save') }}</Button>
+          <Button class="min-w-[100px]" :disabled="saving" @click="requestSave">{{ saving ? t('ai_saving') : t('ai_save') }}</Button>
           <Button variant="outline" class="min-w-[100px]" @click="resetForm()">{{ t('cancel_btn') }}</Button>
         </div>
       </div>
@@ -1715,6 +1843,60 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
 }
+/* 主模型字段（AI 小功能固定用它）：可搜索下拉 + 手填 + 脏值提示 + 保存前确认 */
+.ai-primary-field {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.ai-primary-field :deep(.custom-select) {
+  width: 100%;
+}
+.ai-primary-search {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  z-index: 1;
+}
+.ai-primary-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.ai-primary-warn {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 11px;
+}
+.ai-primary-confirm {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.ai-primary-confirm-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+/* 供应商卡片上的「小功能用：X」—— 与候选清单摘要同一行，不额外占位 */
+.ai-prov-primary {
+  color: var(--text-tertiary);
+}
+
 /* 草稿态候选芯片：上游刷出来的模型立刻可见（默认不选中，点一下选中） */
 .ai-draft-models {
   margin-top: 10px;
