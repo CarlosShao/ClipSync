@@ -657,16 +657,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
-  /* 同排**等高**（stretch）：配合 .fav-card{height:100%} + .fav-card-meta{margin-top:auto}，
-     让不同内容长度的卡片上下边界对齐、时间行严格对齐（用户反馈「同排不齐」） */
-  align-items: stretch;
+  /* 顶对齐：卡片高度各自贴合内容，不被同行最高的卡拉伸出留白 */
+  align-items: start;
 }
 .fav-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  /* 铺满网格行高 ⇒ 同排卡片等高（配合 .fav-grid align-items:stretch） */
-  height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -824,8 +821,7 @@
   color: var(--text-primary);
   overflow: hidden;
   display: -webkit-box;
-  /* 预览统一 3 行：长短内容占位一致（超出部分在详情抽屉里看全） */
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   word-break: break-word;
 }
@@ -916,8 +912,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 顶到底部：内容长短不一时，同排卡片的时间行仍在同一条水平线上 */
-  margin-top: auto;
   padding: 8px 12px 10px;
   font-size: 11px;
   color: var(--text-tertiary);
@@ -1560,44 +1554,6 @@
   }
   100% {
     background-position: -200% 0;
-  }
-}
-
-/* 受保护预览：**密码掩码黑点**（与普通预览同字号/行高 ⇒ 卡片高度自然接近；
-   不再用通栏灰块 + 锁图标）。真实内容绝不进 DOM。 */
-.fav-card-mask {
-  letter-spacing: 2px;
-  color: var(--text-tertiary);
-  user-select: none;
-}
-/* 底栏状态小字「已保护」+ 纯文字「解锁」（默认不占常驻视觉，hover / 键盘 focus 才出现） */
-.fav-card-protected-note {
-  flex-shrink: 0;
-  color: var(--text-tertiary);
-}
-.fav-card-unlock {
-  flex-shrink: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent);
-  font-size: 11px;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 150ms var(--ease);
-}
-.fav-card:hover .fav-card-unlock,
-.fav-card:focus-within .fav-card-unlock {
-  opacity: 1;
-  pointer-events: auto;
-}
-html.reduce-motion .fav-card-unlock {
-  transition: none;
-}
-@media (prefers-reduced-motion: reduce) {
-  .fav-card-unlock {
-    transition: none;
   }
 }
 

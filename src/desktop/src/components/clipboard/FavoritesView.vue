@@ -29,8 +29,6 @@ import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 // A2：页内内联 AI（总结卡 + 整理流程卡），结果直接在收藏页展示，不再跳侧栏
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import FavOrganizeFlow from '@/components/clipboard/FavOrganizeFlow.vue'
-// 网格卡的内容区 + 底部信息行（掩码预览 / 贴底状态行）：见组件内注释
-import FavCardMain from '@/components/clipboard/FavCardMain.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { inlineContextLabel, inlinePromptFor } from '@/utils/inlinePrompts'
 
@@ -2061,23 +2059,54 @@ function cancelEditTags() {
                     <component :is="favTileIcon(item)" :size="13" />
                   </div>
                   <span class="fav-card-source">{{ item.source || 'Desktop' }}</span>
-                  <!-- 时间/来源/状态移到卡片底栏（FavCardMain）⇒ 同排卡片的时间行严格对齐；
-                       受保护不再用锁图标 chip（改用掩码黑点 + 底栏「已保护」小字） -->
+                  <span class="fav-card-head-right">
+                    <button
+                      v-if="(item as any).metadata?.sensitive || (itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id))"
+                      type="button"
+                      class="fav-card-lock-chip"
+                      :class="{ 'pw-locked': itemPw.isItemProtected(item) && !itemPw.isUnlocked(item.id) }"
+                      :title="getProtectionTitle(item)"
+                      @click.stop="openProtectionDialog(item)"
+                    >
+                      <Lock :size="11" />
+                    </button>
+                    <span class="fav-card-time">{{ timeAgo((item as any).favoritedAt || item.timestamp) }}</span>
+                  </span>
                 </div>
-                <!-- 内容区 + 底栏（来源/时间/已保护/解锁）：受保护=密码掩码黑点，真实内容不进 DOM -->
-                <FavCardMain
-                  :type="item.type"
-                  :locked="!isItemViewable(item)"
-                  :content-text="formatContent(item)"
-                  :preview="item.preview"
-                  :is-link="item.type === 'link' || detectContentType(item.content) === 'url'"
-                  :domain="extractDomain(item.content)"
-                  :is-file="item.type === 'file'"
-                  :source="item.source || 'Desktop'"
-                  :time-text="timeAgo((item as any).favoritedAt || item.timestamp)"
-                  :unlock-title="getProtectionTitle(item)"
-                  @unlock="openProtectionDialog(item)"
-                />
+                <!-- 内容区：图片=媒体块；受保护=解锁条；其余=排版预览 -->
+                <div class="fav-card-body" :class="{ 'fav-card-body--media': item.type === 'image' }">
+                  <template v-if="item.type === 'image'">
+                    <img
+                      v-if="item.preview && item.preview !== 'loading'"
+                      :src="item.preview"
+                      alt=""
+                      class="fav-card-media-img"
+                    />
+                    <div v-else class="fav-card-placeholder"><ImageIcon :size="22" /></div>
+                  </template>
+                  <div v-else-if="!isItemViewable(item)" class="cell-protected-mask">
+                    <Lock :size="13" />
+                    <span>{{ t('item_protected_mask') }}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="h-7 px-3 text-[11px] rounded-md"
+                      @click.stop="openProtectionDialog(item)"
+                      >{{ t('item_unlock') }}</Button
+                    >
+                  </div>
+                  <div
+                    v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'"
+                    class="fav-card-text fav-card-link"
+                  >
+                    <span class="fav-card-link-url">{{ item.content }}</span>
+                    <span class="fav-card-link-domain">{{ extractDomain(item.content) }}</span>
+                  </div>
+                  <div v-else-if="item.type === 'file'" class="fav-card-text fav-card-file">
+                    <FileText :size="16" /><span>{{ formatContent(item) }}</span>
+                  </div>
+                  <div v-else class="fav-card-text">{{ formatContent(item) }}</div>
+                </div>
                 <!-- 打标签：只勾选已有全局标签（新建/改色一律走「管理标签」） -->
                 <div v-if="editingTagsItemId === item.id" class="fav-tag-pop" @click.stop>
                   <div v-if="allTags.length === 0" class="fav-tag-pop-empty">{{ tf('fav_tag_pop_empty', '暂无全局标签，请先在「管理标签」中新建') }}</div>
