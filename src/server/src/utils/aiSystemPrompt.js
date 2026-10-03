@@ -19,6 +19,8 @@ import {
   getDeploymentDoc,
   getArchitectureDoc,
 } from './aiKnowledge.js'
+// 契约 v6：界面语言（X-UI-Locale）→ 生成内容的语言
+import { DEFAULT_LOCALE, resolveLocale, languageDirective, roleLanguageLine } from './aiLocale.js'
 
 // ============ RBACv2：四级 × 四维权限矩阵 ============
 // 四级（由低到高，高等级继承低等级的全部能力）：
@@ -295,12 +297,13 @@ export function assertToolAllowed(role, toolName, roleLevel) {
 }
 
 // 角色专属系统提示词（覆盖前端传入的提示词）
-export function buildRoleSystemPrompt(role, userId) {
+// locale（契约 v6）：界面语言 —— 决定「回答用什么语言」那一句；缺省 zh（不带 X-UI-Locale 时行为不变）
+export function buildRoleSystemPrompt(role, userId, locale = DEFAULT_LOCALE) {
   const r = normalizeRole(role);
   const base = [
     '你是 ClipSync 的 AI 智能助手。ClipSync 是一款跨设备剪贴板同步工具，',
     '帮助用户在一台设备复制、在另一台设备粘贴，支持文本、图片、文件等剪贴板内容的云端同步、历史管理与检索。',
-    '你的回答应简洁、准确、有帮助，使用与用户相同的语言。',
+    roleLanguageLine(locale),
     '',
     '【核心原则 · 去伪存真】',
     '- 你必须基于工具返回的真实数据回答问题。未通过工具获取的信息，绝不在回答中呈现为事实。',
@@ -485,9 +488,12 @@ async function getMemoryEnabled(userId) {
 }
 
 // 统一组装完整 system 提示词（Agent-F）
+// opts.locale（契约 v6）：界面语言，缺省 zh；**语言强制指令放在整段提示词最后**（位置最权威），
+// 保证它不会被后面的 thinking/Agent 增强段或更早的中文说明稀释。
 export async function buildSystemPrompt(userId, role, opts = {}) {
+  const locale = resolveLocale(opts.locale)
   const parts = [
-    buildRoleSystemPrompt(role, userId),
+    buildRoleSystemPrompt(role, userId, locale),
     buildProductKnowledge(role),
   ]
   const ctx = await getAiContext(userId)
@@ -512,12 +518,14 @@ export async function buildSystemPrompt(userId, role, opts = {}) {
   }
   const base = parts.filter(Boolean).join('\n\n')
   // thinking / Agent 增强复用既有逻辑，确保行为不回退
-  return enhanceSystemPrompt(base, {
+  const enhanced = enhanceSystemPrompt(base, {
     thinking: !!opts.thinking,
     thinkingStrength: opts.thinkingStrength,
     agentMode: !!opts.agentMode,
     model: opts.model,
   })
+  // 契约 v6：语言要求在**最后**（最权威），覆盖提示词里任何其它语言偏好（含用户自定义指令）
+  return `${enhanced}${languageDirective(locale)}`
 }
 
 export default {

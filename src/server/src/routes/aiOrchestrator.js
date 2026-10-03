@@ -20,6 +20,8 @@
 import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProviders.js'
 import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
 import { buildThinkingOptions } from '../utils/modelPresets.js'
+// 契约 v6：界面语言 → 协调器/子代理/综合三阶段的生成内容都跟随语言
+import { DEFAULT_LOCALE, languageDirective } from '../utils/aiLocale.js'
 import { logger } from '../utils/logger.js'
 import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { runChatLoop, openUpstreamStream, looksLikeToolIntent } from './aiChatCore.js'
@@ -101,9 +103,10 @@ const SYNTHESIS_SYSTEM = `你是一个结果综合器（Synthesis）。
  * - 多任务：调用 dispatch_agents 返回计划，由 runOrchestration 走并行子代理。
  * 增量直接透传到主气泡（agentId=null）；dispatch_agents 元工具调用被过滤，不向用户暴露。
  */
-async function runCoordinator({ messages, providerRow, apiKey, userId, role, req, abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength, businessTools }) {
+async function runCoordinator({ messages, providerRow, apiKey, userId, role, req, abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength, businessTools, locale = DEFAULT_LOCALE }) {
   const preset = getPreset(providerRow.provider)
-  const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM }, ...messages]
+  // 契约 v6：协调器自己产出的回答（用户可见）也要跟随界面语言（语言指令追加在系统段末尾）
+  const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM + languageDirective(locale) }, ...messages]
   const tools = [DISPATCH_AGENTS_TOOL, ...businessTools]
   let currentMessages = coMessages
   // 安全网计数器：防止协调器模型"只说要调工具"却不 emit tool_calls。
@@ -264,7 +267,7 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
  * 并行执行所有子代理（Promise.allSettled 隔离失败）。
  * @returns {Promise<Array<{id,name,objective,tools,status,content,error?,duration?}>>}
  */
-async function runWorkers({ agents, messages, providerRow, apiKey, userId, role = 'user', abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength }) {
+async function runWorkers({ agents, messages, providerRow, apiKey, userId, role = 'user', abortSignal, sendDelta, logChunk, thinkingEnabled, thinkingStrength, locale = DEFAULT_LOCALE }) {
   // ✅ RBAC（#214）：子代理只配发按角色过滤后的只读工具，且剔除 UI 阻塞型门控工具
   //（ask_user 卡片只挂在主消息上，子代理调用会形成"等待永不出现的卡片"死锁）
   const scopedReadonly = getWorkerTools(role)
@@ -286,7 +289,7 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
 
     const runOne = () =>
       runChatLoop({
-        messages: [{ role: 'system', content: WORKER_SYSTEM(agent) }, ...messages],
+        messages: [{ role: 'system', content: WORKER_SYSTEM(agent) + languageDirective(locale) }, ...messages],
         options: {},
         providerRow,
         apiKey,
@@ -301,6 +304,7 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
         // #4：子代理继承主对话思考设置（Anthropic 协议下真正生效），默认关闭时行为不变
         thinkingEnabled,
         thinkingStrength,
+        locale,
       })
 
     sendDelta({
@@ -347,7 +351,7 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
 /**
  * 综合阶段：把各子代理结论融合成最终回答（无工具，主气泡）。
  */
-async function runSynthesis({ messages, workerResults, providerRow, apiKey, userId, abortSignal, sendDelta, logChunk }) {
+async function runSynthesis({ messages, workerResults, providerRow, apiKey, userId, abortSignal, sendDelta, logChunk, locale = DEFAULT_LOCALE }) {
   const summary = workerResults
     .map((r) => {
       if (r.status === 'failed') return `## ${r.name}\n[FAILED] ${r.error || '子代理执行失败'}`
@@ -362,7 +366,7 @@ async function runSynthesis({ messages, workerResults, providerRow, apiKey, user
   // #3：综合阶段只注入系统提示 + 用户原始请求 + 子代理结论（synthUser 已内含），
   // 不再重复塞入完整对话历史，避免长对话 + 多子代理长结论叠加导致超上下文窗口。
   const synthMessages = [
-    { role: 'system', content: SYNTHESIS_SYSTEM },
+    { role: 'system', content: SYNTHESIS_SYSTEM + languageDirective(locale) },
     { role: 'user', content: synthUser },
   ]
 
@@ -380,6 +384,7 @@ async function runSynthesis({ messages, workerResults, providerRow, apiKey, user
     maxRounds: 3,
     thinkingEnabled: false,
     thinkingStrength: 'medium',
+    locale,
   })
 }
 
@@ -401,6 +406,7 @@ export async function runOrchestration({
   abortSignal,
   thinkingEnabled,
   thinkingStrength,
+  locale = DEFAULT_LOCALE,
 }) {
   // ✅ RBAC（#214）：按角色过滤下发给各阶段的工具集
   // （子代理工具集在 runWorkers 内经 getWorkerTools 二次收敛，剔除 ask_user 等阻塞型工具）
@@ -456,6 +462,7 @@ export async function runOrchestration({
       thinkingEnabled,
       thinkingStrength,
       businessTools: scopedTools,
+      locale,
     })
   } catch (e) {
     // 协调器失败：降级为单代理直答（完整工具集）
@@ -463,7 +470,7 @@ export async function runOrchestration({
     logger.warn('[AI][orchestrator] coordinator failed, fallback to single chat:', e.message, '| cause:', causeInfo)
     await runChatLoop({
       messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
-      sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
+      sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength, locale,
     })
     flushUsage()
     safeFinish()
@@ -499,7 +506,7 @@ export async function runOrchestration({
     // 协调器调用了 dispatch_agents 但解析不出合法子代理 → 同样降级为单代理直答
     await runChatLoop({
       messages, options, providerRow, apiKey, tools: scopedTools, role, userId,
-      sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength,
+      sendDelta: sendDeltaWrapped, logChunk, agentId: null, abortSignal, maxRounds: 5, thinkingEnabled, thinkingStrength, locale,
     })
     flushUsage()
     safeFinish()
@@ -510,13 +517,13 @@ export async function runOrchestration({
 
   // —— 阶段二：并行子代理 ——
   const workerResults = await runWorkers({
-    agents, messages, providerRow, apiKey, userId, role, abortSignal, sendDelta: sendDeltaWrapped, logChunk, thinkingEnabled, thinkingStrength,
+    agents, messages, providerRow, apiKey, userId, role, abortSignal, sendDelta: sendDeltaWrapped, logChunk, thinkingEnabled, thinkingStrength, locale,
   })
 
   // —— 阶段三：综合 ——
   // 注意：综合事件已被 sendDeltaWrapped 过滤，不会发送到前端
   try {
-    await runSynthesis({ messages, workerResults, providerRow, apiKey, userId, abortSignal, sendDelta: sendDeltaWrapped, logChunk })
+    await runSynthesis({ messages, workerResults, providerRow, apiKey, userId, abortSignal, sendDelta: sendDeltaWrapped, logChunk, locale })
   } catch (e) {
     logger.warn('[AI][orchestrator] synthesis failed, fallback to raw concat:', e.message)
     const fallback = workerResults

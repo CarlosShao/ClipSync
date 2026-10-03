@@ -8,6 +8,8 @@ import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
 import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
 // 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
 import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
+// 契约 v6：X-UI-Locale → 生成内容的语言（页内结果卡的每个变体都走这里）
+import { resolveRequestLocale, languageDirective, inlineContextSystemPrompt } from '../utils/aiLocale.js'
 
 const router = Router()
 
@@ -40,6 +42,7 @@ router.post('/', apiLimiter, async (req, res) => {
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     const effModel = await resolveEffectiveModel({ userId: req.userId, providerId, providerRow })
     if (effModel?.model) providerRow.model = effModel.model
+    const locale = resolveRequestLocale(req)
     const MAX_INPUT = 24000
     const truncatedPrompt = prompt.slice(0, MAX_INPUT)
     const truncatedContext = typeof context === 'string' && context ? context.slice(0, MAX_INPUT) : ''
@@ -48,8 +51,13 @@ router.post('/', apiLimiter, async (req, res) => {
     const maxTokensClamped = Math.min(Math.max(Number(maxTokens) || 4096, 64), 4096)
 
     const messages = []
+    // 契约 v6：**先**注入语言强制指令（系统段，且位于最前 ⇒ 对生成内容最权威）。
+    // /inline 的各个"变体"（AI 诊断同步 / 审查设置 / 总结今日 / AI 整理收藏 / 生成模板 /
+    // 收藏摘要 / 详情抽屉…）都由桌面端拼 prompt 文本，服务端看不到变体名；但生成内容的语言
+    // 由这条系统指令统一约束 ⇒ 逐个变体都被覆盖（无需按变体分支）。
+    messages.push({ role: 'system', content: languageDirective(locale).trim() })
     if (truncatedContext) {
-      messages.push({ role: 'system', content: `以下是本次任务的参考上下文：\n${truncatedContext}` })
+      messages.push({ role: 'system', content: inlineContextSystemPrompt(locale, truncatedContext) })
     }
     messages.push({ role: 'user', content: truncatedPrompt })
 
@@ -63,6 +71,7 @@ router.post('/', apiLimiter, async (req, res) => {
       userId: req.userId,
       sendDelta: () => {},
       role: 'user',
+      locale,
     })
 
     return res.json({ ok: true, text: (finalContent || '').trim() })

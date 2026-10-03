@@ -20,6 +20,18 @@ import {
 import { extractImageHashes, hashImageDataUrl } from '../utils/imageHash.js'
 // 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
 import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
+// 契约 v6：X-UI-Locale → 生成内容的语言（每个会产出自然语言的功能都要注入语言指令）
+import {
+  resolveRequestLocale,
+  summarizeSystemPrompt,
+  similaritySystemPrompt,
+  refactorSystemPrompt,
+  suggestCollectionHint,
+  suggestBatchSystemPrompt,
+  suggestSingleSystemPrompt,
+  suggestBatchUserPrompt,
+  favoriteMarker,
+} from '../utils/aiLocale.js'
 
 const router = Router()
 
@@ -84,11 +96,14 @@ router.post('/chat', apiLimiter, async (req, res) => {
     // 组成：角色提示词 + 产品知识 + 脱敏统计 + 按开关的记忆 + thinking/Agent 增强（见 buildSystemPrompt）。
     // 覆盖是强制性的，前端提示词不再可信。
     const role = req.user.roleKey || 'user'
+    // 契约 v6：界面语言（X-UI-Locale）—— 生成内容跟随语言（英文界面 ⇒ 英文回答）
+    const locale = resolveRequestLocale(req)
     const systemContent = await buildSystemPrompt(req.userId, role, {
       thinking: thinkingEnabled,
       thinkingStrength,
       agentMode: isAgentMode,
       model: providerRow.model,
+      locale,
     })
     // 覆盖 messages 首条（system）；若前端未传 system 消息则插入。
     if (messages[0] && messages[0].role === 'system') {
@@ -332,6 +347,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           abortSignal: upstreamAbort.signal,
           thinkingEnabled,
           thinkingStrength,
+          locale,
         })
       } else {
         // Ask 模式：单代理直答（按角色过滤后的工具集）。
@@ -351,6 +367,7 @@ router.post('/chat', apiLimiter, async (req, res) => {
           maxRounds: 5,
           thinkingEnabled,
           thinkingStrength,
+          locale,
         })
         safeFinish()
       }
@@ -412,10 +429,11 @@ router.post('/summarize', apiLimiter, async (req, res) => {
     const apiKey = decrypt(providerRow.api_key_encrypted)
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
+    const locale = resolveRequestLocale(req)
     const MAX_SUMMARY_INPUT = 4000
     const truncated = content.slice(0, MAX_SUMMARY_INPUT)
     const messages = [
-      { role: 'system', content: '你是一位剪贴板内容摘要助手。请用一句话（不超过 80 字）总结用户提供的文本。只返回摘要文本，不要解释、不要前缀、不要 markdown。' },
+      { role: 'system', content: summarizeSystemPrompt(locale) },
       { role: 'user', content: truncated },
     ]
 
@@ -428,6 +446,7 @@ router.post('/summarize', apiLimiter, async (req, res) => {
       userId: req.userId,
       sendDelta: () => {},
       role: 'user',
+      locale,
     })
 
     return res.json({ summary: (finalContent || '').trim().slice(0, 200) })
@@ -465,21 +484,13 @@ router.post('/similarity', apiLimiter, async (req, res) => {
     const apiKey = decrypt(providerRow.api_key_encrypted)
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
+    const locale = resolveRequestLocale(req)
     const truncated = content.slice(0, 4000)
 
     const messages = [
       {
         role: 'system',
-        content:
-          '你是剪贴板管理助手，负责判断新复制的内容是否与已有剪贴板条目"语义重复"。' +
-          '请以 JSON 数组输出（不要 markdown 代码块、不要多余文字）：\n' +
-          '[{"id": "<候选id>", "reason": "<一句话说明为什么重复>", "degree": "high"|"medium"}]\n' +
-          '判断规则：\n' +
-          '- 语义重复：意思相同或高度相近（包括改写、同义、翻译、内容大段重合），即使文字不完全一样\n' +
-          '- 只输出确实重复的候选；不重复则不输出该条\n' +
-          '- degree: high(基本同一内容) / medium(部分重叠或相关)' +
-          '\n候选条目如下（id: 文本）：\n' +
-          limited.map((c) => `${c.id}: ${c.text}`).join('\n'),
+        content: similaritySystemPrompt(locale, limited.map((c) => `${c.id}: ${c.text}`)),
       },
       { role: 'user', content: truncated },
     ]
@@ -493,6 +504,7 @@ router.post('/similarity', apiLimiter, async (req, res) => {
       userId: req.userId,
       sendDelta: () => {},
       role: 'user',
+      locale,
     })
 
     const raw = (finalContent || '').trim()
@@ -560,6 +572,8 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
     const role = req.user.roleKey || 'user'
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
+    // 契约 v6：界面语言（提示词与 user 消息都要跟着切换；JSON 键名/枚举保持稳定 code）
+    const locale = resolveRequestLocale(req)
 
     // SSE 响应头（与 /chat 一致）
     res.setHeader('Content-Type', 'text/event-stream')
@@ -574,11 +588,7 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
       try { upstreamAbort.abort() } catch { /* ignore */ }
     })
 
-    const refactorSystem =
-      '你是一名「提示词改写助手」。请对用户的草稿做语义化润色与结构化表达，让意图更清晰、语气更专业。' +
-      '约束：①不要凭空新增用户没说过的事实；②不要回答问题本身，只改写提示词；' +
-      '③输出语言与用户输入保持一致；④若草稿很短（<8 字），可以原样返回；' +
-      '⑤只返回改写后的提示词文本，不要任何前缀（"改写后："/"优化后："之类）、不要任何解释、不要包裹 markdown 代码块。'
+    const refactorSystem = refactorSystemPrompt(locale)
     const refactorMessages = [
       { role: 'system', content: refactorSystem },
       { role: 'user', content: content.trim() },
@@ -679,11 +689,11 @@ router.post('/suggest', apiLimiter, async (req, res) => {
   let providerRow = null
   try {
     const { providerId, content, collections = [], items } = req.body || {}
+    // 契约 v6：界面语言（收藏夹提示 / 提示词 / [已收藏] 标记 / user 消息全部跟着切换）
+    const locale = resolveRequestLocale(req)
 
     const collectionNames = Array.isArray(collections) ? collections.filter((x) => typeof x === 'string' && x.trim()).slice(0, 30) : []
-    const collectionHint = collectionNames.length
-      ? `\n现有收藏夹：${collectionNames.join('、')}（若建议分类，请从这些中选择最匹配的）`
-      : ''
+    const collectionHint = suggestCollectionHint(locale, collectionNames)
 
     // === 形态分发 ===
     const isBatch = Array.isArray(items) && items.length > 0
@@ -703,7 +713,6 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
     await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
     const MAX_SUGGEST_INPUT = 4000
-
     // 归一化一条输入（裁剪 / 校验）
     const normalize = (s) => (typeof s === 'string' ? s.slice(0, MAX_SUGGEST_INPUT) : '')
 
@@ -721,37 +730,20 @@ router.post('/suggest', apiLimiter, async (req, res) => {
       }
 
       // 给 AI 一个"索引 → 内容预览 + 已收藏标记"对照表（不传全文，避免拼 prompt 超长）
+      // 契约 v6：预览标签与"已收藏"标记必须与提示词同语言（提示词里引用了 [favorited]/[已收藏]）
+      const favMarkText = favoriteMarker(locale)
+      const previewLabel = locale === 'en' ? 'preview' : '预览'
       const itemListForPrompt = cleanedItems
         .map((it, i) => {
           const preview = (it.content || '').slice(0, 120).replace(/\s+/g, ' ')
-          const favMark = it.isFavorite ? ' [已收藏]' : ''
-          return `[${i}] id=${it.id}${favMark} 预览：${preview}`
+          const favMark = it.isFavorite ? favMarkText : ''
+          return `[${i}] id=${it.id}${favMark} ${previewLabel}：${preview}`
         })
         .join('\n')
 
       messages = [
-        {
-          role: 'system',
-          content:
-            '你是剪贴板管理助手，负责给用户剪贴板中的多条内容分别给出管理建议。' +
-            `本批共 ${cleanedItems.length} 条，编号 0-${cleanedItems.length - 1}。` +
-            '请严格以 JSON 数组输出（不要 markdown 代码块、不要多余文字），顺序与输入对应：\n' +
-            '[{"index": 0, "worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}, ...]\n' +
-            '字段说明：\n' +
-            '- index: 对应输入的编号\n' +
-            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）。**已被标记为 [已收藏] 的条目必须返回 false**。\n' +
-            '- reason: 一句话说明收藏/不收藏的理由\n' +
-            '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
-            '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
-            '- action_reason: 建议动作的一句话理由\n' +
-            '- suggested_tags: **仅在 worth_favorite=true 时推荐 2-5 个简洁标签**；worth_favorite=false 时返回空数组 []。\n' +
-            '允许某条返回 null（表示对该条无法给出建议），但数组长度必须等于输入条数。' +
-            collectionHint,
-        },
-        {
-          role: 'user',
-          content: `请对以下 ${cleanedItems.length} 条剪贴板内容分别给出建议（按编号顺序输出）：\n${itemListForPrompt}`,
-        },
+        { role: 'system', content: suggestBatchSystemPrompt(locale, cleanedItems.length, collectionHint) },
+        { role: 'user', content: suggestBatchUserPrompt(locale, cleanedItems.length, itemListForPrompt) },
       ]
 
       returnShape = {
@@ -773,21 +765,7 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     } else {
       const truncated = normalize(content)
       messages = [
-        {
-          role: 'system',
-          content:
-            '你是剪贴板管理助手，负责给用户剪贴板中的一段内容给出管理建议。' +
-            '请以 JSON 对象输出（不要 markdown 代码块、不要多余文字），格式如下：\n' +
-            '{"worth_favorite": boolean, "reason": string, "suggested_collection": string|null, "action": "keep"|"archive"|"cleanup", "action_reason": string, "suggested_tags": string[]}\n' +
-            '字段说明：\n' +
-            '- worth_favorite: 内容是否值得收藏（重要、常用、可复用、有价值）\n' +
-            '- reason: 一句话说明收藏/不收藏的理由\n' +
-            '- suggested_collection: 若值得收藏，建议归入哪个收藏夹（从提供的收藏夹列表选，没有合适则 null）\n' +
-            '- action: 建议动作 keep(保留) / archive(归档) / cleanup(清理——临时性、一次性、敏感或过期内容）\n' +
-            '- action_reason: 建议动作的一句话理由\n' +
-            '- suggested_tags: 推荐 2-5 个简洁中文标签（用于给该内容打标签，如 工作/代码/网址/密码/灵感 等，避免与内容本身重复的长句）' +
-            collectionHint,
-        },
+        { role: 'system', content: suggestSingleSystemPrompt(locale, collectionHint) },
         { role: 'user', content: truncated },
       ]
 
@@ -806,6 +784,7 @@ router.post('/suggest', apiLimiter, async (req, res) => {
       userId: req.userId,
       sendDelta: () => {},
       role: 'user',
+      locale,
     })
 
     // 容错解析：AI 可能带 markdown 包裹或前后多余文字

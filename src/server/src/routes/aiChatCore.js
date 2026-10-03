@@ -12,6 +12,8 @@
  */
 import { logger } from '../utils/logger.js'
 import { buildUpstreamChat, resolveFamily, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
+// 契约 v6：界面语言（压缩摘要等内部生成内容也跟随语言）
+import { DEFAULT_LOCALE, compressSummarySystemPrompt } from '../utils/aiLocale.js'
 import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
 import { buildThinkingOptions } from '../utils/modelPresets.js'
 import { convertMessagesForAnthropic } from '../utils/messageConverter.js'
@@ -319,7 +321,7 @@ function estimateMessagesTokens(messages) {
  * @returns {{ messages: Array, removed: number, summaryTokens: number, estimatedTokens: number }|null}
  */
 async function compressConversationHistory(messages, opts) {
-  const { providerRow, apiKey, userId, abortSignal, role, conversationId } = opts
+  const { providerRow, apiKey, userId, abortSignal, role, conversationId, locale } = opts
   const systemIdx = messages.findIndex((m) => m.role === 'system')
   const systemMsg = systemIdx >= 0 ? messages[systemIdx] : null
   const rest = systemIdx >= 0 ? messages.slice(systemIdx + 1) : messages.slice()
@@ -344,7 +346,9 @@ async function compressConversationHistory(messages, opts) {
     })
     .join('\n\n')
 
-  const summarySystem = '你是一个对话历史压缩器。请把给定的较早对话记录压缩为一份极简的中文结构化摘要，只保留关键事实、用户意图、已完成的操作、重要结论与待办，删除寒暄与冗余。用要点列表输出，不超过 500 字。只输出摘要正文，不要任何前缀或解释。'
+  // 契约 v6：压缩摘要也是"模型生成的自然语言"，跟着界面语言走（否则英文界面下会把中文摘要
+  // 作为历史上下文继续喂给模型，造成语言串味）
+  const summarySystem = compressSummarySystemPrompt(locale)
   let summary = ''
   try {
     const r = await runChatLoop({
@@ -431,6 +435,7 @@ export async function runChatLoop({
   thinkingStrength = 'medium',
   allowCompress = true,
   conversationId = null,
+  locale = DEFAULT_LOCALE,
 }) {
   // 协议族：custom 供应商按 api_format 决定（openai/anthropic/responses），预设走内置 family。
   // 后续 buildUpstreamChat 用同一口径决定请求结构，这里决定用哪个流式解析器与 thinking 参数。
@@ -544,7 +549,7 @@ export async function runChatLoop({
         const snapshot = currentMessages.map((m) => ({ ...m, tool_calls: m.tool_calls ? [...m.tool_calls] : m.tool_calls }))
         // 后台执行：不 await，任务继续流式输出
         compressConversationHistory(snapshot, {
-          providerRow, apiKey, userId, abortSignal, role, conversationId,
+          providerRow, apiKey, userId, abortSignal, role, conversationId, locale,
         })
           .then((res) => {
             compressInFlight = false
