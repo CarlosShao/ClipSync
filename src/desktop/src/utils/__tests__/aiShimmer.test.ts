@@ -119,27 +119,29 @@ describe('「AI 正在工作」占位文字流光', () => {
     s.unmount()
   })
 
-  it('③ 同频：解析点阵源码重算周期，断言流光常量相等（防两侧各改各的）', () => {
-    // 点阵：PATTERNS.ripple[3] 的 loop / scale + step 默认值
+    it('流光与点阵**刻意解耦**：用常规扫光速度，不吃点阵的 648ms', () => {
+    // 点阵周期仍可算出（仅作对照），但流光周期必须**不等于**它，且在常规扫光区间内
     const latticeSrc = readSrc('components/fx/FxLatticeLoader.vue')
     const ripple = latticeSrc.match(/ripple:\s*\{\s*3:\s*\{[^}]*loop:\s*([\d.]+),\s*scale:\s*([\d.]+)/)
-    expect(ripple, '未能从 FxLatticeLoader 解析出 ripple/3 的 loop 与 scale').toBeTruthy()
     const step = latticeSrc.match(/step:\s*(\d+),/)
-    expect(step, '未能解析 step 默认值').toBeTruthy()
-    const ease = latticeSrc.match(/--fxl-ease-in-out':\s*'([^']+)'/)
-    expect(ease, '未能解析 --fxl-ease-in-out').toBeTruthy()
+    if (ripple && step) {
+      const latticeCycle = Math.round(Number(ripple[1]) * Number(step[1]) * Number(ripple[2]))
+      expect(SHIMMER_CYCLE_MS, '流光周期不应再与点阵同频（用户实测点阵太快会看成字在闪）').not.toBe(latticeCycle)
+    }
+    expect(SHIMMER_CYCLE_MS, '流光应是常规扫光速度：1.2s~2.6s 一轮').toBeGreaterThanOrEqual(1200)
+    expect(SHIMMER_CYCLE_MS).toBeLessThanOrEqual(2600)
+  })
 
-    const parsedCycle = Math.round(Number(ripple![1]) * Number(step![1]) * Number(ripple![2]))
-    expect(parsedCycle, '流光周期必须等于点阵整轮周期（同频）').toBe(SHIMMER_CYCLE_MS)
-    expect(ease![1]).toBe(LATTICE_EASE)
-    expect(SHIMMER_EASE).toBe(LATTICE_EASE)
-
-    // 用点阵的那张卡确实是 ripple / grid=3（否则上面按 ripple 算的周期就不成立）
-    const cardSrc = readSrc('components/ai/InlineAiCard.vue')
-    expect(cardSrc).toContain('pattern="ripple"')
-    expect(cardSrc).toContain(':grid="3"')
-    // 且卡里没有覆盖 step（用点阵默认 90）
-    expect(cardSrc).not.toContain(':step=')
+  it('文字内容必须**原样渲染**（本次真实缺陷：模板漏了插值，渲染出字面量 "props.text }}" ⇒ 字在闪）', () => {
+    const host = document.createElement('div')
+    const app = createApp({ render: () => h(ShimmerText, { text: 'Working…' }) })
+    app.mount(host)
+    const el = host.querySelector<HTMLElement>('[data-shimmer-text]')
+    expect(el, '应渲染 shimmer span').toBeTruthy()
+    expect(el!.textContent, '渲染内容必须等于传入的 text，不能出现模板字面量').toBe('Working…')
+    expect(el!.textContent, '不应出现未插值的模板残留').not.toContain('props.text')
+    expect(el!.textContent).not.toContain('}}')
+    app.unmount()
   })
 
   it('④ 流光不使用常驻 will-change / animation-fill-mode（黑屏事故的防线）', () => {
