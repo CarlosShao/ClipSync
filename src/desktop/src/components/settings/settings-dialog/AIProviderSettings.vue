@@ -28,6 +28,7 @@ import { aiFailureFrom, describeAiFailure, hasAiFailureMapping, SERVER_MESSAGE_F
 import AIModelSettingsPanel from './AIModelSettingsPanel.vue'
 import {
   BATCH_MAX_ITEMS,
+  putModelSetting,
   putModelSettingsBatch,
   type ModelSettingBatchItem,
   type ModelSettingPatch,
@@ -80,8 +81,20 @@ const formProvider = ref('')
 const formName = ref('')
 const formApiKey = ref('')
 const formBaseUrl = ref('')
-// 该配置已启用的模型：由模型库面板的单排胶囊（enabled）驱动；面板变更后会同步回来，
-// 保存供应商时作为 models 数组落库（与服务端 enabled → selected_models 的一致性由此保证）
+/**
+ * ⚠️ 两个完全不同的概念，别再混用（本轮缺陷的根因就是把它们当成了同一个字段）：
+ *   1) **候选清单**（formCandidates）= ai_providers.models：上游刷新出「有哪些模型」（如 169 个）。
+ *      它**只**表示候选，**不代表用户选中了哪些**；刷新只更新它。
+ *   2) **选中 / 已启用**（savedEnabledModels；草稿态用 formSelectedModels）= 服务端
+ *      GET /api/ai/model-settings 的 enabled（唯一事实来源；后端语义：配置行 → selected_models
+ *      → 默认 false）。保存时由 v4 PUT /batch 写 enabled 落库，**不再**把选中集合写进 models。
+ */
+const formCandidates = ref<string[]>([])
+/** 主模型（ai_providers.model）：编辑时保持原值，新建时取第一个选中的模型 */
+const formPrimaryModel = ref('')
+/** 已保存态「已启用」的镜像（来自模型库面板 = 服务端 enabled）：**仅用于计数展示**，不参与保存 */
+const savedEnabledModels = ref<string[]>([])
+/** 草稿态（新增供应商）的选中集合：只服务草稿流程（勾选即出概要行 + 保存时 batch 写 enabled） */
 const formSelectedModels = ref<string[]>([])
 const formIsDefault = ref(false)
 // 上下文窗口用字符串承载（兼容 type=number 的 Input v-model），提交时再转 number
@@ -90,6 +103,8 @@ const formContextWindow = ref<string>('')
 const formApiFormat = ref<AiApiFormat>('openai')
 const saving = ref(false)
 const refreshingModels = ref(false)
+// 已保存态「手工添加模型」在途（该操作会真的写 enabled=true）
+const addingModel = ref(false)
 // 刷新模型列表的**持久**结果（就近显示在按钮下方）：用户实测反馈"toast 弹了已刷新，但一个模型都
 // 没刷出来" —— toast 一闪而过不足以让人发现失败。三态互不混淆：success / empty（上游合法返回 0 个，
 // 按 warning 处理，绝不显示"已刷新"）/ error（失败原因可就地看到 + 重试）。
@@ -348,6 +363,9 @@ function resetForm() {
   formApiKey.value = ''
   formBaseUrl.value = ''
   formSelectedModels.value = []
+  formCandidates.value = []
+  formPrimaryModel.value = ''
+  savedEnabledModels.value = []
   formManualModel.value = ''
   modelRefreshSeq.value = 0
   // 草稿态刷新结果一并清空：取消后再开「添加供应商」是干净表单，不会带着上一次的候选/计数
@@ -371,7 +389,16 @@ function startEdit(p: AiProvider) {
   formName.value = p.name
   formApiKey.value = '' // 不回显密钥；留空表示不修改
   formBaseUrl.value = p.base_url || ''
-  formSelectedModels.value = Array.isArray(p.models) && p.models.length > 0 ? [...p.models] : [p.model]
+  // 候选清单（上游有哪些模型）——**绝不再**把它当成「选中集合」：老代码 formSelectedModels = p.models
+  // 正是本轮错乱的根因（刷新把 models 覆盖成 169 个之后，再进编辑就变成「全选」）
+  formCandidates.value = Array.isArray(p.models) ? [...p.models] : []
+  formPrimaryModel.value = p.model || ''
+  savedEnabledModels.value = []
+  // 已保存流程的「选中」一律以服务端 enabled 为准，草稿选中集合在这里不使用
+  formSelectedModels.value = []
+  formCandidates.value = []
+  formPrimaryModel.value = ''
+  savedEnabledModels.value = []
   formManualModel.value = ''
   modelRefreshSeq.value = 0
   // 草稿候选/计数退场：改由模型库面板按 providerId 接管
@@ -384,19 +411,47 @@ function startEdit(p: AiProvider) {
   formError.value = ''
 }
 
-/** 手工添加模型名：加入启用集合（面板会立刻渲染该行；服务端下次读取也会把它纳入候选） */
-function addManualModel() {
+/**
+ * 手工添加模型名：
+ * · 草稿态 → 加进草稿选中集合（保存时由 PUT /batch 写 enabled）；
+ * · 已保存态 → 直接 PUT enabled=true（选中由服务端 enabled 落库，**不再**往 models 里塞）。
+ */
+async function addManualModel() {
   const m = formManualModel.value.trim()
   if (!m) return
-  if (!formSelectedModels.value.includes(m)) {
-    formSelectedModels.value = [...formSelectedModels.value, m]
+  if (!editingId.value) {
+    if (!formSelectedModels.value.includes(m)) formSelectedModels.value = [...formSelectedModels.value, m]
+    formManualModel.value = ''
+    return
   }
-  formManualModel.value = ''
+  if (savedEnabledModels.value.includes(m)) {
+    formManualModel.value = ''
+    return
+  }
+  addingModel.value = true
+  try {
+    const res = await putModelSetting(editingId.value, m, { enabled: true })
+    if (res.ok) {
+      formManualModel.value = ''
+      toast.show(tf('ai_model_add_enabled', '已启用 {name}', { name: m }), 'success')
+      // 重新拉取：该模型会以 enabled=true 出现在候选与列表里
+      modelRefreshSeq.value += 1
+    } else {
+      toast.show(providerErrorText(res, t('ai_model_add_failed', '添加模型失败')), 'error')
+    }
+  } catch (e) {
+    toast.show((e as Error)?.message || String(e), 'error')
+  } finally {
+    addingModel.value = false
+  }
 }
 
-/** 模型库面板回传的启用集合：同步进供应商表单，保证保存时 models 与胶囊的真实状态一致 */
+/**
+ * 模型库面板回传的「已启用」集合（= 服务端 enabled）。**只用于计数展示**：
+ * 它**不是** ai_providers.models（候选清单），保存时也不会被写进 models。
+ */
 function onEnabledModelsChange(list: string[]) {
-  formSelectedModels.value = [...list]
+  savedEnabledModels.value = [...list]
 }
 
 /** 草稿行「移除」：从已选集合里去掉该模型（草稿里改过的值仍留在 patch 里，勾回来即恢复） */
@@ -438,7 +493,9 @@ const draftBrokenText = computed(() =>
  * 上游数用**刷新返回的数量**，与芯片渲染同一个 list —— 不会再出现两个互相矛盾的数。
  */
 const modelsCountText = computed(() => {
-  const selected = tf('ai_models_selected_count', '已启用 {n} 个模型', { n: formSelectedModels.value.length })
+  // 已保存态的「已启用」= 服务端 enabled（面板回传的镜像）；草稿态 = 草稿里勾选的模型
+  const n = editingId.value ? savedEnabledModels.value.length : formSelectedModels.value.length
+  const selected = tf('ai_models_selected_count', '已启用 {n} 个模型', { n })
   if (lastRefreshCount.value === null) return selected
   return tf('ai_models_upstream_count', '上游 {n} 个', { n: lastRefreshCount.value }) + ' · ' + selected
 })
@@ -583,7 +640,10 @@ async function refreshModels() {
     // 计数用刷新真正返回的数量（与芯片渲染同一个 list）：失败/形状异常时不清它
     lastRefreshCount.value = list.length
     if (editingId.value) {
-      // 已保存供应商：列表已落库，模型库面板重新拉取即可（草稿候选区退场）
+      // 已保存供应商：刷新**只更新候选清单**（服务端已把它写进 ai_providers.models）——
+      // 绝不动 enabled / selected_models / 模型配置；面板随后重新拉一次 model-settings，
+      // 于是高亮与下方列表保持刷新前的状态（候选芯片变成 169 个，其中原来那几个仍然高亮）。
+      formCandidates.value = [...list]
       draftCandidates.value = []
       modelRefreshSeq.value += 1
     } else {
@@ -623,12 +683,17 @@ async function refreshModels() {
     refreshingModels.value = false
   }
 }
-/** 草稿态真正改过的模型配置（只含非空 patch；未改的模型/字段一个都不出现） */
+/**
+ * 草稿态保存时要落库的模型配置（PUT /batch）：
+ *   · 「勾选」= 用户要启用它 ⇒ 每个勾选的模型都写 enabled:true（选中由**服务端 enabled** 承载，
+ *     不再像老代码那样塞进 ai_providers.models）；
+ *   · 另外只带上真正改过的字段（未改的字段不出现，避免把预设物化成「已自定义」）；
+ *   · 未勾选的模型一个都不发（它们本来就不启用）。
+ */
 function buildDraftBatchItems(): ModelSettingBatchItem[] {
   const out: ModelSettingBatchItem[] = []
   for (const m of formSelectedModels.value) {
-    const patch = draftModelPatches.value[m]
-    if (patch && Object.keys(patch).length > 0) out.push({ model: m, patch })
+    out.push({ model: m, patch: { ...(draftModelPatches.value[m] ?? {}), enabled: true } })
   }
   return out
 }
@@ -698,26 +763,39 @@ async function save() {
     formError.value = t('ai_name_required')
     return
   }
-  if (formSelectedModels.value.length === 0) {
+  // 新建必须有主模型（第一个选中的）；编辑不要求选中（选中由服务端 enabled 独立维护）
+  const isCreate = !editingId.value
+  if (isCreate && formSelectedModels.value.length === 0) {
     formError.value = t('ai_model_required')
     return
   }
   saving.value = true
   try {
+    // ⚠️ model / models 的语义（别再混用，这是上一轮错乱的根因）：
+    //   · model  = 主模型：新建取第一个选中的；编辑保持原主模型（不因候选清单变化而被改掉）。
+    //   · models = **候选清单**（上游刷新出的全部模型）：新建用草稿刷新结果（没有就只放主模型），
+    //              编辑保持原候选清单。**绝不**把选中集合写进 models —— 选中由服务端 enabled 承载
+    //              （草稿里勾选的会在下面用 PUT /batch 落库）。
+    const primary = isCreate
+      ? formSelectedModels.value[0]
+      : formPrimaryModel.value || formCandidates.value[0] || ''
+    const candidates = isCreate
+      ? draftCandidates.value.length > 0
+        ? [...draftCandidates.value]
+        : [primary]
+      : [...formCandidates.value]
     const payload = {
       provider: formProvider.value,
       name: formName.value.trim(),
       apiKey: formApiKey.value || undefined,
       baseUrl: formBaseUrl.value.trim() || undefined,
-      model: formSelectedModels.value[0],
-      models: formSelectedModels.value,
+      model: primary,
+      models: candidates,
       isDefault: formIsDefault.value,
       contextWindow: formContextWindow.value ? Number(formContextWindow.value) : null,
       apiFormat: isCustom.value ? formApiFormat.value : undefined,
     }
-    const res = editingId.value
-      ? await updateProvider(editingId.value, payload)
-      : await createProvider(payload)
+    const res = isCreate ? await createProvider(payload) : await updateProvider(editingId.value as string, payload)
     if (res.ok) {
       toast.show(t('ai_saved'), 'success')
       // 通知 AI 侧边栏等其他消费方刷新 provider 列表
@@ -958,7 +1036,7 @@ onMounted(() => {
               size="sm"
               variant="outline"
               class="shrink-0 whitespace-nowrap"
-              :disabled="!formManualModel.trim()"
+              :disabled="!formManualModel.trim() || addingModel"
               @click="addManualModel"
             >
               {{ t('ai_model_add', '添加') }}
@@ -1040,7 +1118,7 @@ onMounted(() => {
           <AIModelSettingsPanel
             v-if="editingId"
             :provider-id="editingId"
-            :models="formSelectedModels"
+            :models="savedEnabledModels"
             :refresh-seq="modelRefreshSeq"
             @update:enabled-models="onEnabledModelsChange"
           />

@@ -159,7 +159,12 @@ function installLiveApi(live: Raw[], opts: { batchFails?: boolean } = {}) {
       const out: Raw[] = []
       for (const it of items) {
         const idx = live.findIndex((x) => x.model === it.model)
-        if (idx < 0) continue
+        if (idx < 0) {
+          const created: Raw = { ...chatOn({ model: it.model, enabled: false }), ...it.patch }
+          live.push(created)
+          out.push(created)
+          continue
+        }
         const merged: Raw = { ...live[idx] }
         for (const [k, v] of Object.entries(it.patch)) {
           if (v !== null) merged[k] = v
@@ -172,7 +177,13 @@ function installLiveApi(live: Raw[], opts: { batchFails?: boolean } = {}) {
     }
     if (method === 'PUT' && p === '/api/ai/model-settings') {
       const idx = live.findIndex((x) => x.model === body.model)
-      if (idx < 0) return { ok: true, status: 200, data: { ok: true, item: { model: body.model } } }
+      if (idx < 0) {
+        // 单条 PUT 一个未收录的模型 = 服务端会写一行覆盖 ⇒ 下次 GET 它就在候选里了
+        const created: Raw = { ...chatOn({ model: String(body.model), enabled: false }), ...(body.patch ?? {}) }
+        created.isOverridden = true
+        live.push(created)
+        return { ok: true, status: 200, data: { ok: true, item: created } }
+      }
       const merged: Raw = { ...live[idx], ...(body.patch ?? {}) }
       merged.isOverridden = true
       live[idx] = merged
@@ -718,12 +729,11 @@ describe('模型库 — 停用即逻辑删（软删）语义', () => {
     chip('gpt-4o-mini')!.click() // 停用
     await flush()
     expect(putBodies()).toEqual([{ providerId: PROVIDER_ID, model: 'gpt-4o-mini', patch: { enabled: false } }])
-    // 配置与自定义值仍在：别名、自定义上下文、来源标记一个都没少
+    // 配置与自定义值仍在：别名还在胶囊上；列表行按"已启用"过滤，停用后不在列表里（这不是删除）
     expect(chip('gpt-4o-mini')!.textContent).toContain('小快灵')
-    expect(row('gpt-4o-mini')!.textContent).toContain('128000')
-    expect(row('gpt-4o-mini')!.textContent).toContain(t('ai_model_cfg_badge_overridden'))
+    expect(row('gpt-4o-mini')).toBeNull()
 
-    // 再点一下 = 恢复启用（不是"重新添加"）
+    // 再点一下 = 恢复启用（不是"重新添加"）：行回来，别名/自定义上下文/来源标记一个都没少
     chip('gpt-4o-mini')!.click()
     await flush()
     expect(putBodies()[1]).toEqual({
@@ -732,6 +742,8 @@ describe('模型库 — 停用即逻辑删（软删）语义', () => {
       patch: { enabled: true },
     })
     expect(chipOn('gpt-4o-mini')).toBe(true)
+    expect(row('gpt-4o-mini')!.textContent).toContain('128000')
+    expect(row('gpt-4o-mini')!.textContent).toContain(t('ai_model_cfg_badge_overridden'))
 
     // 停用按钮的 tooltip 明确"不会删除配置"，UI 不存在任何删除暗示
     expect(rowAction('gpt-4o-mini', 'toggle')!.getAttribute('title')).toBe(t('ai_model_disable'))
@@ -741,7 +753,7 @@ describe('模型库 — 停用即逻辑删（软删）语义', () => {
   })
 
   it('⑬ 行内「清除自定义值」：没有自定义时禁用；点击只清能力参数（不含启用/别名/排序）', async () => {
-    const m = mountPanel({ items: [chatOn({ isOverridden: false }), chatOff({ isOverridden: true })] })
+    const m = mountPanel({ items: [chatOn({ isOverridden: false }), chatOff({ isOverridden: true, enabled: true })] })
     await flush()
 
     expect(rowAction('gpt-4o-mini', 'clear')!.disabled).toBe(true)
@@ -1417,13 +1429,13 @@ describe('AIProviderSettings — 草稿态刷新成功后模型可见（本轮�
     m.unmount()
   })
 
-  it('㉝ 草稿态保存成功 → 选中集合写进 models、表单切成编辑态、自动拉取并渲染模型库（无缝接管）', async () => {
+  it('㉝ 草稿态保存成功 → models 写**候选清单**、选中由 PUT /batch 写 enabled、表单切成编辑态（无缝接管）', async () => {
     const NEW_ID = 'feedface-0000-1111-2222-333344445555'
     const models = ['local-1', 'local-2', 'local-3']
     mocks.createProvider.mockResolvedValue({
       ok: true,
       status: 200,
-      data: { ...PROVIDER, id: NEW_ID, models: ['local-2'] },
+      data: { ...PROVIDER, id: NEW_ID, models },
     })
     const m = await mountDraftAndRefresh(models)
 
@@ -1434,20 +1446,27 @@ describe('AIProviderSettings — 草稿态刷新成功后模型可见（本轮�
     await flush()
     expect(draftChips()[1].classList.contains('on')).toBe(true)
 
+    // 保存前把"服务端视角"准备好：候选 3 个，其中 local-2 已被 batch 启用
+    installLiveApi(models.map((mm) => chatOn({ model: mm, enabled: mm === 'local-2' })))
+
     buttonByLabel(t('ai_save')).click()
     await flush(8)
 
-    // ① 草稿态的选中集合写进 models 落库
+    // ① models = **候选清单**（不再把"选中集合"写进 models）；model = 主模型（第一个选中的）
     expect(mocks.createProvider).toHaveBeenCalledTimes(1)
-    const payload = mocks.createProvider.mock.calls[0][0] as { models: string[]; name: string }
+    const payload = mocks.createProvider.mock.calls[0][0] as { models: string[]; model: string; name: string }
     expect(payload.name).toBe('Local GW')
-    expect(payload.models).toEqual(['local-2'])
+    expect(payload.models).toEqual(models)
+    expect(payload.model).toBe('local-2')
+    // ② 选中由 enabled 落库：PUT /batch 只带勾选的那个
+    expect(batchPayloads()).toHaveLength(1)
+    expect(batchPayloads()[0].items).toEqual([{ model: 'local-2', patch: { enabled: true } }])
 
-    // ② 保存成功后自动重新拉取 model-settings，模型库无缝接管（草稿候选区退场）
+    // ③ 保存成功后自动重新拉取 model-settings，模型库无缝接管（草稿候选区退场）
     expect(modelSettingCalls().filter((c) => c[0] === 'GET')).toHaveLength(1)
-    expect(document.querySelectorAll('.aim-chip').length).toBeGreaterThan(0)
+    expect(chipOn('local-2')).toBe(true)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(1) // 列表只列已启用的那个
     expect(draftChips()).toHaveLength(0)
-    expect(document.querySelector('.aim-row[data-model="gpt-4o-mini"]')).toBeTruthy()
     // 表单仍在（切到编辑态），模型库就在原位
     expect(document.querySelector('.ai-form')).toBeTruthy()
 
@@ -1732,9 +1751,12 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     const batches = batchCalls()
     expect(batches).toHaveLength(1)
     expect(batches[0].providerId).toBe(NEW_ID)
-    expect(batches[0].items).toEqual([{ model: 'm-2', patch: { contextWindow: 128000, supportsImage: false } }])
-    // 未改动的 m-1 / 未勾选的 m-3 都不出现（否则会把预设物化成"已自定义"）
-    expect(batches[0].items.some((i) => i.model === 'm-1')).toBe(false)
+    // 勾选 = 要启用 ⇒ 每个勾选的模型都带 enabled:true；另外只带**改过**的字段
+    expect(batches[0].items).toEqual([
+      { model: 'm-1', patch: { enabled: true } },
+      { model: 'm-2', patch: { contextWindow: 128000, supportsImage: false, enabled: true } },
+    ])
+    // 未勾选的 m-3 不出现（它本来就不启用）
     expect(batches[0].items.some((i) => i.model === 'm-3')).toBe(false)
 
     m.unmount()
@@ -2081,6 +2103,167 @@ describe('AIProviderSettings — 刷新零写入 + 批量启用/停用', () => {
     // 重新拉取：GET 次数 +1，且界面回到"库里真实的 5 个已启用"
     expect(modelSettingCalls().filter((c) => c[0] === 'GET').length).toBe(getsBefore + 1)
     expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(5)
+
+    m.unmount()
+  })
+
+  /* ---------- 单一事实来源（enabled）：候选清单 ≠ 选中（本轮逻辑缺陷回归） ---------- */
+
+  const SELECTED = ['sel-1', 'sel-2', 'sel-3', 'sel-4']
+  /** 上游返回的 169 个候选：包含已选的 4 个 + 165 个新模型 */
+  const UPSTREAM = [...SELECTED, ...Array.from({ length: 165 }, (_, i) => `up-${i + 1}`)]
+
+  function installSavedScenario() {
+    // 刷新前：候选清单只有已选的 4 个（GET 也只返回这 4 个，且 enabled=true）
+    const live: Raw[] = SELECTED.map((mm) => chatOn({ model: mm, enabled: true }))
+    installLiveApi(live)
+    mocks.getProviders.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [{ ...PROVIDER, models: [...SELECTED] }], count: 1 },
+    })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    // 刷新把上游 169 个写进 ai_providers.models；新增的 165 个没有配置行 ⇒ enabled=false
+    mocks.getProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { models: UPSTREAM, count: 169, upstreamEmpty: false, added: 165, previousCount: 4 },
+    })
+    return live
+  }
+
+  it('① 核心回归：已保存供应商（enabled=4）刷新出 169 个候选 ⇒ 高亮 4、列表 4 行、零写请求、候选 169', async () => {
+    const live = installSavedScenario()
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+
+    // 刷新前：4 个高亮、4 行
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(4)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(4)
+
+    // 服务端把 169 个候选写进 ai_providers.models（新增的默认未启用）
+    live.push(...UPSTREAM.filter((mm) => !SELECTED.includes(mm)).map((mm) => chatOn({ model: mm, enabled: false })))
+    mocks.api.mockClear()
+    refreshBtn().click()
+    await flush(8)
+
+    // ★ 候选变成 169 个，但"选中"必须还是那 4 个；列表也只列这 4 个
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(169)
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(4)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(4)
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 4 }))
+    // 刷新只更新候选清单：零写请求
+    expect(writeCalls()).toEqual([])
+
+    m.unmount()
+  })
+
+  it('② 再进编辑（候选清单已是 169）⇒ 选中仍恰好 4 个、列表 4 行（不得从候选推断选中）', async () => {
+    const live = installSavedScenario()
+    // 模拟"刷新过之后再进编辑"：候选清单已是 169，enabled 仍只有那 4 个
+    live.push(...UPSTREAM.filter((mm) => !SELECTED.includes(mm)).map((mm) => chatOn({ model: mm, enabled: false })))
+    mocks.getProviders.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [{ ...PROVIDER, models: UPSTREAM }], count: 1 },
+    })
+
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+
+    // 老逻辑在这里会把 formSelectedModels = p.models（169 个）⇒ 列表 169 行、全标未启用
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(4)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(4)
+    expect(text()).toContain(tf('ai_models_selected_count', 'x', { n: 4 }))
+
+    // 取消（关表单）后再进编辑，结果必须一样
+    buttonByLabel(t('cancel_btn', '取消')).click()
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(4)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(4)
+
+    m.unmount()
+  })
+
+  it('③ 取消勾选 1 个 ⇒ 只剩 3 个高亮 + 3 行，并把该模型 enabled=false 写库', async () => {
+    installSavedScenario()
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(4)
+
+    chip('sel-2')!.click()
+    await flush(8)
+
+    expect(putBodies()).toEqual([{ providerId: PROVIDER_ID, model: 'sel-2', patch: { enabled: false } }])
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(3)
+    expect(document.querySelectorAll('.aim-row')).toHaveLength(3)
+
+    m.unmount()
+  })
+
+  it('④ 刷新前后 enabled 集合逐项相等（刷新绝不动选中）', async () => {
+    const live = installSavedScenario()
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+
+    const enabledBefore = Array.from(document.querySelectorAll<HTMLElement>('.aim-chip--on')).map(
+      (el) => el.dataset.model,
+    )
+    expect(enabledBefore).toEqual([...SELECTED])
+
+    live.push(...UPSTREAM.filter((mm) => !SELECTED.includes(mm)).map((mm) => chatOn({ model: mm, enabled: false })))
+    refreshBtn().click()
+    await flush(8)
+
+    const enabledAfter = Array.from(document.querySelectorAll<HTMLElement>('.aim-chip--on')).map(
+      (el) => el.dataset.model,
+    )
+    expect(enabledAfter).toEqual(enabledBefore)
+    // 服务端侧也没被碰过：没有任何写请求
+    expect(writeCalls()).toEqual([])
+
+    m.unmount()
+  })
+
+  it('⑤ 已保存态手工添加模型 ⇒ 直接 PUT enabled=true（选中由服务端落库），随后重新拉取出现', async () => {
+    const live: Raw[] = [chatOn({ model: 'sel-1', enabled: true })]
+    installLiveApi(live)
+    mocks.getProviders.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [{ ...PROVIDER, models: ['sel-1'] }], count: 1 },
+    })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+
+    const manualInput = Array.from(document.querySelectorAll<HTMLInputElement>('input')).find(
+      (el) => el.placeholder === t('ai_model_ph'),
+    )!
+    await setValue(manualInput, 'manual-1')
+    buttonByLabel(t('ai_model_add')).click()
+    await flush(8)
+
+    expect(putBodies()).toEqual([{ providerId: PROVIDER_ID, model: 'manual-1', patch: { enabled: true } }])
+    // 重新拉取后它以"已启用"出现（列表也列出来）
+    expect(chipOn('manual-1')).toBe(true)
+    expect(document.querySelector('.aim-row[data-model="manual-1"]')).toBeTruthy()
+    expect(document.querySelectorAll('.aim-chip--on')).toHaveLength(2)
 
     m.unmount()
   })

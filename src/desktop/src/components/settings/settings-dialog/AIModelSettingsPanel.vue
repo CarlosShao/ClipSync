@@ -84,7 +84,11 @@ import {
 const props = defineProps<{
   /** 已保存的供应商 id（uuid）；草稿态没有 id（此时走 draft-mode） */
   providerId?: string
-  /** 父组件当前的已选模型（服务端未下发 enabled 时的兜底 + 手工添加的模型） */
+  /**
+   * 已启用集合的**镜像**（父组件保存的 `models` 字段 / 面板 emit 的结果）。
+   * 仅用于 `syncEnabledToParent()` 判重，**不参与任何"选中"判定** —— 选中只认服务端 `enabled`
+   * （`ai_providers.models` 是"上游有哪些模型"的候选清单，不代表用户选了哪些）。
+   */
   models?: string[]
   /** 父组件每次刷新模型列表成功后 +1：面板据此重新拉取并给出一次性智能建议 */
   refreshSeq?: number
@@ -446,17 +450,17 @@ const itemMap = computed(() => {
   return map
 })
 
-/** 服务端条目 ∪ 父组件已选（手工添加 / GET 尚未返回的模型）；有 sortOrder 的按它排序（稳定） */
-const allItems = computed<ModelSettingItem[]>(() => {
-  const list = [...items.value]
-  const seen = new Set(list.map((i) => i.model))
-  for (const m of props.models ?? []) {
-    if (!seen.has(m)) {
-      list.push(defaultModelSetting(m))
-      seen.add(m)
-    }
-  }
-  return list
+/**
+ * 候选清单 = **服务端** GET /api/ai/model-settings 的 items。
+ * 服务端的候选集合 = provider.model + ai_providers.models（刷新结果）+ selected_models + 已有覆盖行，
+ * 每项自带 `enabled`（唯一事实来源）。
+ *
+ * ⚠️ 这里**绝不**再把父组件的 `models` 并进来当"选中"：`ai_providers.models` 是"上游有哪些模型"的
+ * **候选清单**，与"用户选了哪些"（enabled）是两件事 —— 之前混为一谈，导致"刷新 169 个之后列表变成
+ * 169 行、且一个都不高亮"的错乱（本轮修复的根因）。
+ */
+const allItems = computed<ModelSettingItem[]>(() =>
+  [...items.value]
     .map((item, idx) => ({ item, idx }))
     .sort((a, b) => {
       const av = a.item.sortOrder
@@ -466,8 +470,8 @@ const allItems = computed<ModelSettingItem[]>(() => {
       if (bv == null) return -1
       return av === bv ? a.idx - b.idx : av - bv
     })
-    .map((x) => x.item)
-})
+    .map((x) => x.item),
+)
 
 function isEnabled(item: ModelSettingItem): boolean {
   const ov = enabledOverrides.value[item.model]
@@ -494,6 +498,13 @@ const filteredItems = computed(() => {
 })
 const chatItems = computed(() => filteredItems.value.filter(isChatApplicable))
 const nonChatItems = computed(() => filteredItems.value.filter((it) => !isChatApplicable(it)))
+/**
+ * **列表行**只列"已启用"的模型（与芯片高亮同一份 enabled 集合）：
+ * 停用/候选模型不进列表，避免"刷新出 169 个候选 ⇒ 列表突然变成 169 行且全标未启用"的错乱。
+ * 候选仍然可以在上面的芯片区看到并一键启用（点胶囊 = 写 enabled=true）。
+ */
+const enabledChatItems = computed(() => chatItems.value.filter(isEnabled))
+const enabledNonChatItems = computed(() => nonChatItems.value.filter(isEnabled))
 const nonChatAllCount = computed(() => allItems.value.filter((it) => !isChatApplicable(it)).length)
 /** 非对话组：手动展开 or 正在搜索（搜索结果不能被折叠吞掉） */
 const nonChatExpanded = computed(() => nonChatOpen.value || searchActive.value)
@@ -1840,10 +1851,10 @@ watch(
             }}</span>
           </div>
 
-          <!-- 对话模型行：图标化操作 -->
+          <!-- 对话模型行：只列**已启用**的（与芯片高亮同一份 enabled 集合）；图标化操作 -->
           <div class="aim-rows">
             <div
-              v-for="it in chatItems"
+              v-for="it in enabledChatItems"
               :key="`row-${it.model}`"
               class="aim-row"
               :data-model="it.model"
@@ -2013,7 +2024,7 @@ watch(
             </div>
             <div class="aim-rows">
               <div
-                v-for="it in nonChatItems"
+                v-for="it in enabledNonChatItems"
                 :key="`row-${it.model}`"
                 class="aim-row"
                 :data-model="it.model"
