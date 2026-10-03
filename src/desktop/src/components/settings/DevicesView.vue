@@ -15,6 +15,8 @@ import { Monitor, Smartphone, Globe, Trash2, QrCode, Plus, AlertTriangle, Refres
 import Button from '@/components/ui/button/Button.vue'
 import { useSyncLog } from '@/composables/useSyncLog'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+// 页内小功能提示词按界面语言取（zh/en 双份一处维护 + 末尾语言要求）——见 utils/inlinePrompts.ts
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { e2ePublicKey } from '@/utils/e2eCrypto'
@@ -79,10 +81,7 @@ function buildDiagContext(): string {
 
 function runDiagnose() {
   showDiag.value = true
-  diagAi.run(
-    '你是剪贴板同步链路的诊断助手。请根据以下设备与同步流水信息，判断当前同步链路是否健康（设备在线情况、最近收发是否正常、有无长期未同步的迹象），输出：1) 健康度结论；2) 异常点（如有）；3) 排查与改进建议清单。中文输出。',
-    buildDiagContext(),
-  )
+  diagAi.run(inlinePromptFor('diagnose'), buildDiagContext())
 }
 
 function aiDiagnose() {

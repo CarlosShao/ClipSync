@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useClipboard, type ClipItem } from '@/composables/useClipboard'
 import { clipViewSeg, batchMode } from '@/composables/clipboardState'
 import { useI18n } from '@/composables/useI18n'
+// 页内小功能提示词按界面语言取（zh/en 双份一处维护 + 末尾语言要求）
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import { useSonner } from '@/composables/useSonner'
 import { deleteClips } from '@/api/clipboard'
 import { useConfigStore } from '@/stores/configStore'
@@ -353,10 +355,7 @@ function runTodaySummary() {
     return
   }
   showTodaySummary.value = true
-  todaySummary.run(
-    '请根据以下今日剪贴板条目摘要，总结今天的工作动态：按主题归类列出要点，最后给一句整体小结。中文输出，简明扼要。',
-    body,
-  )
+  todaySummary.run(inlinePromptFor('summarizeToday'), body)
 }
 
 function onSummarizeToday() {

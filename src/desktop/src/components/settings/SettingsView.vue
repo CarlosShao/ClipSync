@@ -2,6 +2,8 @@
 import FxPageHeader from '@/components/fx/FxPageHeader.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+// 页内小功能提示词按界面语言取（zh/en 双份一处维护 + 末尾语言要求）
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import { useMenuAccess } from '@/composables/useMenuAccess'
 import {
   ArrowLeft,
@@ -102,14 +104,9 @@ function parseReview(raw: string): ReviewItem[] | null {
 function runReview() {
   showReview.value = true
   reviewItems.value = null
+  // prompt 按当前界面语言取（zh/en 双份见 utils/inlinePrompts.ts），末尾附语言要求
   reviewAi.run(
-    [
-      '你是桌面端设置审查助手。以下是客户端设置快照，每行格式为「- [分节key] 设置名: 值」。',
-      '请逐项检查是否存在风险或不合理之处（例如历史上限过小、隐私模式未开启但剪贴板常含敏感信息、同步间隔过长等）。',
-      '只输出 JSON，不要任何解释文字或代码围栏，格式：',
-      '{"items":[{"key":"分节key","level":"ok|warn|risk","advice":"一句话中文建议"}]}',
-      'items 必须覆盖快照每一行；key 只能取行首方括号中的分节key；advice 为一句话中文建议，ok 项也给维持现状的肯定建议。',
-    ].join('\n'),
+    inlinePromptFor('review'),
     buildReviewContext(),
     { maxTokens: 4096 },
   ).then(() => {

@@ -6,6 +6,7 @@
 // 仅预览不落库：所有写操作都发生在用户确认「采纳执行」之后。
 import { ref, computed, watch, onMounted } from 'vue'
 import { useInlineAi } from '@/composables/useInlineAi'
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useUser } from '@/composables/useUser'
@@ -46,20 +47,9 @@ interface OrgPlan {
 const MAX_ITEMS = 60
 const CONTEXT_ITEM_SLICE = 60
 
-const ORGANIZE_PROMPT = [
-  '你是剪贴板收藏整理助手。参考上下文是收藏条目的索引清单，每行格式为「#序号 [类型] 内容摘要」（序号从 0 开始）。',
-  '请把这批收藏整理为「分组（合集）」与「标签」两类建议。',
-  '',
-  '只输出一个 JSON 对象（不要 markdown 代码围栏、不要任何解释文字），结构如下：',
-  '{"groups":[{"name":"分组名","icon":"folder","itemRefs":[0,1]}],"tags":[{"name":"标签名","color":"#RRGGBB","itemRefs":[2,3]}]}',
-  '',
-  '要求：',
-  '- groups：2~6 个，每组名称 2~10 个字；itemRefs 是该组应包含的条目序号数组；每组至少 2 条，不要为单条建组；icon 可省略',
-  '- tags：2~8 个，每个名称 2~6 个字；itemRefs 是适合打该标签的条目序号数组；color 可省略',
-  '- 同一条目可同时出现在多个组/多个标签中；无法归类的条目不要强行列入',
-  '- itemRefs 只能引用清单中出现过的序号，不要编造',
-  '- 只输出 JSON 对象本身，不要输出其它内容',
-].join('\n')
+// 提示词按**当前界面语言**取（zh/en 双份见 utils/inlinePrompts.ts，末尾附语言要求）——
+// 以前这里写死中文，英文界面下模型照样输出中文（中文 prompt 压住了服务端的英文指令）。
+// 每次调用实时取语言 ⇒ 切语言后下一个请求立刻生效。
 
 // --- 上下文构建 ---
 function contentPreview(item: ClipItem): string {
@@ -148,7 +138,7 @@ watch(status, (s) => {
 function start() {
   plan.value = null
   parseFailed.value = false
-  void run(ORGANIZE_PROMPT, buildContext(), { maxTokens: 3500 })
+  void run(inlinePromptFor('organizeFavorites'), buildContext(), { maxTokens: 3500 })
 }
 function close() {
   reset()

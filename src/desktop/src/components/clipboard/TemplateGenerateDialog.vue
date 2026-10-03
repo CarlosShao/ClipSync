@@ -5,6 +5,7 @@
 // 解析失败显示错误态 + 重新生成，不白屏；空意图点生成 toast 防呆。
 import { ref, watch } from 'vue'
 import { useInlineAi } from '@/composables/useInlineAi'
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useTemplateStore, isBuiltinVar } from '@/stores/templateStore'
@@ -31,19 +32,8 @@ interface TplDraft {
   variables: string[]
 }
 
-const GENERATE_PROMPT = [
-  '你是剪贴板文本模板生成助手。参考上下文是用户对模板的需求描述（一句话或要点）。',
-  '请据此起草一个可直接复用的文本模板：正文是骨架文本，需要用户填写的动态内容用 {{变量名}} 占位符表示，变量名只用英文字母/数字/下划线。',
-  '',
-  '只输出一个 JSON 对象（不要 markdown 代码围栏、不要任何解释文字），结构如下：',
-  '{"name":"模板名","content":"模板正文，占位符写成 {{变量名}}","variables":["变量名1","变量名2"]}',
-  '',
-  '要求：',
-  '- name：2~30 个字，概括模板用途',
-  '- content：多行文本骨架；同一变量可出现多次；正文里不要出现 JSON 转义痕迹',
-  '- variables：与 content 中出现的占位符一一对应（去重、按出现顺序排列）',
-  '- 只输出 JSON 对象本身，不要输出其它内容',
-].join('\n')
+// 提示词按**当前界面语言**取（zh/en 双份见 utils/inlinePrompts.ts，末尾附语言要求）；
+// 每次调用实时取语言 ⇒ 切语言后下一个请求立刻生效。
 
 // --- 解析：容错 markdown 围栏 / 首尾杂质，失败降级错误态（不白屏） ---
 const intent = ref('')
@@ -105,7 +95,7 @@ function generate() {
   }
   parsed.value = null
   parseFailed.value = false
-  void run(GENERATE_PROMPT, q, { maxTokens: 3000 })
+  void run(inlinePromptFor('generateTemplate'), q, { maxTokens: 3000 })
 }
 
 /** 保存为模板：走 TemplatesView 现有创建路径（store.create → createTemplate API，自带成功/失败 toast） */

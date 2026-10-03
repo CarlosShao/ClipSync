@@ -8,6 +8,8 @@ import { openUrl } from '@/lib/tauri'
 import { useSonner } from '@/composables/useSonner'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
+// 页内小功能提示词按界面语言取（zh/en 双份一处维护 + 末尾语言要求）
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 import { fetchFullContentDecrypted } from '@/composables/clipboardLoad'
 import { isE2eItem } from '@/utils/e2eCrypto'
 import FxSpotlightCard from '@/components/fx/FxSpotlightCard.vue'
@@ -105,25 +107,14 @@ function fmtTime(ts: number): string {
   }
 }
 
+/**
+ * 抽屉三个 AI 动作：prompt 不写死在数组里，只带**变体 key**，调用时才按当前界面语言取文案
+ * （见 utils/inlinePrompts.ts）⇒ 切语言后下一个请求立刻生效。
+ */
 const AI_ACTS = [
-  {
-    key: 'summary',
-    i18n: 'ai_act_summary',
-    fallback: '总结',
-    prompt: '请总结以下内容：提炼核心要点与主题，中文输出，简明扼要。',
-  },
-  {
-    key: 'translate',
-    i18n: 'ai_act_translate',
-    fallback: '翻译为英文',
-    prompt: '请将以下内容完整翻译为英文，只输出译文，不要附加解释。',
-  },
-  {
-    key: 'extract',
-    i18n: 'ai_act_extract',
-    fallback: '提取关键信息',
-    prompt: '请从以下内容中提取关键信息（要点、链接、数字、代码要点等），以简洁列表输出。',
-  },
+  { key: 'summary', i18n: 'ai_act_summary', fallback: '总结', promptKey: 'drawerSummary' },
+  { key: 'translate', i18n: 'ai_act_translate', fallback: '翻译为英文', promptKey: 'drawerTranslate' },
+  { key: 'extract', i18n: 'ai_act_extract', fallback: '提取关键信息', promptKey: 'drawerExtract' },
 ] as const
 
 // A6 抽屉原位 AI：页内 InlineAiCard 出结果，不跳侧栏；再次点击同一按钮收起，切换条目自动收起
@@ -142,7 +133,7 @@ function onAiAct(act: (typeof AI_ACTS)[number]) {
     return
   }
   activeAiAct.value = act.key
-  drawerAi.run(act.prompt, content.slice(0, 20000))
+  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000))
 }
 
 function closeDrawerAi() {
@@ -155,7 +146,8 @@ function retryDrawerAi() {
   const act = activeActMeta.value
   const content = fullContent.value.trim()
   if (!act || !content) return
-  drawerAi.run(act.prompt, content.slice(0, 20000))
+  // 重试用当前语言重取（用户可能中途切了语言）
+  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000))
 }
 
 watch(

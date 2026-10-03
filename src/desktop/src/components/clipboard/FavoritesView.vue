@@ -30,6 +30,7 @@ import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import FavOrganizeFlow from '@/components/clipboard/FavOrganizeFlow.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
+import { inlinePromptFor } from '@/utils/inlinePrompts'
 
 const props = defineProps<{ aiEnabled?: boolean }>()
 const emit = defineEmits<{
@@ -1254,13 +1255,9 @@ function aiSummarizeCollection() {
   // 两个卡互斥：开一个关另一个
   showOrganizeFlow.value = false
   const context = buildFavoriteDigest()
-  const prompt =
-    `${tf('fav_ai_summarize_col', '总结这个合集')}：以下是当前收藏条目清单（每行 #序号 [类型] id=条目ID 内容前80字）。\n` +
-    `请总结这批收藏的主题分布与要点：\n` +
-    `- 先用 2~3 句话概括整体构成；\n` +
-    `- 再按主题/类型分布列出要点（每条一行，简短）；\n` +
-    `- 如有明显的整理建议（某类内容偏多、可归档等）可附一句。\n` +
-    `不要逐条复述清单。`
+  // prompt 按当前界面语言取（zh/en 双份见 utils/inlinePrompts.ts，末尾附语言要求）
+  // ⇒ 英文界面下收藏摘要也输出英文（以前这里写死中文，把服务端的英文指令压住了）
+  const prompt = inlinePromptFor('summarizeCollection')
   summarizeCtx.value = { prompt, context }
   showSummarize.value = true
   void summarizeAi.run(prompt, context)
