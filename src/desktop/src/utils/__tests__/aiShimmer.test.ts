@@ -152,4 +152,21 @@ describe('「AI 正在工作」占位文字流光', () => {
       expect(src, `${rel} 不应声明 animation-fill-mode`).not.toContain('animation-fill-mode:')
     }
   })
-})
+  it('⑤ 文字**永不隐身**：渐变底色不得用 currentColor（此时 color 是 transparent）', () => {
+    const src = readSrc('components/ai/ShimmerText.vue')
+    // 断言的是**声明**，注释里提到属性名不算 ⇒ 先剥掉 CSS 注释
+    const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '')
+    const onBlock = stripComments(
+      src.slice(src.indexOf('.shimmer-text--on'), src.indexOf('@keyframes shimmer-sweep')),
+    )
+    // 本元素设了 -webkit-text-fill-color: transparent ⇒ 渐变若用 currentColor 就是透明 ⇒ 字隐身
+    expect(onBlock, '渐变里不得出现 currentColor（会被解析成 transparent，导致只有光带可见）').not.toContain('currentColor')
+    expect(onBlock, '底色必须来自真实文字色 token').toContain('--shimmer-base')
+    // 关键帧位置必须留在 0%~100%（配合 background-size:200% ⇒ 任何相位都被背景完全覆盖）
+    const kf = stripComments(src.slice(src.indexOf('@keyframes shimmer-sweep'), src.indexOf('@media (prefers-reduced-motion')))
+    expect(kf).not.toContain('-30%')
+    expect(kf).not.toContain('130%')
+    const size = onBlock.match(/background-size:\s*(\d+)%/)
+    expect(size, '必须声明 background-size，否则扫动时可能出现没被背景盖住的空隙').toBeTruthy()
+    expect(Number(size![1]), 'background-size 必须 >=100%').toBeGreaterThanOrEqual(100)
+  })})
