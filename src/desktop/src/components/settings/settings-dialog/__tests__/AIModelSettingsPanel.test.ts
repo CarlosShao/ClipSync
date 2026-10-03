@@ -259,6 +259,24 @@ const chip = (model: string) => document.querySelector<HTMLElement>(`.aim-chip[d
 const row = (model: string) => document.querySelector<HTMLElement>(`.aim-row[data-model="${model}"]`)
 const rowAction = (model: string, action: string) =>
   document.querySelector<HTMLButtonElement>(`.aim-row[data-model="${model}"] [data-action="${action}"]`)
+/**
+ * 行内次要操作已收进「⋯」溢出菜单：默认 DOM 里没有，必须先点开菜单。
+ * （常驻项只有 [启用/停用] 与 [⋯] 本身）
+ */
+async function openRowMenu(model: string) {
+  const r = row(model)!
+  if (r.querySelector('[data-action="row-menu"]')) return // 已经打开就别再点（再点会关掉）
+  const more = r.querySelector<HTMLButtonElement>('[data-action="row-more"]')
+  expect(more, `row-more for ${model}`).toBeTruthy()
+  more!.click()
+  await flush()
+}
+async function rowMenuAction(model: string, action: string): Promise<HTMLButtonElement> {
+  await openRowMenu(model)
+  const btn = document.querySelector<HTMLButtonElement>(`.aim-row[data-model="${model}"] [data-action="${action}"]`)
+  expect(btn, `menu action ${action} for ${model}`).toBeTruthy()
+  return btn!
+}
 const buttonByAction = (action: string) => document.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)
 const text = () => document.body.textContent || ''
 const chipOn = (model: string) => !!chip(model)?.classList.contains('aim-chip--on')
@@ -460,7 +478,7 @@ describe('模型库 — 能力自检', () => {
     })
     await flush()
 
-    rowAction('gpt-4o-mini', 'probe')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'probe')).click()
     await flush()
 
     // 自检只在用户点击时触发，且带 providerId/model
@@ -496,7 +514,7 @@ describe('模型库 — 能力自检', () => {
       probe: { ok: true, latencyMs: 42, supportsReasoningParam: 'unknown' },
     })
     await flush()
-    rowAction('gpt-4o-mini', 'probe')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'probe')).click()
     await flush()
     expect(row('gpt-4o-mini')!.querySelector('.aim-probe--ok')).toBeTruthy()
     expect(text()).toContain('42 ms')
@@ -509,7 +527,7 @@ describe('模型库 — 能力自检', () => {
       upstreamErrorCode: 'invalid_request_error',
       upstreamMessage: 'model `gpt-4o-mini` does not exist',
     })
-    rowAction('gpt-4o-mini', 'probe')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'probe')).click()
     await flush()
 
     const probe = row('gpt-4o-mini')!.querySelector('.aim-probe--fail')
@@ -530,7 +548,7 @@ describe('模型库 — 别名与拖拽排序', () => {
     await flush()
 
     // 别名
-    rowAction('gpt-4o-mini', 'alias')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'alias')).click()
     await flush()
     const aliasInput = row('gpt-4o-mini')!.querySelector('.aim-alias-input') as HTMLInputElement
     expect(aliasInput).toBeTruthy()
@@ -566,7 +584,7 @@ describe('模型库 — 配置弹窗逐字段来源', () => {
     const m = mountPanel({ items: [chatOn({ isOverridden: true })] })
     await flush()
 
-    rowAction('gpt-4o-mini', 'config')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'config')).click()
     await flush()
     const form = document.querySelector('.aim-form') as HTMLElement
     expect(form).toBeTruthy()
@@ -595,7 +613,7 @@ describe('模型库 — 配置弹窗逐字段来源', () => {
   it('⑩ 非法输入不提交并就地提示；接口 404 时如实降级', async () => {
     const m = mountPanel({ items: [chatOn()] })
     await flush()
-    rowAction('gpt-4o-mini', 'config')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'config')).click()
     await flush()
     const ctx = document.querySelectorAll('.aim-form .aim-input')[0] as HTMLInputElement
     const expected = tf('ai_model_cfg_err_context', 'x', { min: CONTEXT_WINDOW_MIN, max: CONTEXT_WINDOW_MAX })
@@ -756,8 +774,9 @@ describe('模型库 — 停用即逻辑删（软删）语义', () => {
     const m = mountPanel({ items: [chatOn({ isOverridden: false }), chatOff({ isOverridden: true, enabled: true })] })
     await flush()
 
+    await openRowMenu('gpt-4o-mini')
     expect(rowAction('gpt-4o-mini', 'clear')!.disabled).toBe(true)
-    const clearBtn = rowAction('o3-mini', 'clear')!
+    const clearBtn = await rowMenuAction('o3-mini', 'clear')
     expect(clearBtn.disabled).toBe(false)
     expect(clearBtn.getAttribute('title')).toBe(t('ai_model_clear_h'))
 
@@ -778,7 +797,7 @@ describe('模型库 — 自检触发纪律', () => {
 
     // 加载完成、什么都没点：一个 POST 都没有
     expect(mocks.api.mock.calls.some((c) => c[0] === 'POST')).toBe(false)
-    const probeBtn = rowAction('gpt-4o-mini', 'probe')!
+    const probeBtn = await rowMenuAction('gpt-4o-mini', 'probe')
     expect(probeBtn.getAttribute('title')).toBe(t('ai_model_probe_h'))
 
     // 让自检请求悬挂：按钮进入 loading（disabled）
@@ -791,11 +810,11 @@ describe('模型库 — 自检触发纪律', () => {
 
     probeBtn.click()
     await flush()
-    expect(rowAction('gpt-4o-mini', 'probe')!.disabled).toBe(true)
+    expect((await rowMenuAction('gpt-4o-mini', 'probe')).disabled).toBe(true)
 
     release({ ok: true, status: 200, data: { ok: true, latencyMs: 11, supportsReasoningParam: true } })
     await flush()
-    expect(rowAction('gpt-4o-mini', 'probe')!.disabled).toBe(false)
+    expect((await rowMenuAction('gpt-4o-mini', 'probe')).disabled).toBe(false)
     expect(row('gpt-4o-mini')!.querySelector('.aim-probe--ok')).toBeTruthy()
 
     m.unmount()
@@ -810,7 +829,7 @@ describe('模型库 — 自检触发纪律', () => {
       method === 'POST' ? { ok: false, status: 404, error: 'Not Found' } : base(method, path, body),
     )
 
-    rowAction('gpt-4o-mini', 'probe')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'probe')).click()
     await flush()
 
     const probe = row('gpt-4o-mini')!.querySelector('.aim-probe--fail')
@@ -826,7 +845,7 @@ describe('模型库 — 恢复与降级边界', () => {
     const m = mountPanel({ items: [chatOn({ isOverridden: true, alias: '小快灵', sortOrder: 3 })] })
     await flush()
 
-    rowAction('gpt-4o-mini', 'config')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'config')).click()
     await flush()
     document.querySelector<HTMLButtonElement>('.aim-cfg-restore')!.click()
     await flush()
@@ -846,7 +865,7 @@ describe('模型库 — 恢复与降级边界', () => {
     const m = mountPanel({ items: [chatOn()] })
     await flush()
 
-    rowAction('gpt-4o-mini', 'alias')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'alias')).click()
     await flush()
     const input = row('gpt-4o-mini')!.querySelector('.aim-alias-input') as HTMLInputElement
     // maxlength 只挡 UI 输入，逻辑层仍要拦（直接改 value 模拟粘超长文本）
@@ -1316,7 +1335,7 @@ describe('AIProviderSettings — 供应商为空（草稿态）不再被带沟�
         : base(method, path, body),
     )
 
-    rowAction('gpt-4o-mini', 'probe')!.click()
+    ;(await rowMenuAction('gpt-4o-mini', 'probe')).click()
     await flush()
 
     const probe = row('gpt-4o-mini')!.querySelector('.aim-probe--fail')
@@ -1547,8 +1566,15 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
   const cardSwitches = (m: string) => card(m)!.querySelectorAll<HTMLElement>('[role="switch"]')
   const cardAction = (m: string, action: string) =>
     document.querySelector<HTMLButtonElement>(`.aim-draft-card[data-model="${m}"] [data-action="${action}"]`)
-  /** 折叠概要行 → 点「配置」展开完整表单 */
+  /** 草稿行的次要操作同样收在「⋯」菜单里（常驻只有 [移除] 与 [⋯]） */
+  async function openDraftMenu(m: string) {
+    if (card(m)!.querySelector('[data-action="row-menu"]')) return
+    card(m)!.querySelector<HTMLButtonElement>('[data-action="row-more"]')!.click()
+    await flush()
+  }
+  /** 折叠概要行 → 「⋯」→「配置」展开完整表单 */
   async function expandCard(m: string) {
+    await openDraftMenu(m)
     cardAction(m, 'draft-config')!.click()
     await flush()
   }
@@ -1664,9 +1690,13 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     // 徽标：resolve 无覆盖行 ⇒ 预设
     expect(c.textContent).toContain(t('ai_model_cfg_badge_preset'))
     // 右侧是图标操作（配置 / 清空 / 移除），不是文字按钮
+    // 常驻只有 [移除] 与 [⋯]；配置 / 清除自定义值在溢出菜单里（默认不在 DOM）
+    expect(cardAction('m-1', 'draft-remove')).toBeTruthy()
+    expect(cardAction('m-1', 'row-more')).toBeTruthy()
+    expect(cardAction('m-1', 'draft-config')).toBeNull()
+    await openDraftMenu('m-1')
     expect(cardAction('m-1', 'draft-config')).toBeTruthy()
     expect(cardAction('m-1', 'draft-clear')).toBeTruthy()
-    expect(cardAction('m-1', 'draft-remove')).toBeTruthy()
     expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(true) // 还没改过 ⇒ 清空不可点
 
     m.unmount()
@@ -1836,7 +1866,10 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     // 每行都有摘要与图标操作
     for (const name of ['m-1', 'm-2', 'm-3']) {
       expect(card(name)!.querySelector('[data-draft-sum]')!.textContent).toContain('200000')
+      expect(cardAction(name, 'row-more')).toBeTruthy() // 常驻可发现性
+      await openDraftMenu(name)
       expect(cardAction(name, 'draft-config')).toBeTruthy()
+      await openDraftMenu(name) // 收起菜单，避免影响下一行
     }
 
     m.unmount()
@@ -1863,6 +1896,7 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     cardSwitches('m-1')[1].click()
     await flush()
     // 再点一次 ⇒ 收起（表单卸载）
+    await openDraftMenu('m-1')
     cardAction('m-1', 'draft-config')!.click()
     await flush()
     expect(card('m-1')!.querySelector('.aim-draft-form')).toBeNull()
@@ -1874,11 +1908,13 @@ describe('AIProviderSettings — 草稿态勾选即出配置卡片 + 保存时�
     expect(sum).toContain('128000')
     expect(sum).not.toContain('200000')
     // 「清空自定义值」现在可点了；点它 ⇒ 回到预设（摘要回到 200000、徽标回预设）
+    await openDraftMenu('m-1')
     expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(false)
     cardAction('m-1', 'draft-clear')!.click()
     await flush()
     expect(card('m-1')!.querySelector('[data-draft-sum]')!.textContent).toContain('200000')
     expect(card('m-1')!.textContent).toContain(t('ai_model_cfg_badge_preset'))
+    await openDraftMenu('m-1')
     expect(cardAction('m-1', 'draft-clear')!.disabled).toBe(true)
 
     m.unmount()
@@ -2377,7 +2413,7 @@ describe('模型库 — 搜索框一键清空与搜索历史', () => {
 
 /* ===================== 主模型（AI 小功能固定用它）：显示 + 可改 ===================== */
 
-describe('AIProviderSettings — 「AI 小功能使用的模型（主模型）」字段', () => {
+describe('AIProviderSettings — 主模型改为列表行操作（供应商级字段已删）', () => {
   const SETTINGS = {
     defaultProviderId: PROVIDER_ID,
     defaultModel: 'gpt-4o-mini',
@@ -2394,28 +2430,40 @@ describe('AIProviderSettings — 「AI 小功能使用的模型（主模型）�
   const PRESETS = [
     { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
   ]
-  const primaryField = () => document.querySelector<HTMLElement>('.ai-primary-field')
-  const primaryTrigger = () =>
-    document.querySelector<HTMLElement>('.ai-primary-field .custom-select-trigger-text')?.textContent?.trim() || ''
-  const openPrimary = async () => {
-    ;(document.querySelector('.ai-primary-field .custom-select-trigger') as HTMLButtonElement).click()
-    await flush()
-  }
-  const pickPrimary = async (model: string) => {
-    const opt = Array.from(document.querySelectorAll<HTMLElement>('.ai-primary-select .custom-select-option')).find(
-      (o) => (o.textContent || '').trim() === model,
-    )
-    expect(opt, `option ${model} not found`).toBeTruthy()
-    opt!.click()
-    await flush()
+  const NEW_ID = 'feedface-0000-1111-2222-333344445555'
+  const rowBadge = (model: string) => row(model)?.querySelector('[data-action="row-primary-badge"]') ?? null
+
+  /** 草稿态只读解析（POST /resolve）+ 批量写入（PUT /batch）的最小 mock */
+  function installDraftResolve() {
+    installApi([])
+    const base = mocks.api.getMockImplementation()!
+    mocks.api.mockImplementation(async (method: string, path: string, body: Raw) => {
+      const p = String(path)
+      if (method === 'POST' && p === '/api/ai/model-settings/resolve') {
+        const models = ((body as { models?: string[] }).models ?? []) as string[]
+        return {
+          ok: true,
+          status: 200,
+          data: { items: models.map((mm) => chatOn({ model: mm, enabled: false })) },
+        }
+      }
+      if (method === 'PUT' && p === '/api/ai/model-settings/batch') {
+        const items = ((body as { items?: unknown[] }).items ?? []) as unknown[]
+        return { ok: true, status: 200, data: { ok: true, updated: items.length, items } }
+      }
+      return base(method, path, body)
+    })
   }
 
-  /** 编辑一个已保存供应商：providerModel = 记录上的主模型，candidates = ai_providers.models（候选清单） */
-  async function mountEdit(providerModel: string, candidates: string[]) {
+  /** 编辑一个已保存供应商：记录上 model = 主模型，models = 候选清单，且候选都处于已启用 */
+  async function mountEdit(providerModel: string, candidates: string[], opts: { overridden?: boolean } = {}) {
     mocks.getProviders.mockResolvedValue({
       ok: true,
       status: 200,
-      data: { items: [{ ...PROVIDER, model: providerModel, models: candidates }], count: 1 },
+      data: {
+        items: [{ ...PROVIDER, model: providerModel, models: candidates, context_window: 128000 }],
+        count: 1,
+      },
     })
     mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
     mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
@@ -2424,7 +2472,7 @@ describe('AIProviderSettings — 「AI 小功能使用的模型（主模型）�
       status: 200,
       data: { ...PROVIDER, model: providerModel, models: candidates },
     })
-    installApi([chatOn()])
+    installApi(candidates.map((c) => chatOn({ model: c, enabled: true, isOverridden: !!opts.overridden })))
     const m = mountComponent(AIProviderSettings as Component)
     await flush()
     clickByTitle(t('ai_edit'))
@@ -2432,76 +2480,182 @@ describe('AIProviderSettings — 「AI 小功能使用的模型（主模型）�
     return m
   }
 
-  it('① 编辑面板出现「主模型」字段，默认值 = 供应商记录上的 model', async () => {
-    const m = await mountEdit('main-x', ['main-x', 'alt-1', 'alt-2'])
-    expect(primaryField()).toBeTruthy()
-    expect(primaryField()!.textContent).toContain(t('ai_primary_model_label'))
-    expect(primaryTrigger()).toBe('main-x')
-    // 用途说明也在
-    expect(primaryField()!.textContent).toContain(t('ai_primary_model_hint'))
+  it('①a 供应商表单**不再有**主模型字段与上下文窗口字段（DOM 断言），模型库仍在', async () => {
+    const m = await mountEdit('main-x', ['main-x', 'alt-1'])
+    expect(document.querySelector('.ai-primary-field')).toBeNull()
+    expect(document.querySelector('.ai-primary-select')).toBeNull()
+    expect(text().includes(t('ai_context_window_label'))).toBe(false)
+    // 不是把模型区块整个删掉：候选芯片与行都还在
+    expect(document.querySelectorAll('.aim-chip').length).toBeGreaterThan(0)
+    expect(row('main-x')).toBeTruthy()
     m.unmount()
   })
 
-  it('② 改选另一个候选并保存 ⇒ payload.model = 新值；payload.models 仍是候选清单', async () => {
-    const m = await mountEdit('main-x', ['main-x', 'alt-1', 'alt-2'])
-    await openPrimary()
-    await pickPrimary('alt-2')
-    expect(primaryTrigger()).toBe('alt-2')
-
+  it('①b 保存**不发** model / contextWindow ⇒ 服务端保持原值（不因字段消失被清空）', async () => {
+    const m = await mountEdit('main-x', ['main-x', 'alt-1'])
     buttonByLabel(t('ai_save')).click()
     await flush(8)
 
     expect(mocks.updateProvider).toHaveBeenCalledTimes(1)
-    const payload = mocks.updateProvider.mock.calls[0][1] as { model: string; models: string[] }
-    expect(payload.model).toBe('alt-2')
-    expect(payload.models).toEqual(['main-x', 'alt-1', 'alt-2']) // 候选清单不受主模型影响
+    const payload = mocks.updateProvider.mock.calls[0][1] as Record<string, unknown>
+    // 服务端 PUT 是部分更新：model 缺省用 cur.model（aiProviders.js:206-208）、
+    // contextWindow 缺省用 cur.context_window（:218-223）⇒ 不发即保持不变
+    expect('model' in payload).toBe(false)
+    expect('contextWindow' in payload).toBe(false)
+    expect(payload.models).toEqual(['main-x', 'alt-1'])
     m.unmount()
   })
 
-  it('③ 主模型不在候选清单里 ⇒ 显示"不在当前候选中"、不静默清空；保存前需明确确认', async () => {
-    const m = await mountEdit('legacy-x', ['alt-1', 'alt-2'])
-    // 不静默清空：值仍然是历史值
-    expect(primaryTrigger()).toBe('legacy-x')
-    const warn = document.querySelector<HTMLElement>('[data-action="primary-not-in-list"]')
-    expect(warn).toBeTruthy()
-    expect(warn!.textContent).toContain(t('ai_primary_model_not_in_list'))
+  it('② 行内常驻只有 [启用/停用] 与 [⋯]；次要操作默认不在 DOM，展开菜单后才出现', async () => {
+    const m = await mountEdit('main-x', ['main-x'])
+    expect(rowAction('main-x', 'toggle')).toBeTruthy()
+    expect(rowAction('main-x', 'row-more')).toBeTruthy()
+    for (const action of ['config', 'probe', 'clear', 'set-primary', 'alias']) {
+      expect(rowAction('main-x', action), `${action} 不该常驻`).toBeNull()
+    }
 
-    // 第一次点保存：先要确认，不发请求
-    buttonByLabel(t('ai_save')).click()
-    await flush(4)
+    await openRowMenu('main-x')
+    for (const action of ['config', 'probe', 'clear', 'set-primary', 'alias']) {
+      expect(rowAction('main-x', action), `${action} 应在菜单里`).toBeTruthy()
+    }
+    m.unmount()
+  })
+
+  it('③ 菜单「设为主模型」⇒ 只 PUT {model}；行上「主」标记随之移动 + 成功反馈', async () => {
+    const m = await mountEdit('main-x', ['main-x', 'alt-1'])
+    expect(rowBadge('main-x')).toBeTruthy()
+    expect(rowBadge('alt-1')).toBeNull()
+
+    await openRowMenu('alt-1')
+    rowAction('alt-1', 'set-primary')!.click()
+    await flush(8)
+
+    expect(mocks.updateProvider).toHaveBeenCalledTimes(1)
+    expect(mocks.updateProvider.mock.calls[0][1]).toEqual({ model: 'alt-1' })
+    expect(rowBadge('alt-1')).toBeTruthy()
+    expect(rowBadge('main-x')).toBeNull()
+    expect(mocks.showToast).toHaveBeenCalledWith(expect.stringContaining('alt-1'), 'success')
+    m.unmount()
+  })
+
+  it('④a 菜单「配置」仍能打开配置表单', async () => {
+    const m = await mountEdit('main-x', ['main-x'])
+    await openRowMenu('main-x')
+    rowAction('main-x', 'config')!.click()
+    await flush()
+    expect(document.querySelector('.modal-backdrop')).toBeTruthy()
+    m.unmount()
+  })
+
+  it('④b 菜单「显示别名」仍能就地编辑别名（保存走单条 PUT）', async () => {
+    const m = await mountEdit('main-x', ['main-x'])
+    await openRowMenu('main-x')
+    rowAction('main-x', 'alias')!.click()
+    await flush()
+
+    const input = document.querySelector<HTMLInputElement>('.aim-alias-input')
+    expect(input).toBeTruthy()
+    await setValue(input!, '小快灵')
+    rowAction('main-x', 'alias-save')!.click()
+    await flush(6)
+
+    expect(putBodies()[0]).toEqual({ providerId: PROVIDER_ID, model: 'main-x', patch: { alias: '小快灵' } })
+    m.unmount()
+  })
+
+  it('④c 菜单「自检」仍会发 probe 请求', async () => {
+    const m = await mountEdit('main-x', ['main-x'])
+    await openRowMenu('main-x')
+    rowAction('main-x', 'probe')!.click()
+    await flush(6)
+    expect(modelSettingCalls().some((c) => String(c[1]) === '/api/ai/model-settings/probe')).toBe(true)
+    m.unmount()
+  })
+
+  it('④d 菜单「清除自定义值」仍发恢复预设的 patch', async () => {
+    const m = await mountEdit('main-x', ['main-x'], { overridden: true })
+    await openRowMenu('main-x')
+    const clear = rowAction('main-x', 'clear')!
+    expect(clear.disabled).toBe(false)
+    clear.click()
+    await flush(6)
+    expect(putBodies()[0]).toEqual({ providerId: PROVIDER_ID, model: 'main-x', patch: RESTORE_PRESET_PATCH })
+    m.unmount()
+  })
+
+  it('⑤ 草稿态：同一套 ⋯ 菜单；自检禁用并说明原因；「设为主模型」只改本地并在创建时落库', async () => {
+    const candidates = ['m-1', 'm-2']
+    mocks.fetchProviderModels.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        models: candidates,
+        count: candidates.length,
+        upstreamEmpty: false,
+        added: candidates.length,
+        previousCount: 0,
+      },
+    })
+    mocks.getProviders.mockResolvedValue({ ok: true, status: 200, data: { items: [], count: 0 } })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    mocks.createProvider.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROVIDER, id: NEW_ID, models: candidates },
+    })
+    installDraftResolve()
+
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    buttonByLabel(t('ai_add_provider')).click()
+    await flush()
+    const byPh = (ph: string) => document.querySelector<HTMLInputElement>(`input[placeholder="${ph}"]`)
+    await setValue(byPh(t('ai_name_ph'))!, 'Local GW')
+    await setValue(byPh(t('ai_base_url_ph'))!, 'http://host.docker.internal:3800/v1')
+    await setValue(byPh(t('ai_api_key_ph'))!, 'sk-local')
+    await flush()
+    const refresh = Array.from(document.querySelectorAll('button')).find(
+      (b) => (b.textContent || '').trim() === t('ai_refresh_models'),
+    ) as HTMLButtonElement
+    refresh.click()
+    await flush()
+
+    const draftChip = (mm: string) => document.querySelector<HTMLButtonElement>(`.ai-draft-chip[data-model="${mm}"]`)
+    const draftCard = (mm: string) => document.querySelector<HTMLElement>(`.aim-draft-card[data-model="${mm}"]`)
+    const draftAction = (mm: string, action: string) =>
+      draftCard(mm)?.querySelector<HTMLButtonElement>(`[data-action="${action}"]`) ?? null
+    const openDraftMenu = async (mm: string) => {
+      draftCard(mm)!.querySelector<HTMLButtonElement>('[data-action="row-more"]')!.click()
+      await flush()
+    }
+
+    draftChip('m-1')!.click()
+    await flush()
+
+    // 常驻只有 [移除] 与 [⋯]；配置在菜单里
+    expect(draftAction('m-1', 'draft-remove')).toBeTruthy()
+    expect(draftAction('m-1', 'row-more')).toBeTruthy()
+    expect(draftAction('m-1', 'draft-config')).toBeNull()
+
+    await openDraftMenu('m-1')
+    // 草稿态没有 providerId ⇒ 自检禁用且写明原因
+    expect(draftAction('m-1', 'draft-probe')!.disabled).toBe(true)
+    expect(draftAction('m-1', 'draft-probe')!.getAttribute('title')).toContain(t('ai_draft_probe_h'))
+
+    // 设为主模型：草稿态只改本地（不调供应商更新接口）
+    draftAction('m-1', 'draft-set-primary')!.click()
+    await flush()
+    expect(draftCard('m-1')!.querySelector('[data-action="draft-primary-badge"]')).toBeTruthy()
     expect(mocks.updateProvider).not.toHaveBeenCalled()
-    const confirm = document.querySelector<HTMLElement>('[data-action="primary-confirm"]')
-    expect(confirm).toBeTruthy()
-    expect(confirm!.textContent).toContain(tf('ai_primary_model_confirm', 'x', { model: 'legacy-x' }))
 
-    // 明确确认后才保存，且提交的就是这个历史值（没有被清空/替换）
-    ;(document.querySelector('[data-action="primary-confirm-ok"]') as HTMLButtonElement).click()
-    await flush(8)
-    expect(mocks.updateProvider).toHaveBeenCalledTimes(1)
-    expect((mocks.updateProvider.mock.calls[0][1] as { model: string }).model).toBe('legacy-x')
-    m.unmount()
-  })
-
-  it('④ 候选清单为空 ⇒ 可手工填 + 有提示；保存写入手填值（候选清单保持为空）', async () => {
-    const m = await mountEdit('manual-1', [])
-    const field = primaryField()!
-    // 没有候选 ⇒ 不是下拉，而是手工输入框 + 提示
-    expect(field.querySelector('.ai-primary-select')).toBeNull()
-    expect(field.textContent).toContain(t('ai_primary_model_empty_hint'))
-    const input = field.querySelector<HTMLInputElement>('input')!
-    expect(input.value).toBe('manual-1')
-
-    await setValue(input, 'manual-2')
+    // 保存 ⇒ 本地选的主模型写进创建请求
     buttonByLabel(t('ai_save')).click()
     await flush(8)
-
-    const payload = mocks.updateProvider.mock.calls[0][1] as { model: string; models: string[] }
-    expect(payload.model).toBe('manual-2')
-    expect(payload.models).toEqual([])
+    expect((mocks.createProvider.mock.calls[0][0] as { model: string }).model).toBe('m-1')
     m.unmount()
   })
 })
-
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()

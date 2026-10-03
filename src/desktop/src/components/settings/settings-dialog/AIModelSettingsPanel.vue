@@ -44,8 +44,10 @@ import {
   Power,
   RotateCcw,
   Settings2,
+  Star,
   X,
 } from 'lucide-vue-next'
+import RowMenu from '@/components/ui/RowMenu.vue'
 import {
   ALIAS_MAX_LEN,
   APPLICABILITY_LABELS,
@@ -102,6 +104,11 @@ const props = defineProps<{
   draftModels?: string[]
   /** 草稿态本地改动（per model，只含用户真改过的字段）；保存时父组件用它做 batch */
   draftPatches?: Record<string, ModelSettingPatch>
+  /**
+   * 当前"主模型"（= 服务端 `ai_providers.model`；草稿态是本地待落库的值）。
+   * 只用于行上的「主」标记与菜单里的对勾 —— 面板不自己推断，也不写它。
+   */
+  primaryModel?: string
 }>()
 
 const emit = defineEmits<{
@@ -109,6 +116,11 @@ const emit = defineEmits<{
   'update:draftPatches': [Record<string, ModelSettingPatch>]
   /** 草稿行「移除」：父组件把该模型从已选集合里去掉（草稿 patch 保留，勾回来即恢复） */
   removeDraftModel: [string]
+  /**
+   * 行内「设为主模型」：交给父组件处理 —— 已保存态用供应商更新接口写 `model`，
+   * 草稿态只改本地（保存时随创建请求落库）。面板自己不发写请求。
+   */
+  setPrimaryModel: [string]
 }>()
 
 const { t, tf } = useI18n()
@@ -535,6 +547,30 @@ function draftSourceClass(model: string): string {
 /** 草稿行「移除」：交给父组件从已选集合里去掉（草稿 patch 保留 ⇒ 勾回来即恢复） */
 function removeDraftModel(model: string) {
   emit('removeDraftModel', model)
+}
+
+/* ---------- 主模型（行内操作，不再有供应商级输入框） ---------- */
+
+/** 该模型是不是当前主模型（= 服务端 ai_providers.model；面板只读展示） */
+function isPrimary(item: { model: string }): boolean {
+  return (props.primaryModel ?? '') !== '' && props.primaryModel === item.model
+}
+
+/**
+ * 「设为主模型」的说明文案：与服务端取模型语义（契约 532562d）保持一致 ——
+ * 小功能**优先用已启用的选中模型**，主模型是缺省/兜底，**不是**"固定用它"。
+ */
+const primaryHintBase = () =>
+  t('ai_model_set_primary_h', '这个模型将作为 AI 小功能的默认模型（小功能会优先用已启用的模型）')
+
+function primaryHint(item: { model: string }): string {
+  if (isPrimary(item)) return t('ai_model_set_primary_now', '当前已是主模型')
+  return primaryHintBase()
+}
+
+function requestSetPrimary(model: string) {
+  if (isPrimary({ model })) return
+  emit('setPrimaryModel', model)
 }
 
 /* ===================== 列表 / 排序 / 启用态 ===================== */
@@ -1521,6 +1557,14 @@ watch(
             <div class="aim-row-name">
               <span class="aim-row-model">{{ modelDisplayName(effectiveDraftItem(item.model)) }}</span>
               <span class="aim-badge" :class="draftSourceClass(item.model)">{{ draftSourceLabel(item.model) }}</span>
+              <span
+                v-if="isPrimary(item)"
+                class="aim-badge aim-badge--primary"
+                data-action="draft-primary-badge"
+                :title="t('ai_draft_set_primary_h', '保存后作为 AI 小功能的默认模型（小功能会优先用已启用的模型）')"
+              >
+                {{ t('ai_model_primary_badge', '主') }}
+              </span>
             </div>
             <!-- 摘要复用已保存态同一套文案生成：未设置的项写成"预设 / 沿用系统默认"，不留空 -->
             <div class="aim-cfg-sum" data-draft-sum>{{ summary(effectiveDraftItem(item.model)) }}</div>
@@ -1530,28 +1574,7 @@ watch(
             </div>
           </div>
           <div class="aim-row-actions">
-            <button
-              type="button"
-              class="aim-icon"
-              data-action="draft-config"
-              :title="
-                draftIsExpanded(item.model) ? t('ai_draft_collapse_h', '收起配置') : t('ai_model_cfg_edit', '配置')
-              "
-              @click="toggleDraftExpanded(item.model)"
-            >
-              <ChevronUp v-if="draftIsExpanded(item.model)" :size="14" />
-              <Settings2 v-else :size="14" />
-            </button>
-            <button
-              type="button"
-              class="aim-icon"
-              data-action="draft-clear"
-              :disabled="!draftHasPatch(item.model)"
-              :title="t('ai_draft_card_reset_h', '清空这个模型的草稿改动（回到预设）')"
-              @click="resetDraftCard(item.model)"
-            >
-              <Eraser :size="14" />
-            </button>
+            <!-- 常驻：从已选里移除（草稿态的"启用/停用"等价动作） -->
             <button
               type="button"
               class="aim-icon"
@@ -1561,6 +1584,61 @@ watch(
             >
               <Power :size="14" />
             </button>
+            <!-- 与已保存态同一套溢出菜单 -->
+            <RowMenu :title="t('ai_model_more_h', '更多操作')">
+              <template #default>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="aim-row-menu-item"
+                  data-action="draft-config"
+                  @click="toggleDraftExpanded(item.model)"
+                >
+                  <ChevronUp v-if="draftIsExpanded(item.model)" :size="13" />
+                  <Settings2 v-else :size="13" />
+                  {{
+                    draftIsExpanded(item.model) ? t('ai_draft_collapse_h', '收起配置') : t('ai_model_cfg_edit', '配置')
+                  }}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="aim-row-menu-item"
+                  data-action="draft-set-primary"
+                  :title="
+                    isPrimary(item)
+                      ? t('ai_model_set_primary_now', '当前已是主模型')
+                      : t('ai_draft_set_primary_h', '保存后作为 AI 小功能的默认模型（小功能会优先用已启用的模型）')
+                  "
+                  @click="requestSetPrimary(item.model)"
+                >
+                  <Star :size="13" />{{ t('ai_model_set_primary', '设为主模型') }}
+                  <span v-if="isPrimary(item)" class="aim-row-menu-check"><Check :size="12" /></span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="aim-row-menu-item"
+                  data-action="draft-probe"
+                  disabled
+                  :title="t('ai_draft_probe_h', '自检需要先保存供应商（要真实调用一次上游）')"
+                >
+                  <Activity :size="13" />{{ t('ai_model_probe_do', '自检') }}
+                </button>
+                <div class="aim-row-menu-sep" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="aim-row-menu-item aim-row-menu-item--danger"
+                  data-action="draft-clear"
+                  :disabled="!draftHasPatch(item.model)"
+                  :title="t('ai_draft_card_reset_h', '清空这个模型的草稿改动（回到预设）')"
+                  @click="resetDraftCard(item.model)"
+                >
+                  <Eraser :size="13" />{{ t('ai_model_clear', '清除自定义值') }}
+                </button>
+              </template>
+            </RowMenu>
           </div>
         </div>
 
@@ -2030,20 +2108,27 @@ watch(
                   <span class="aim-row-model">{{ modelDisplayName(it) }}</span>
                   <span v-if="it.alias" class="aim-row-orig">{{ it.model }}</span>
                   <span class="aim-badge" :class="sourceClass(it)">{{ sourceLabel(it) }}</span>
+                  <span
+                    v-if="isPrimary(it)"
+                    class="aim-badge aim-badge--primary"
+                    data-action="row-primary-badge"
+                    :title="primaryHintBase()"
+                  >
+                    {{ t('ai_model_primary_badge', '主') }}
+                  </span>
                   <span v-if="!isEnabled(it)" class="aim-badge aim-badge--off">
                     {{ t('ai_model_badge_off', '未启用') }}
                   </span>
                 </div>
                 <div class="aim-cfg-sum">{{ summary(it) }}</div>
+                <!-- 自检在菜单里，结果在下方；这里给一个"进行中"的就地反馈，避免菜单关掉后无感 -->
+                <div v-if="probing[it.model]" class="aim-row-probing" data-action="row-probing">
+                  <Activity :size="12" class="aim-spin" />{{ t('ai_model_probe_running', '自检中…') }}
+                </div>
 
                 <div class="aim-alias-line">
-                  <template v-if="aliasEditing !== it.model">
-                    <button type="button" class="aim-mini" data-action="alias" @click="startAliasEdit(it)">
-                      <Pencil :size="10" />
-                      {{ t('ai_model_alias_edit', '显示别名') }}
-                    </button>
-                  </template>
-                  <template v-else>
+                  <!-- 「显示别名」入口已收进「⋯」菜单；这里只保留正在编辑时的输入框 -->
+                  <template v-if="aliasEditing === it.model">
                     <input
                       v-model="aliasDraft"
                       class="aim-alias-input"
@@ -2100,25 +2185,7 @@ watch(
               </div>
 
               <div class="aim-row-actions">
-                <button
-                  type="button"
-                  class="aim-icon"
-                  data-action="probe"
-                  :title="t('ai_model_probe_h', '自检：真实调用一次上游（会产生一次极小请求）')"
-                  :disabled="!!probing[it.model]"
-                  @click="runProbe(it.model)"
-                >
-                  <Activity :size="14" :class="{ 'aim-spin': !!probing[it.model] }" />
-                </button>
-                <button
-                  type="button"
-                  class="aim-icon"
-                  data-action="config"
-                  :title="t('ai_model_cfg_edit', '配置')"
-                  @click="openEditor(it.model)"
-                >
-                  <Settings2 :size="14" />
-                </button>
+                <!-- 常驻只留最高频的一个：启用 / 停用 -->
                 <button
                   type="button"
                   class="aim-icon"
@@ -2128,16 +2195,63 @@ watch(
                 >
                   <Power :size="14" />
                 </button>
-                <button
-                  type="button"
-                  class="aim-icon"
-                  data-action="clear"
-                  :disabled="!it.isOverridden"
-                  :title="t('ai_model_clear_h', '清除自定义值，回到预设（不删除模型、不改启用状态）')"
-                  @click="clearOverrides(it.model)"
-                >
-                  <Eraser :size="14" />
-                </button>
+                <!-- 其余操作全部收进「⋯」溢出菜单（常驻，键盘可达；破坏性项在最后） -->
+                <RowMenu :title="t('ai_model_more_h', '更多操作')">
+                  <template #default>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="aim-row-menu-item"
+                      data-action="config"
+                      @click="openEditor(it.model)"
+                    >
+                      <Settings2 :size="13" />{{ t('ai_model_cfg_edit', '配置') }}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="aim-row-menu-item"
+                      data-action="alias"
+                      @click="startAliasEdit(it)"
+                    >
+                      <Pencil :size="13" />{{ t('ai_model_alias_edit', '显示别名') }}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="aim-row-menu-item"
+                      data-action="set-primary"
+                      :title="primaryHint(it)"
+                      @click="requestSetPrimary(it.model)"
+                    >
+                      <Star :size="13" />{{ t('ai_model_set_primary', '设为主模型') }}
+                      <span v-if="isPrimary(it)" class="aim-row-menu-check"><Check :size="12" /></span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="aim-row-menu-item"
+                      data-action="probe"
+                      :disabled="!!probing[it.model]"
+                      :title="t('ai_model_probe_h', '自检：真实调用一次上游（会产生一次极小请求）')"
+                      @click="runProbe(it.model)"
+                    >
+                      <Activity :size="13" />{{ t('ai_model_probe_do', '自检') }}
+                    </button>
+                    <div class="aim-row-menu-sep" />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="aim-row-menu-item aim-row-menu-item--danger"
+                      data-action="clear"
+                      :disabled="!it.isOverridden"
+                      :title="t('ai_model_clear_h', '清除自定义值，回到预设（不删除模型、不改启用状态）')"
+                      @click="clearOverrides(it.model)"
+                    >
+                      <Eraser :size="13" />{{ t('ai_model_clear', '清除自定义值') }}
+                    </button>
+                  </template>
+                </RowMenu>
               </div>
             </div>
           </div>
@@ -2214,25 +2328,6 @@ watch(
                   <button
                     type="button"
                     class="aim-icon"
-                    data-action="probe"
-                    :title="t('ai_model_probe_h', '自检：真实调用一次上游（会产生一次极小请求）')"
-                    :disabled="!!probing[it.model]"
-                    @click="runProbe(it.model)"
-                  >
-                    <Activity :size="14" />
-                  </button>
-                  <button
-                    type="button"
-                    class="aim-icon"
-                    data-action="config"
-                    :title="t('ai_model_cfg_edit', '配置')"
-                    @click="openEditor(it.model)"
-                  >
-                    <Settings2 :size="14" />
-                  </button>
-                  <button
-                    type="button"
-                    class="aim-icon"
                     data-action="toggle"
                     :title="
                       isEnabled(it) ? t('ai_model_disable', '停用（不会删除配置）') : t('ai_model_enable', '启用')
@@ -2241,6 +2336,54 @@ watch(
                   >
                     <Power :size="14" />
                   </button>
+                  <!-- 与对话模型行同一套溢出菜单（非对话行没有行内别名编辑器，别名在「配置」里改） -->
+                  <RowMenu :title="t('ai_model_more_h', '更多操作')">
+                    <template #default>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="aim-row-menu-item"
+                        data-action="config"
+                        @click="openEditor(it.model)"
+                      >
+                        <Settings2 :size="13" />{{ t('ai_model_cfg_edit', '配置') }}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="aim-row-menu-item"
+                        data-action="set-primary"
+                        :title="primaryHint(it)"
+                        @click="requestSetPrimary(it.model)"
+                      >
+                        <Star :size="13" />{{ t('ai_model_set_primary', '设为主模型') }}
+                        <span v-if="isPrimary(it)" class="aim-row-menu-check"><Check :size="12" /></span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="aim-row-menu-item"
+                        data-action="probe"
+                        :disabled="!!probing[it.model]"
+                        :title="t('ai_model_probe_h', '自检：真实调用一次上游（会产生一次极小请求）')"
+                        @click="runProbe(it.model)"
+                      >
+                        <Activity :size="13" />{{ t('ai_model_probe_do', '自检') }}
+                      </button>
+                      <div class="aim-row-menu-sep" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        class="aim-row-menu-item aim-row-menu-item--danger"
+                        data-action="clear"
+                        :disabled="!it.isOverridden"
+                        :title="t('ai_model_clear_h', '清除自定义值，回到预设（不删除模型、不改启用状态）')"
+                        @click="clearOverrides(it.model)"
+                      >
+                        <Eraser :size="13" />{{ t('ai_model_clear', '清除自定义值') }}
+                      </button>
+                    </template>
+                  </RowMenu>
                 </div>
               </div>
             </div>
@@ -2994,6 +3137,54 @@ html.reduce-motion .aim-history {
 .aim-icon:disabled {
   opacity: 0.4;
   cursor: default;
+}
+/* 行内溢出菜单的菜单项（菜单容器在 RowMenu.vue 里，项由行模板渲染 ⇒ 样式放这里） */
+.aim-row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.aim-row-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.aim-row-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.aim-row-menu-item--danger {
+  color: var(--danger);
+}
+.aim-row-menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border-subtle);
+}
+.aim-row-menu-check {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--accent);
+}
+/* 主模型徽标（轻量、不占位） */
+.aim-badge--primary {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.aim-row-probing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
 }
 .aim-spin {
   animation: aim-probe-spin 0.9s linear infinite;
