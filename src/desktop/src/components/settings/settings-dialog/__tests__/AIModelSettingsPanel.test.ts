@@ -2375,6 +2375,133 @@ describe('模型库 — 搜索框一键清空与搜索历史', () => {
   })
 })
 
+/* ===================== 主模型（AI 小功能固定用它）：显示 + 可改 ===================== */
+
+describe('AIProviderSettings — 「AI 小功能使用的模型（主模型）」字段', () => {
+  const SETTINGS = {
+    defaultProviderId: PROVIDER_ID,
+    defaultModel: 'gpt-4o-mini',
+    selectedModels: {},
+    defaultMode: 'ask',
+    thinkingEnabled: false,
+    thinkingStrength: 'medium',
+    memoryEnabled: false,
+    customSystemPrompt: '',
+    searchProvider: '',
+    searchBaseUrl: '',
+    searchHasKey: false,
+  }
+  const PRESETS = [
+    { provider: 'custom', label: 'Custom', family: 'custom', defaultBaseUrl: '', defaultModel: 'gpt-4o-mini' },
+  ]
+  const primaryField = () => document.querySelector<HTMLElement>('.ai-primary-field')
+  const primaryTrigger = () =>
+    document.querySelector<HTMLElement>('.ai-primary-field .custom-select-trigger-text')?.textContent?.trim() || ''
+  const openPrimary = async () => {
+    ;(document.querySelector('.ai-primary-field .custom-select-trigger') as HTMLButtonElement).click()
+    await flush()
+  }
+  const pickPrimary = async (model: string) => {
+    const opt = Array.from(document.querySelectorAll<HTMLElement>('.ai-primary-select .custom-select-option')).find(
+      (o) => (o.textContent || '').trim() === model,
+    )
+    expect(opt, `option ${model} not found`).toBeTruthy()
+    opt!.click()
+    await flush()
+  }
+
+  /** 编辑一个已保存供应商：providerModel = 记录上的主模型，candidates = ai_providers.models（候选清单） */
+  async function mountEdit(providerModel: string, candidates: string[]) {
+    mocks.getProviders.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [{ ...PROVIDER, model: providerModel, models: candidates }], count: 1 },
+    })
+    mocks.getPresets.mockResolvedValue({ ok: true, status: 200, data: { items: PRESETS } })
+    mocks.getSettings.mockResolvedValue({ ok: true, status: 200, data: SETTINGS })
+    mocks.updateProvider.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { ...PROVIDER, model: providerModel, models: candidates },
+    })
+    installApi([chatOn()])
+    const m = mountComponent(AIProviderSettings as Component)
+    await flush()
+    clickByTitle(t('ai_edit'))
+    await flush()
+    return m
+  }
+
+  it('① 编辑面板出现「主模型」字段，默认值 = 供应商记录上的 model', async () => {
+    const m = await mountEdit('main-x', ['main-x', 'alt-1', 'alt-2'])
+    expect(primaryField()).toBeTruthy()
+    expect(primaryField()!.textContent).toContain(t('ai_primary_model_label'))
+    expect(primaryTrigger()).toBe('main-x')
+    // 用途说明也在
+    expect(primaryField()!.textContent).toContain(t('ai_primary_model_hint'))
+    m.unmount()
+  })
+
+  it('② 改选另一个候选并保存 ⇒ payload.model = 新值；payload.models 仍是候选清单', async () => {
+    const m = await mountEdit('main-x', ['main-x', 'alt-1', 'alt-2'])
+    await openPrimary()
+    await pickPrimary('alt-2')
+    expect(primaryTrigger()).toBe('alt-2')
+
+    buttonByLabel(t('ai_save')).click()
+    await flush(8)
+
+    expect(mocks.updateProvider).toHaveBeenCalledTimes(1)
+    const payload = mocks.updateProvider.mock.calls[0][1] as { model: string; models: string[] }
+    expect(payload.model).toBe('alt-2')
+    expect(payload.models).toEqual(['main-x', 'alt-1', 'alt-2']) // 候选清单不受主模型影响
+    m.unmount()
+  })
+
+  it('③ 主模型不在候选清单里 ⇒ 显示"不在当前候选中"、不静默清空；保存前需明确确认', async () => {
+    const m = await mountEdit('legacy-x', ['alt-1', 'alt-2'])
+    // 不静默清空：值仍然是历史值
+    expect(primaryTrigger()).toBe('legacy-x')
+    const warn = document.querySelector<HTMLElement>('[data-action="primary-not-in-list"]')
+    expect(warn).toBeTruthy()
+    expect(warn!.textContent).toContain(t('ai_primary_model_not_in_list'))
+
+    // 第一次点保存：先要确认，不发请求
+    buttonByLabel(t('ai_save')).click()
+    await flush(4)
+    expect(mocks.updateProvider).not.toHaveBeenCalled()
+    const confirm = document.querySelector<HTMLElement>('[data-action="primary-confirm"]')
+    expect(confirm).toBeTruthy()
+    expect(confirm!.textContent).toContain(tf('ai_primary_model_confirm', 'x', { model: 'legacy-x' }))
+
+    // 明确确认后才保存，且提交的就是这个历史值（没有被清空/替换）
+    ;(document.querySelector('[data-action="primary-confirm-ok"]') as HTMLButtonElement).click()
+    await flush(8)
+    expect(mocks.updateProvider).toHaveBeenCalledTimes(1)
+    expect((mocks.updateProvider.mock.calls[0][1] as { model: string }).model).toBe('legacy-x')
+    m.unmount()
+  })
+
+  it('④ 候选清单为空 ⇒ 可手工填 + 有提示；保存写入手填值（候选清单保持为空）', async () => {
+    const m = await mountEdit('manual-1', [])
+    const field = primaryField()!
+    // 没有候选 ⇒ 不是下拉，而是手工输入框 + 提示
+    expect(field.querySelector('.ai-primary-select')).toBeNull()
+    expect(field.textContent).toContain(t('ai_primary_model_empty_hint'))
+    const input = field.querySelector<HTMLInputElement>('input')!
+    expect(input.value).toBe('manual-1')
+
+    await setValue(input, 'manual-2')
+    buttonByLabel(t('ai_save')).click()
+    await flush(8)
+
+    const payload = mocks.updateProvider.mock.calls[0][1] as { model: string; models: string[] }
+    expect(payload.model).toBe('manual-2')
+    expect(payload.models).toEqual([])
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()
