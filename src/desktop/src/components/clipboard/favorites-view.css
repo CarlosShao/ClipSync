@@ -815,6 +815,41 @@
   border-radius: var(--radius-sm);
   opacity: 0.7;
 }
+/* 受保护内容：密码式黑点（与普通预览同字号/同样 clamp ⇒ 卡片高度一致） */
+.fav-card-mask {
+  position: relative;
+  color: var(--text-tertiary);
+  letter-spacing: 0.08em;
+  padding-bottom: 22px; /* 给右下角的解锁按钮留位，不改变整体高度感 */
+}
+/* 解锁入口：一枚小眼睛图标（显示/隐藏的通用语义），常驻但不抢视线 */
+.fav-card-unlock {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition:
+    color 140ms var(--ease),
+    border-color 140ms var(--ease);
+}
+.fav-card-unlock:hover {
+  color: var(--accent);
+  border-color: var(--border-default);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fav-card-unlock {
+    transition: none;
+  }
+}
 .fav-card-text {
   width: 100%;
   font-family: var(--font-content);

@@ -730,6 +730,9 @@ const favWhere = computed(() => {
 
 // 与 useClipItemDisplay.isItemVisible 保持一致的可见性判断（含隐私模式自动识别的敏感数据）。
 // 修复：自动识别为敏感的条目此前既未在列表 mask（泄露明文），复制时却要求 PIN 解锁，逻辑矛盾。
+/** 受保护内容的密码式掩码：固定长度，不泄漏真实长度（与列表视图的黑点口径一致） */
+const MASK_DOTS = '•'.repeat(48)
+
 function isItemViewable(item: ClipItem): boolean {
   if (itemPw.isItemProtected(item)) {
     if (item.metadata?.protected === true) return itemPw.isUnlocked(item.id)
@@ -2084,16 +2087,18 @@ function cancelEditTags() {
                     />
                     <div v-else class="fav-card-placeholder"><ImageIcon :size="22" /></div>
                   </template>
-                  <div v-else-if="!isItemViewable(item)" class="cell-protected-mask">
-                    <Lock :size="13" />
-                    <span>{{ t('item_protected_mask') }}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      class="h-7 px-3 text-[11px] rounded-md"
+                  <!-- 受保护内容：与其它卡片同构的预览区，内容用密码式黑点（不再有灰块/锁/文字按钮） -->
+                  <div v-else-if="!isItemViewable(item)" class="fav-card-text fav-card-mask">
+                    <span aria-hidden="true">{{ MASK_DOTS }}</span>
+                    <button
+                      type="button"
+                      class="fav-card-unlock"
+                      :title="t('item_unlock')"
+                      :aria-label="t('item_unlock')"
                       @click.stop="openProtectionDialog(item)"
-                      >{{ t('item_unlock') }}</Button
                     >
+                      <Eye :size="13" />
+                    </button>
                   </div>
                   <div
                     v-else-if="item.type === 'link' || detectContentType(item.content) === 'url'"
