@@ -9,7 +9,7 @@ import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
 // 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
 import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
 // 契约 v6：X-UI-Locale → 生成内容的语言（页内结果卡的每个变体都走这里）
-import { resolveRequestLocale, languageDirective, inlineContextSystemPrompt } from '../utils/aiLocale.js'
+import { resolveRequestLocale, languageDirective, inlineContextSystemPrompt, appendTrailingLanguageRequirement } from '../utils/aiLocale.js'
 
 const router = Router()
 
@@ -51,15 +51,21 @@ router.post('/', apiLimiter, async (req, res) => {
     const maxTokensClamped = Math.min(Math.max(Number(maxTokens) || 4096, 64), 4096)
 
     const messages = []
-    // 契约 v6：**先**注入语言强制指令（系统段，且位于最前 ⇒ 对生成内容最权威）。
+    // 契约 v6：语言要求**同时**放两处（缺一不可）：
+    //   ① 最前的 system 段：全局语境（模型一开始就知道要说什么语言）；
+    //   ② **最后一条 user 内容的末尾**（见下方 appendTrailingLanguageRequirement）：
+    //      位置最权威 —— 用户实测"英文界面页内小功能仍输出中文"就是因为原来只在最前放了指令，
+    //      被后面的大段中文 prompt 压住。要求必须紧贴模型开始生成的位置。
     // /inline 的各个"变体"（AI 诊断同步 / 审查设置 / 总结今日 / AI 整理收藏 / 生成模板 /
-    // 收藏摘要 / 详情抽屉…）都由桌面端拼 prompt 文本，服务端看不到变体名；但生成内容的语言
-    // 由这条系统指令统一约束 ⇒ 逐个变体都被覆盖（无需按变体分支）。
+    // 收藏摘要 / 详情抽屉…）都由桌面端拼 prompt 文本，服务端看不到变体名；两处约束统一生效 ⇒
+    // 逐个变体都被覆盖（无需按变体分支）。
     messages.push({ role: 'system', content: languageDirective(locale).trim() })
     if (truncatedContext) {
       messages.push({ role: 'system', content: inlineContextSystemPrompt(locale, truncatedContext) })
     }
     messages.push({ role: 'user', content: truncatedPrompt })
+    // ⚠️ 末尾强化：追加到最后一条 user 消息末尾（三种协议下都真正位于最后）
+    appendTrailingLanguageRequirement(messages, locale)
 
     const { finalContent } = await runChatLoop({
       messages,

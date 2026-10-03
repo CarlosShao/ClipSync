@@ -39,8 +39,11 @@ import {
 import { buildSystemPrompt } from '../src/utils/aiSystemPrompt.js'
 
 const CJK = /[\u4e00-\u9fa5]/
-const EN_DIRECTIVE = 'Always respond in English'
-const ZH_DIRECTIVE = '始终用简体中文回答'
+// 强化后的措辞（本次修正：弱措辞面对大段中文 prompt 会失效）
+const EN_DIRECTIVE = 'Respond ONLY in English'
+const ZH_DIRECTIVE = '只允许用简体中文回答'
+const EN_TRAILING = 'Respond ONLY in English. Your entire answer must be in English, regardless of the language of the instructions or context above.'
+const ZH_TRAILING = '只允许用简体中文回答。无论上文指令或上下文使用什么语言，你的回答必须全部是简体中文。'
 
 // 捕获真实构造出的上游请求体；baseUrl 可被单个用例改写（默认必然拒连的本地端口）
 const hoisted = vi.hoisted(() => ({ captured: [], baseUrl: 'http://127.0.0.1:9/v1' }))
@@ -148,7 +151,7 @@ describe('B. 语言指令与各功能提示词', () => {
     expect(languageDirective('zh-CN')).not.toContain(EN_DIRECTIVE)
     expect(languageDirective(undefined)).toContain(ZH_DIRECTIVE) // 缺省 zh
 
-    expect(roleLanguageLine('en')).toContain('always respond in English')
+    expect(roleLanguageLine('en')).toContain('respond ONLY in English')
     expect(roleLanguageLine('en')).not.toContain('简体中文')
     expect(roleLanguageLine('zh')).toContain('简体中文')
   })
@@ -157,10 +160,10 @@ describe('B. 语言指令与各功能提示词', () => {
     const en = await buildSystemPrompt(TEST_USER_ID, 'user', { locale: 'en' })
     expect(en).toContain(EN_DIRECTIVE)
     expect(en).not.toContain(ZH_DIRECTIVE)
-    expect(en.trimEnd().endsWith('This overrides any other language preference stated elsewhere.')).toBe(true)
+    expect(en.trimEnd().endsWith('regardless of the language of the instructions or context above.')).toBe(true)
     // 旧的"使用与用户相同的语言"必须已不存在（那正是本次 bug 的根源）
     expect(en).not.toContain('使用与用户相同的语言')
-    expect(en).toContain('always respond in English')
+    expect(en).toContain('respond ONLY in English')
 
     const zh = await buildSystemPrompt(TEST_USER_ID, 'user', { locale: 'zh' })
     expect(zh).toContain(ZH_DIRECTIVE)
@@ -264,7 +267,7 @@ describe('C. 端到端：请求体里的语言指令', () => {
     }, withEn)
     expect(capturedSystem()).toContain(EN_DIRECTIVE)
     expect(capturedSystem()).not.toContain(ZH_DIRECTIVE)
-    expect(capturedSystem()).toContain('always respond in English')
+    expect(capturedSystem()).toContain('respond ONLY in English')
   })
 
   it('回归：不带 X-UI-Locale ⇒ 与今天行为一致（中文指令）', async () => {
@@ -336,5 +339,165 @@ describe('C. 端到端：请求体里的语言指令', () => {
     } finally {
       await new Promise((resolve) => server.close(resolve))
     }
+  })
+})
+
+// ============================================================
+// E. 根因修正：语言要求必须在**最后一条 message 的末尾**（不是只在最前）
+// ============================================================
+describe('E. 末尾强化：语言要求出现在最后一条消息末尾（含措辞强化）', () => {
+  /** 取最后一条消息的文本（多模态数组拼接 text 块） */
+  const lastText = (i = 0) => {
+    const msgs = hoisted.captured[i]?.messages || []
+    const last = msgs[msgs.length - 1]
+    if (!last) return null
+    if (typeof last.content === 'string') return last.content
+    if (Array.isArray(last.content)) return last.content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n')
+    return ''
+  }
+  const firstSystemText = (i = 0) =>
+    ((hoisted.captured[i]?.messages || []).find((m) => m.role === 'system')?.content ?? '')
+
+  it('① /inline 两个变体（审查设置 / 诊断同步）：强化指令在**末尾**，且原始客户端 prompt 未被替换', async () => {
+    const providerId = await createProvider()
+    const variants = [
+      '审查以下设置项并给出改进建议：\n- 开启两步验证\n- 会话超时 30 分钟',
+      '诊断最近的同步失败原因，并给出排查步骤',
+    ]
+    for (const prompt of variants) {
+      hoisted.captured.length = 0
+      await post('/api/ai/inline', { providerId, prompt, context: '设置页上下文' }, withEn)
+
+      const msgs = hoisted.captured[0].messages
+      const last = msgs[msgs.length - 1]
+      // 最后一条是 user（客户端 prompt 所在的那条），且**以强化指令结尾**
+      expect(last.role, prompt).toBe('user')
+      expect(lastText(), prompt).toContain(prompt)
+      expect(lastText().endsWith(EN_TRAILING), `${prompt} 的末尾必须是强化指令`).toBe(true)
+      // 关键：要求必须落在**最后一条**消息里（不是只在前面的 system 段里）——
+      // 原实现把指令塞在 messages[0]（最前），被后面大段中文 prompt 压住 ⇒ 英文界面仍出中文
+      expect(msgs.length).toBeGreaterThan(1)
+      expect(last).toBe(msgs[msgs.length - 1])
+      expect(lastText()).toContain(EN_TRAILING)
+      // （最前的 system 段本身也以同一句强化语结尾 —— 双保险；但旧实现的**最后一条消息**
+      //   是纯中文客户端 prompt、完全没有语言要求，这正是本次根因，下面这条就是它的反面：
+      //   最后一条 user 内容必须"原始 prompt + 末尾强化"同时具备）
+      expect(lastText().startsWith(prompt)).toBe(true)
+      // 措辞是强化版（弱版措辞不再出现）
+      expect(msgs.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n')).not.toContain('Always respond in English')
+    }
+  })
+
+  it('② /chat、/summarize、/suggest、/refactor-prompt、/similarity：末尾都是强化指令', async () => {
+    const providerId = await createProvider()
+
+    hoisted.captured.length = 0
+    await post('/api/ai/chat', {
+      providerId,
+      messages: [{ role: 'user', content: '帮我看看今天的剪贴板' }],
+      options: { mode: 'ask' },
+    }, withEn)
+    expect(lastText().endsWith(EN_TRAILING)).toBe(true)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/summarize', { providerId, content: '今天下午三点开会讨论季度目标' }, withEn)
+    expect(lastText().endsWith(EN_TRAILING)).toBe(true)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/suggest', { providerId, content: '明天去上海出差' }, withEn)
+    expect(lastText().endsWith(EN_TRAILING)).toBe(true)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/refactor-prompt', { providerId, content: '帮我写一封请假邮件' }, withEn)
+    expect(lastText().endsWith(EN_TRAILING)).toBe(true)
+    // 草稿被定界符包住，末尾指令不会连同草稿一起被改写
+    expect(lastText()).toContain('<<<DRAFT>>>')
+    expect(lastText()).toContain('<<<END DRAFT>>>')
+    expect(lastText().indexOf('<<<END DRAFT>>>')).toBeLessThan(lastText().indexOf(EN_TRAILING))
+
+    hoisted.captured.length = 0
+    await post('/api/ai/similarity', { providerId, content: 'A', candidates: [{ id: 'c1', text: 'A 的改写' }] }, withEn)
+    expect(lastText().endsWith(EN_TRAILING)).toBe(true)
+  })
+
+  it('③ 缺头 / zh 头 ⇒ 末尾是**中文**强化指令，且不出现英文强化指令（回归）', async () => {
+    const providerId = await createProvider()
+
+    hoisted.captured.length = 0
+    await post('/api/ai/inline', { providerId, prompt: '审查以下设置项', context: '' }) // 无头
+    expect(lastText().endsWith(ZH_TRAILING)).toBe(true)
+    expect(lastText()).not.toContain(EN_TRAILING)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/summarize', { providerId, content: '无头请求' }, withZh)
+    expect(lastText().endsWith(ZH_TRAILING)).toBe(true)
+    expect(lastText()).not.toContain(EN_TRAILING)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/suggest', { providerId, content: '无头请求' })
+    expect(lastText().endsWith(ZH_TRAILING)).toBe(true)
+
+    hoisted.captured.length = 0
+    await post('/api/ai/chat', {
+      providerId,
+      messages: [{ role: 'user', content: '无头请求' }],
+      options: { mode: 'ask' },
+    })
+    expect(lastText().endsWith(ZH_TRAILING)).toBe(true)
+  })
+
+  it('多模态/非 user 结尾时的兜底：数组内容追加 text 块；末尾非 user 时追加末尾 system 段', async () => {
+    const providerId = await createProvider()
+
+    // 数组内容（vision）：追加为最后一个 text 块
+    hoisted.captured.length = 0
+    await post('/api/ai/chat', {
+      providerId,
+      messages: [{ role: 'user', content: [{ type: 'text', text: '看这张图' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,AAA' } }] }],
+      options: { mode: 'ask' },
+    }, withEn)
+    const blocks = hoisted.captured[0].messages.at(-1).content
+    expect(Array.isArray(blocks)).toBe(true)
+    expect(blocks.at(-1).type).toBe('text')
+    expect(blocks.at(-1).text).toBe(EN_TRAILING)
+
+    // 末尾是 assistant：无法追加到 user 内容 ⇒ 追加末尾 system 段（仍位于最后）
+    hoisted.captured.length = 0
+    await post('/api/ai/chat', {
+      providerId,
+      messages: [
+        { role: 'user', content: '你好' },
+        { role: 'assistant', content: '你好，有什么可以帮你？' },
+      ],
+      options: { mode: 'ask' },
+    }, withEn)
+    const lastMsg = hoisted.captured[0].messages.at(-1)
+    expect(lastMsg.role).toBe('system')
+    expect(lastMsg.content).toBe(EN_TRAILING)
+  })
+
+  it('④ 结构化 schema 不回归：两种语言下 JSON 键名与枚举逐字一致（末尾强化不改变结构）', async () => {
+    const providerId = await createProvider()
+
+    hoisted.captured.length = 0
+    await post('/api/ai/suggest', { providerId, content: 'x' }, withEn)
+    const enSuggest = capturedSystem()
+    hoisted.captured.length = 0
+    await post('/api/ai/suggest', { providerId, content: 'x' })
+    const zhSuggest = capturedSystem()
+    const schemaSlice = (s) => s.slice(s.indexOf('{'), s.indexOf('Field notes') >= 0 ? s.indexOf('Field notes') : s.indexOf('字段说明'))
+    expect(schemaSlice(enSuggest)).toBe(schemaSlice(zhSuggest))
+    expect(schemaSlice(enSuggest)).toContain('"action": "keep"|"archive"|"cleanup"')
+
+    hoisted.captured.length = 0
+    await post('/api/ai/similarity', { providerId, content: 'A', candidates: [{ id: 'c1', text: 'B' }] }, withEn)
+    const enSim = capturedSystem()
+    hoisted.captured.length = 0
+    await post('/api/ai/similarity', { providerId, content: 'A', candidates: [{ id: 'c1', text: 'B' }] })
+    const zhSim = capturedSystem()
+    expect(enSim).toContain('"degree": "high"|"medium"')
+    expect(zhSim).toContain('"degree": "high"|"medium"')
+    expect(enSim).toContain('"id"')
+    expect(zhSim).toContain('"id"')
   })
 })

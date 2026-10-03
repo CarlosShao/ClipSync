@@ -23,9 +23,11 @@ import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
 // 契约 v6：X-UI-Locale → 生成内容的语言（每个会产出自然语言的功能都要注入语言指令）
 import {
   resolveRequestLocale,
+  appendTrailingLanguageRequirement,
   summarizeSystemPrompt,
   similaritySystemPrompt,
   refactorSystemPrompt,
+  refactorUserContent,
   suggestCollectionHint,
   suggestBatchSystemPrompt,
   suggestSingleSystemPrompt,
@@ -111,6 +113,10 @@ router.post('/chat', apiLimiter, async (req, res) => {
     } else {
       messages.unshift({ role: 'system', content: systemContent })
     }
+    // 契约 v6：**末尾强化** —— system 段里的语言要求虽然已是该段的最后，但它后面还有整段用户内容
+    // （本产品常见：中文长文本/多模态数组）⇒ 再把要求追加到最后一条消息末尾，位置最权威。
+    // （Anthropic/Responses 协议会把 system 抽取到最前，只有追加到最后一条 user 内容才真正"在最后"。）
+    appendTrailingLanguageRequirement(messages, locale)
     // 按角色过滤下发给 LLM 的工具集（普通/管理员角色看不到敏感工具）
     const scopedTools = getToolsForRole(role, TOOLS)
 
@@ -436,6 +442,8 @@ router.post('/summarize', apiLimiter, async (req, res) => {
       { role: 'system', content: summarizeSystemPrompt(locale) },
       { role: 'user', content: truncated },
     ]
+    // 契约 v6：末尾强化（system 段之后还有整段用户内容，要求必须紧贴生成位置）
+    appendTrailingLanguageRequirement(messages, locale)
 
     const { finalContent } = await runChatLoop({
       messages,
@@ -494,6 +502,8 @@ router.post('/similarity', apiLimiter, async (req, res) => {
       },
       { role: 'user', content: truncated },
     ]
+    // 契约 v6：末尾强化（追加到最后一条 user 内容末尾；JSON 结构不受影响）
+    appendTrailingLanguageRequirement(messages, locale)
 
     const { finalContent } = await runChatLoop({
       messages,
@@ -591,8 +601,11 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
     const refactorSystem = refactorSystemPrompt(locale)
     const refactorMessages = [
       { role: 'system', content: refactorSystem },
-      { role: 'user', content: content.trim() },
+      // 草稿用定界符包住：末尾强化指令追加在定界符之后，模型只改写标记之间文本，不会把指令写进结果
+      { role: 'user', content: refactorUserContent(locale, content.trim()) },
     ]
+    // 契约 v6：末尾强化（要求出现在最后一条 user 内容末尾）
+    appendTrailingLanguageRequirement(refactorMessages, locale)
 
     let finalText = ''
     let sentError = false
@@ -774,6 +787,10 @@ router.post('/suggest', apiLimiter, async (req, res) => {
         parsed: (obj) => cleanSuggestion(obj),
       }
     }
+
+    // 契约 v6：末尾强化（单条/批量两条分支共用一次；追加到最后一条 user 内容末尾，
+    // JSON 键名与 keep/archive/cleanup 枚举不受影响）
+    appendTrailingLanguageRequirement(messages, locale)
 
     const { finalContent } = await runChatLoop({
       messages,

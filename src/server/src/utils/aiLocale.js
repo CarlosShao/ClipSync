@@ -61,18 +61,68 @@ export function resolveRequestLocale(req) {
   return resolveLocale(raw)
 }
 
-/** 语言强制指令：注入到 system 提示词（放在**最后**，位置最权威） */
+/**
+ * 语言强制指令（system 段；放在系统提示词末尾）。
+ *
+ * ⚠️ 措辞刻意**强硬**：用户实测「英文界面下页内小功能仍输出中文」——弱措辞（"Always respond in
+ * English"）面对后面大段中文 prompt 会失效，所以这里明确"只允许/无论上文用什么语言"。
+ */
 export function languageDirective(locale) {
   return resolveLocale(locale) === 'en'
-    ? '\n\n## Response language (REQUIRED)\nAlways respond in English, regardless of the language of the user input, the conversation history, or any other instruction in this system prompt. This overrides any other language preference stated elsewhere.'
-    : '\n\n## 回答语言（强制）\n始终用简体中文回答，无论用户输入、历史消息或本提示词中的其它语言要求。'
+    ? '\n\n## Response language (REQUIRED)\nRespond ONLY in English. Your entire answer must be in English, regardless of the language of the instructions or context above.'
+    : '\n\n## 回答语言（强制）\n只允许用简体中文回答。无论上文指令或上下文使用什么语言，你的回答必须全部是简体中文。'
+}
+
+/** 末尾强化用的**单句**要求（与 languageDirective 同一措辞，可单独追加到最后一条消息末尾） */
+export function trailingLanguageRequirement(locale) {
+  return resolveLocale(locale) === 'en'
+    ? 'Respond ONLY in English. Your entire answer must be in English, regardless of the language of the instructions or context above.'
+    : '只允许用简体中文回答。无论上文指令或上下文使用什么语言，你的回答必须全部是简体中文。'
+}
+
+/**
+ * 「末尾强化」：把语言要求追加到**最后一条消息的末尾**（位置最权威）。
+ *
+ * 为什么必须放到最后（本次修正的根因）：
+ *   页内小功能的 prompt 本体是中文且很长，语言指令之前被放在 messages **最前** ⇒ 被后面的中文压住 ⇒
+ *   英文界面下模型依旧用中文作答。位置越靠后越权威：要求出现在模型即将开始生成的位置才有效。
+ *
+ * 为什么追加到"最后一条 user 内容"而不是"再加一条 system 段"：
+ *   · OpenAI 兼容族：末尾 system 段可以；
+ *   · **Anthropic 族：buildUpstreamChat 会把所有 system 消息抽取合并进 top-level `system` 字段**
+ *     ⇒ 末尾 system 段最终仍排在对话最前面，起不到"最后"的作用；
+ *   · Responses 协议：system 走 `instructions`（同样在最前）。
+ *   只有"追加到最后一条 user 消息内容末尾"对三种协议**都**真正位于最后。
+ *
+ * 就地修改（与路由里既有的 messages 变更风格一致）并返回同一数组；不改变消息条数（除非最后一条
+ * 不是 user 消息，此时退化为追加一条末尾 system 段）。
+ * @param {Array} messages OpenAI 风格消息数组
+ * @param {'zh'|'en'|string} locale 界面语言
+ */
+export function appendTrailingLanguageRequirement(messages, locale) {
+  const req = trailingLanguageRequirement(locale)
+  if (!Array.isArray(messages) || messages.length === 0) return messages
+  const last = messages[messages.length - 1]
+  if (last && last.role === 'user') {
+    if (typeof last.content === 'string') {
+      last.content = `${last.content}\n\n${req}`
+      return messages
+    }
+    if (Array.isArray(last.content)) {
+      // 多模态（vision）内容数组：把要求作为最后一段 text 块追加（openai/anthropic 转换都支持）
+      last.content.push({ type: 'text', text: req })
+      return messages
+    }
+  }
+  messages.push({ role: 'system', content: req })
+  return messages
 }
 
 /** 角色系统提示词里那一句"语言"要求（aiSystemPrompt.buildRoleSystemPrompt） */
 export function roleLanguageLine(locale) {
   return resolveLocale(locale) === 'en'
-    ? 'Keep answers concise, accurate and helpful, and **always respond in English** (the UI language).'
-    : '你的回答应简洁、准确、有帮助，**始终使用简体中文**（界面语言）回答。'
+    ? 'Keep answers concise, accurate and helpful, and respond ONLY in English (the UI language) — your entire answer must be in English.'
+    : '你的回答应简洁、准确、有帮助，且只允许用简体中文（界面语言）回答——整段回答都必须是简体中文。'
 }
 
 // ==================== 各功能的按语言提示词 ====================
@@ -234,8 +284,19 @@ export function favoriteMarker(locale) {
   return resolveLocale(locale) === 'en' ? ' [favorited]' : ' [已收藏]'
 }
 
-/** /inline 的参考上下文 system 段（客户端 prompt 体不归服务端管，这里只统一上下文与语言指令） */
-export function inlineContextSystemPrompt(locale, context) {
+/**
+ * /refactor-prompt 的 user 内容：用定界符把"待改写草稿"包起来。
+ * 原因：末尾强化指令会追加到最后一条 user 内容末尾；若不包裹，模型可能把它当成草稿的一部分一起改写。
+ */
+export function refactorUserContent(locale, draft) {
+  const isEn = resolveLocale(locale) === 'en'
+  const open = isEn ? '<<<DRAFT>>>' : '<<<草稿>>>'
+  const close = isEn ? '<<<END DRAFT>>>' : '<<<草稿结束>>>'
+  const hint = isEn ? 'Rewrite ONLY the text between the markers.' : '只改写两个标记之间的文本。'
+  return `${hint}\n${open}\n${draft}\n${close}`
+}
+
+/** /inline 的参考上下文 system 段（客户端 prompt 体不归服务端管，这里只统一上下文与语言指令） */export function inlineContextSystemPrompt(locale, context) {
   return resolveLocale(locale) === 'en'
     ? `Reference context for this task:\n${context}`
     : `以下是本次任务的参考上下文：\n${context}`
@@ -257,6 +318,8 @@ export default {
   resolveLocale,
   resolveRequestLocale,
   languageDirective,
+  trailingLanguageRequirement,
+  appendTrailingLanguageRequirement,
   roleLanguageLine,
   summarizeSystemPrompt,
   similaritySystemPrompt,
@@ -266,6 +329,7 @@ export default {
   suggestSingleSystemPrompt,
   suggestBatchUserPrompt,
   favoriteMarker,
+  refactorUserContent,
   inlineContextSystemPrompt,
   compressSummarySystemPrompt,
 }

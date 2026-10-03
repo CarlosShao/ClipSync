@@ -21,7 +21,7 @@ import { buildUpstreamChat, getPreset, getContextWindow } from '../utils/aiProvi
 import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
 import { buildThinkingOptions } from '../utils/modelPresets.js'
 // 契约 v6：界面语言 → 协调器/子代理/综合三阶段的生成内容都跟随语言
-import { DEFAULT_LOCALE, languageDirective } from '../utils/aiLocale.js'
+import { DEFAULT_LOCALE, languageDirective, appendTrailingLanguageRequirement } from '../utils/aiLocale.js'
 import { logger } from '../utils/logger.js'
 import { collectToolCallsFromStream, collectToolCallsFromResponsesStream, collectToolCallsFromAnthropicStream, handleToolCalls } from './aiStream.js'
 import { runChatLoop, openUpstreamStream, looksLikeToolIntent } from './aiChatCore.js'
@@ -107,6 +107,8 @@ async function runCoordinator({ messages, providerRow, apiKey, userId, role, req
   const preset = getPreset(providerRow.provider)
   // 契约 v6：协调器自己产出的回答（用户可见）也要跟随界面语言（语言指令追加在系统段末尾）
   const coMessages = [{ role: 'system', content: COORDINATOR_SYSTEM + languageDirective(locale) }, ...messages]
+  // 契约 v6：末尾强化（system 段在最前，要求必须再出现在最后一条消息末尾才压得住大段中文上下文）
+  appendTrailingLanguageRequirement(coMessages, locale)
   const tools = [DISPATCH_AGENTS_TOOL, ...businessTools]
   let currentMessages = coMessages
   // 安全网计数器：防止协调器模型"只说要调工具"却不 emit tool_calls。
@@ -289,7 +291,7 @@ async function runWorkers({ agents, messages, providerRow, apiKey, userId, role 
 
     const runOne = () =>
       runChatLoop({
-        messages: [{ role: 'system', content: WORKER_SYSTEM(agent) + languageDirective(locale) }, ...messages],
+        messages: appendTrailingLanguageRequirement([{ role: 'system', content: WORKER_SYSTEM(agent) + languageDirective(locale) }, ...messages], locale),
         options: {},
         providerRow,
         apiKey,
@@ -369,6 +371,8 @@ async function runSynthesis({ messages, workerResults, providerRow, apiKey, user
     { role: 'system', content: SYNTHESIS_SYSTEM + languageDirective(locale) },
     { role: 'user', content: synthUser },
   ]
+  // 契约 v6：末尾强化（综合阶段产出=用户可见最终回答，要求放在最后）
+  appendTrailingLanguageRequirement(synthMessages, locale)
 
   await runChatLoop({
     messages: synthMessages,

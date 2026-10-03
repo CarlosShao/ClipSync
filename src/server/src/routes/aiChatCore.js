@@ -13,7 +13,7 @@
 import { logger } from '../utils/logger.js'
 import { buildUpstreamChat, resolveFamily, getContextWindow, safeUpstreamFetch } from '../utils/aiProviders.js'
 // 契约 v6：界面语言（压缩摘要等内部生成内容也跟随语言）
-import { DEFAULT_LOCALE, compressSummarySystemPrompt } from '../utils/aiLocale.js'
+import { DEFAULT_LOCALE, compressSummarySystemPrompt, appendTrailingLanguageRequirement } from '../utils/aiLocale.js'
 import { loadEffectiveModelSettings, resolveContextWindowOverride } from '../utils/aiModelSettings.js'
 import { buildThinkingOptions } from '../utils/modelPresets.js'
 import { convertMessagesForAnthropic } from '../utils/messageConverter.js'
@@ -351,11 +351,13 @@ async function compressConversationHistory(messages, opts) {
   const summarySystem = compressSummarySystemPrompt(locale)
   let summary = ''
   try {
+    // 末尾强化：要求追加到最后一条 user 内容（被压缩的长记录）末尾 —— 位置最权威
+    const summaryMessages = appendTrailingLanguageRequirement([
+      { role: 'system', content: summarySystem },
+      { role: 'user', content: `=== 需要压缩的较早对话 ===\n${transcript}` },
+    ], locale)
     const r = await runChatLoop({
-      messages: [
-        { role: 'system', content: summarySystem },
-        { role: 'user', content: `=== 需要压缩的较早对话 ===\n${transcript}` },
-      ],
+      messages: summaryMessages,
       // 注意：runChatLoop 始终走流式解析（openUpstreamStream 固定按 SSE 读取），
       // 因此不要传 stream:false（否则上游返回单条 JSON，SSE 解析器拿不到 content）。
       options: { temperature: 0, max_tokens: 700 },
