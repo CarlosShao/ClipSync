@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ShimmerText from '@/components/ai/ShimmerText.vue'
 // 页内 AI 结果卡（clearline 卡面语言）：A 线各入口复用；
 // 写操作类通过 actions 插槽注入「采纳」等按钮，只读类用默认操作条。
 import { computed } from 'vue'
@@ -73,9 +74,7 @@ function continueInChat() {
     <div v-if="status === 'loading' && !(streaming || streamedText)" class="iac-loading">
       <FxLatticeLoader
         class="iac-loading-lattice"
-        :class="{ 'iac-shimmer': !reducedMotion }"
-        :style="{ '--iac-shimmer-cycle': SHIMMER_CYCLE_MS + 'ms', '--iac-shimmer-ease': SHIMMER_EASE }"
-        :label="loadingLabel"
+        label=""
         :announce="loadingLabel"
         status="working"
         :grid="3"
@@ -86,6 +85,7 @@ function continueInChat() {
         :show-timer="false"
         color="var(--accent)"
       />
+      <ShimmerText class="iac-loading-label" :text="loadingLabel" />
     </div>
     <div v-else-if="status === 'loading'" class="iac-body markdown-body">
       <AiStreamText :text="streamedText" :done="false" />
@@ -179,36 +179,10 @@ function continueInChat() {
 /* 「Working…」文字表面的流光：与左侧点阵**同频**（648ms / cubic-bezier(0.77,0,0.175,1)，
    值来自 utils/aiShimmer.ts，测试会解析点阵源码钉住同频）。
    目标是 FxLatticeLoader 内部的标签元素 ⇒ 必须 :deep()；点阵本身不动。 */
-.iac-loading .iac-shimmer :deep(.fxl-text) {
-  /* ⚠️ 不要再用 background-clip: text + -webkit-text-fill-color: transparent：
-     那套做法要求"背景完全覆盖文字"，任何相位/尺寸/容器不匹配都会让没盖到的字**直接消失**
-     （用户实测："字特么还会隐身"）。这里改为——文字本身完全不动（正常颜色，永不透明），
-     上面盖一层半透明柔光扫过（::after）⇒ 物理上不可能把字吃掉。 */
-  position: relative;
-}
-.iac-loading .iac-shimmer :deep(.fxl-text)::after {
-  content: '';
-  position: absolute;
-  inset: -0.12em -0.3em;
-  pointer-events: none;
-  background-image: linear-gradient(
-    100deg,
-    transparent 38%,
-    color-mix(in srgb, var(--accent) 45%, transparent) 50%,
-    transparent 62%
-  );
-  background-size: 220% 100%;
-  border-radius: 3px;
-  animation: iac-sheen var(--iac-shimmer-cycle, 1800ms) var(--iac-shimmer-ease, ease-in-out) infinite;
-}
-/* 覆盖层是半透明的 ⇒ 位置可以自由出入范围，不会出现"没盖到"的问题 */
-@keyframes iac-sheen {
-  from {
-    background-position: 150% 0;
-  }
-  to {
-    background-position: -50% 0;
-  }
+/* 文案的流光由 fx 层的统一组件 ai/ShimmerText.vue 负责（两层实现：底层文字永在 + 上层裁到字形）
+   —— 这里不再自己写一套 background-clip:text（曾经把文字吃掉 ✗）。 */
+.iac-loading-label {
+  font-size: 12.5px;
 }
 @media (prefers-reduced-motion: reduce) {
   .iac-loading .iac-shimmer :deep(.fxl-text) {

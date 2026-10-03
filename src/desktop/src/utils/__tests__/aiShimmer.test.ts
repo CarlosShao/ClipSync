@@ -1,30 +1,37 @@
 // @vitest-environment jsdom
-// === 证据：「AI 正在工作」占位文字的流光（与粒子点阵同频 + 尊重减少动效） ===
-//
-// 用户需求（原话）：「在工作的时候，这个 working 最好加个那个和 agent 流式工作开始那个思考中的动效，
-// 就是文字表面有光一遍一遍有节奏的划过，和左边那个粒子点阵动画的频率一样就行」。
-//
-// 本文件证明：
-//   ① 等待态占位（InlineAiCard 的「Working…」）挂上了流光类与周期变量（可断言形态，不做像素断言）
-//   ② 减少动效命中（html.reduce-motion ∪ prefers-reduced-motion）⇒ 不挂流光类 = 静态文字
-//   ③ **同频**：直接解析 fx/FxLatticeLoader.vue + InlineAiCard.vue 的源码重算点阵周期，
-//      断言流光常量与它相等（任一侧改周期都会红）
-//   ④ 不使用常驻 will-change / animation-fill-mode（本项目曾因这类属性黑屏）
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createApp, h } from 'vue'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { useI18n } from '@/composables/useI18n'
-import { LATTICE_EASE, SHIMMER_CYCLE_MS, SHIMMER_EASE } from '@/utils/aiShimmer'
-import InlineAiCard from '@/components/ai/InlineAiCard.vue'
+import { SHIMMER_CYCLE_MS, SHIMMER_EASE } from '@/utils/aiShimmer'
 import ShimmerText from '@/components/ai/ShimmerText.vue'
 
-// fx/useReducedMotion 在**模块加载时**就调用 window.matchMedia / MutationObserver；
-// jsdom 没有 matchMedia ⇒ 必须在 import 求值前补桩（vi.hoisted 早于 import 执行）。
-vi.hoisted(() => {
-  if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
-    window.matchMedia = ((query: string) => ({
+/**
+ * 「AI 正在工作」占位文字的流光 —— 回归测试。
+ *
+ * 这个特性连续踩了三个坑，这里逐条钉住（都是用户实测出来的）：
+ *   ① 模板漏插值 ⇒ 渲染出字面量 props.text }}，配合渐变着色看起来像"字在闪"；
+ *   ② 渐变底色用 currentColor ⇒ 此时它解析为 transparent ⇒ 只有光带可见、其余字全隐身；
+ *   ③ 只用一层半透明覆盖层 ⇒ 文字安全了，但光变成了"文字外面的一个方块"。
+ * 最终方案是**两层**：底层文字（正常颜色、永远可见）+ 上层同一份文字（裁到字形，只承载光带）。
+ */
+
+const SRC_ROOT = resolve(__dirname, '../../')
+const readSrc = (rel: string) => readFileSync(resolve(SRC_ROOT, rel), 'utf8')
+const stripCss = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '')
+
+function mountShimmer(text = 'Working…') {
+  const host = document.createElement('div')
+  const app = createApp({ render: () => h(ShimmerText, { text }) })
+  app.mount(host)
+  return { host, app }
+}
+
+// jsdom 没有 matchMedia：useReducedMotion 依赖它（系统偏好通道）
+if (!('matchMedia' in window)) {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
       matches: false,
       media: query,
       onchange: null,
@@ -33,133 +40,77 @@ vi.hoisted(() => {
       addListener: () => {},
       removeListener: () => {},
       dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia
-  }
-})
-
-const readSrc = (rel: string) => readFileSync(resolve(process.cwd(), 'src', rel), 'utf8')
-
-function mountWith(component: unknown, props: Record<string, unknown>) {
-  const host = document.createElement('div')
-  document.body.appendChild(host)
-  const app = createApp({ render: () => h(component as never, props as never) })
-  app.mount(host)
-  return {
-    host,
-    async settle() {
-      await nextTick()
-    },
-    unmount() {
-      app.unmount()
-      host.remove()
-    },
-  }
-}
-
-/** 挂载到真实 DOM 的通用件（InlineAiCard 需要 pinia / i18n 环境） */
-function mountInlineCard(status: 'loading' | 'done') {
-  return mountWith(InlineAiCard, { title: 'Review settings', status, text: '', displayText: '', streaming: false })
+    }),
+  })
 }
 
 beforeEach(() => {
-  localStorage.clear()
-  document.documentElement.classList.remove('reduce-motion')
-  setActivePinia(createPinia())
-})
-
-afterEach(() => {
-  document.body.innerHTML = ''
   document.documentElement.classList.remove('reduce-motion')
 })
 
 describe('「AI 正在工作」占位文字流光', () => {
-  it('① 等待态占位挂上流光类与同频周期变量（不做像素断言）', async () => {
-    const { setLang } = useI18n()
-    setLang('en')
-    const m = mountInlineCard('loading')
-    await m.settle()
-
-    const lattice = m.host.querySelector<HTMLElement>('.iac-loading .iac-loading-lattice')
-    expect(lattice, '等待态应渲染点阵加载器').toBeTruthy()
-    expect(lattice!.classList.contains('iac-shimmer')).toBe(true)
-    expect(lattice!.style.getPropertyValue('--iac-shimmer-cycle')).toBe(`${SHIMMER_CYCLE_MS}ms`)
-    expect(lattice!.style.getPropertyValue('--iac-shimmer-ease')).toBe(SHIMMER_EASE)
-
-    // 文字内容/大小/位置不改：仍是 i18n 的加载文案
-    expect(m.host.textContent).toContain('Working…')
-    m.unmount()
-
-    // 完成态没有流光（只有等待态才有）
-    const done = mountInlineCard('done')
-    await done.settle()
-    expect(done.host.querySelector('.iac-shimmer')).toBeNull()
-    done.unmount()
-  })
-
-  it('② 减少动效命中 ⇒ 静态文字（不挂流光类）；html.reduce-motion 与组件内判断一致', async () => {
-    const { setLang } = useI18n()
-    setLang('en')
-    document.documentElement.classList.add('reduce-motion')
-    // useReducedMotion 用 MutationObserver 监听 class 变化，等一拍让它同步
-    await new Promise((r) => setTimeout(r, 0))
-
-    const m = mountInlineCard('loading')
-    await m.settle()
-    const lattice = m.host.querySelector<HTMLElement>('.iac-loading .iac-loading-lattice')
-    expect(lattice, '点阵仍在（只是不流光）').toBeTruthy()
-    expect(lattice!.classList.contains('iac-shimmer')).toBe(false)
-    m.unmount()
-
-    // 通用流光组件同样：减少动效 ⇒ 不挂 --on（静态文字）
-    const s = mountWith(ShimmerText, { text: 'Generating…' })
-    await s.settle()
-    const span = s.host.querySelector<HTMLElement>('[data-shimmer-text]')
-    expect(span!.classList.contains('shimmer-text--on')).toBe(false)
-    expect(span!.textContent).toBe('Generating…')
-    s.unmount()
-  })
-
-    it('流光与点阵**刻意解耦**：用常规扫光速度，不吃点阵的 648ms', () => {
-    // 点阵周期仍可算出（仅作对照），但流光周期必须**不等于**它，且在常规扫光区间内
-    const latticeSrc = readSrc('components/fx/FxLatticeLoader.vue')
-    const ripple = latticeSrc.match(/ripple:\s*\{\s*3:\s*\{[^}]*loop:\s*([\d.]+),\s*scale:\s*([\d.]+)/)
-    const step = latticeSrc.match(/step:\s*(\d+),/)
-    if (ripple && step) {
-      const latticeCycle = Math.round(Number(ripple[1]) * Number(step[1]) * Number(ripple[2]))
-      expect(SHIMMER_CYCLE_MS, '流光周期不应再与点阵同频（用户实测点阵太快会看成字在闪）').not.toBe(latticeCycle)
-    }
-    expect(SHIMMER_CYCLE_MS, '流光应是常规扫光速度：1.2s~2.6s 一轮').toBeGreaterThanOrEqual(1200)
-    expect(SHIMMER_CYCLE_MS).toBeLessThanOrEqual(2600)
-  })
-
-  it('文字内容必须**原样渲染**（本次真实缺陷：模板漏了插值，渲染出字面量 "props.text }}" ⇒ 字在闪）', () => {
-    const host = document.createElement('div')
-    const app = createApp({ render: () => h(ShimmerText, { text: 'Working…' }) })
-    app.mount(host)
-    const el = host.querySelector<HTMLElement>('[data-shimmer-text]')
-    expect(el, '应渲染 shimmer span').toBeTruthy()
-    expect(el!.textContent, '渲染内容必须等于传入的 text，不能出现模板字面量').toBe('Working…')
-    expect(el!.textContent, '不应出现未插值的模板残留').not.toContain('props.text')
-    expect(el!.textContent).not.toContain('}}')
+  it('① 两层结构：底层文字永远在，上层只承载光带（并带周期变量）', () => {
+    const { host, app } = mountShimmer()
+    const root = host.querySelector<HTMLElement>('[data-shimmer-text]')
+    expect(root, '应渲染 ShimmerText').toBeTruthy()
+    expect(root!.style.getPropertyValue('--shimmer-cycle')).toBe(`${SHIMMER_CYCLE_MS}ms`)
+    expect(root!.style.getPropertyValue('--shimmer-ease')).toBe(SHIMMER_EASE)
+    expect(root!.querySelector('.shimmer-text__base'), '必须有底层文字层').toBeTruthy()
+    const sheen = root!.querySelector('.shimmer-text__sheen')
+    expect(sheen, '必须有裁到字形的柔光层').toBeTruthy()
+    expect(sheen!.getAttribute('aria-hidden'), '装饰层必须对辅助技术隐藏').toBe('true')
     app.unmount()
   })
 
-  it('④ 流光不使用常驻 will-change / animation-fill-mode（黑屏事故的防线）', () => {
-    for (const rel of ['components/ai/InlineAiCard.vue', 'components/ai/ShimmerText.vue']) {
-      const src = readSrc(rel)
-      // 断言的是"CSS 声明"（带冒号），注释里提到属性名不算
-      expect(src, `${rel} 不应声明 will-change`).not.toContain('will-change:')
-      expect(src, `${rel} 不应声明 animation-fill-mode`).not.toContain('animation-fill-mode:')
-    }
+  it('② 文字内容原样渲染（底层不得出现模板残留）', () => {
+    const { host, app } = mountShimmer()
+    const base = host.querySelector<HTMLElement>('.shimmer-text__base')
+    expect(base, '应渲染底层文字').toBeTruthy()
+    expect(base!.textContent).toBe('Working…')
+    expect(base!.textContent).not.toContain('props.text')
+    expect(base!.textContent).not.toContain('}}')
+    app.unmount()
   })
-  it('⑥ 两个实现都**禁止** background-clip:text + text-fill-color:transparent（会吃掉文字）', () => {
+
+  it('③ 减少动效（应用内开关）⇒ 不渲染柔光层，只剩静态文字', () => {
+    document.documentElement.classList.add('reduce-motion')
+    const { host, app } = mountShimmer()
+    expect(host.querySelector('.shimmer-text__base'), '静态态仍要有文字').toBeTruthy()
+    expect(host.querySelector('.shimmer-text__sheen'), '减少动效时不应有柔光层').toBeNull()
+    app.unmount()
+  })
+
+  it('④ 危险技术只允许出现在装饰层：底层文字不得透明；InlineAiCard 一律不得使用', () => {
+    const card = stripCss(readSrc('components/ai/InlineAiCard.vue'))
+    expect(card, 'InlineAiCard 不得使用 -webkit-text-fill-color: transparent').not.toMatch(
+      /-webkit-text-fill-color:\s*transparent/,
+    )
+    expect(card, 'InlineAiCard 不得自行使用 background-clip: text').not.toMatch(/background-clip:\s*text/)
+    const st = stripCss(readSrc('components/ai/ShimmerText.vue'))
+    const baseBlock = st.slice(st.indexOf('.shimmer-text__base'), st.indexOf('.shimmer-text__sheen'))
+    expect(baseBlock, '底层文字不得声明 text-fill-color: transparent').not.toMatch(
+      /-webkit-text-fill-color:\s*transparent/,
+    )
+    expect(st, '底层文字必须显式给出颜色').toContain('color: var(--text-secondary)')
+  })
+
+  it('⑤ 流光节奏：常规扫光速度，且与点阵刻意解耦', () => {
+    const lattice = stripCss(readSrc('components/fx/FxLatticeLoader.vue'))
+    const ripple = lattice.match(/ripple:\s*\{\s*3:\s*\{[^}]*loop:\s*([\d.]+),\s*scale:\s*([\d.]+)/)
+    const step = lattice.match(/step:\s*(\d+),/)
+    if (ripple && step) {
+      const cycle = Math.round(Number(ripple[1]) * Number(step[1]) * Number(ripple[2]))
+      expect(SHIMMER_CYCLE_MS, '流光不应再与点阵同频').not.toBe(cycle)
+    }
+    expect(SHIMMER_CYCLE_MS).toBeGreaterThanOrEqual(1200)
+    expect(SHIMMER_CYCLE_MS).toBeLessThanOrEqual(2600)
+  })
+
+  it('⑥ 不使用常驻 will-change / animation-fill-mode（黑屏事故的防线）', () => {
     for (const rel of ['components/ai/ShimmerText.vue', 'components/ai/InlineAiCard.vue']) {
-      const src = readSrc(rel).replace(/\/\*[\s\S]*?\*\//g, '') // 剥掉注释再断言
-      expect(src, `${rel} 不得使用 -webkit-text-fill-color: transparent`).not.toMatch(
-        /-webkit-text-fill-color:\s*transparent/,
-      )
-      expect(src, `${rel} 不得使用 background-clip: text`).not.toMatch(/background-clip:\s*text/)
-      expect(src, `${rel} 应使用柔光覆盖层（::after）`).toContain('::after')
+      const src = stripCss(readSrc(rel))
+      expect(src, rel + ' 不应声明 will-change').not.toContain('will-change:')
+      expect(src, rel + ' 不应声明 animation-fill-mode').not.toContain('animation-fill-mode:')
     }
   })
 })
