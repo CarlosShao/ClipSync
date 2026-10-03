@@ -658,12 +658,14 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
   /* 顶对齐：卡片高度各自贴合内容，不被同行最高的卡拉伸出留白 */
-  align-items: start;
+  align-items: stretch;
 }
 .fav-card {
   position: relative;
   display: flex;
   flex-direction: column;
+  /* 配合网格 stretch：同排卡片等高 ⇒ 边界与内部基线对齐 */
+  height: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
@@ -821,7 +823,7 @@
   color: var(--text-primary);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   word-break: break-word;
 }
