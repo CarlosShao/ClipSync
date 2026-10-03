@@ -180,30 +180,36 @@ function continueInChat() {
    值来自 utils/aiShimmer.ts，测试会解析点阵源码钉住同频）。
    目标是 FxLatticeLoader 内部的标签元素 ⇒ 必须 :deep()；点阵本身不动。 */
 .iac-loading .iac-shimmer :deep(.fxl-text) {
+  /* ⚠️ 不要再用 background-clip: text + -webkit-text-fill-color: transparent：
+     那套做法要求"背景完全覆盖文字"，任何相位/尺寸/容器不匹配都会让没盖到的字**直接消失**
+     （用户实测："字特么还会隐身"）。这里改为——文字本身完全不动（正常颜色，永不透明），
+     上面盖一层半透明柔光扫过（::after）⇒ 物理上不可能把字吃掉。 */
+  position: relative;
+}
+.iac-loading .iac-shimmer :deep(.fxl-text)::after {
+  content: '';
+  position: absolute;
+  inset: -0.12em -0.3em;
+  pointer-events: none;
   background-image: linear-gradient(
     100deg,
-    currentColor 0%,
-    currentColor 38%,
-    var(--accent) 50%,
-    currentColor 62%,
-    currentColor 100%
+    transparent 38%,
+    color-mix(in srgb, var(--accent) 45%, transparent) 50%,
+    transparent 62%
   );
-  background-size: 260% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: iac-shimmer-sweep var(--iac-shimmer-cycle, 648ms) var(--iac-shimmer-ease, ease-in-out) infinite;
+  background-size: 220% 100%;
+  border-radius: 3px;
+  animation: iac-sheen var(--iac-shimmer-cycle, 1800ms) var(--iac-shimmer-ease, ease-in-out) infinite;
 }
-@keyframes iac-shimmer-sweep {
+/* 覆盖层是半透明的 ⇒ 位置可以自由出入范围，不会出现"没盖到"的问题 */
+@keyframes iac-sheen {
   from {
-    background-position: 130% 0;
+    background-position: 150% 0;
   }
   to {
-    background-position: -30% 0;
+    background-position: -50% 0;
   }
 }
-/* 兜底：系统偏好减少动效 ⇒ 静态文字（JS 侧已不挂 .iac-shimmer） */
 @media (prefers-reduced-motion: reduce) {
   .iac-loading .iac-shimmer :deep(.fxl-text) {
     animation: none;
