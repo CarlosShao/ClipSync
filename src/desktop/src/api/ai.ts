@@ -1,4 +1,5 @@
 import { api, getCsrfToken } from './client'
+import { uiLocaleHeader } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
 import type { ThinkingStrength } from '@/utils/aiThinking'
 
@@ -322,6 +323,8 @@ export async function streamRefactorPrompt(opts: {
   if (token) headers['Authorization'] = `Bearer ${token}`
   const csrf = await getCsrfToken()
   if (csrf) headers['X-CSRF-Token'] = csrf
+  // 流式入口不走 api() ⇒ 这里显式带上界面语言头（AI 生成内容跟随界面语言）
+  headers['X-UI-Locale'] = uiLocaleHeader()
 
   let res: Response
   try {
@@ -554,6 +557,8 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
   if (token) headers['Authorization'] = `Bearer ${token}`
   const csrf = await getCsrfToken()
   if (csrf) headers['X-CSRF-Token'] = csrf
+  // 流式入口不走 api() ⇒ 这里显式带上界面语言头（AI 生成内容跟随界面语言）
+  headers['X-UI-Locale'] = uiLocaleHeader()
 
   let res: Response
   try {

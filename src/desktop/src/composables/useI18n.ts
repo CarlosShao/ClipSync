@@ -26,6 +26,27 @@ function applyDocumentLang(lang: Lang) {
 }
 applyDocumentLang(_lang.value)
 
+/**
+ * 把任意语言标识归一化成 AI 请求头用的语言（zh | en）：
+ *   · zh / zh-CN / zh-Hans / zh-Hant / zh-TW … → zh
+ *   · en / en-US / en-GB …                      → en
+ *   · 其它未知值 / 空                            → en（与 detectInitialLang「其余一律英文」一致）
+ */
+export function normalizeUiLocale(raw?: string | null): Lang {
+  const v = String(raw ?? '').trim().toLowerCase()
+  if (v.startsWith('zh')) return 'zh'
+  if (v.startsWith('en')) return 'en'
+  return 'en'
+}
+
+/**
+ * 当前界面语言的请求头取值（X-UI-Locale）。
+ * **每次调用都实时读 _lang** —— 用户切语言后下一个请求立即生效，不在模块加载时定死。
+ */
+export function uiLocaleHeader(): Lang {
+  return normalizeUiLocale(_lang.value)
+}
+
 export function useI18n() {
   const currentLang = computed(() => _lang.value)
   const dict = computed(() => _dicts[_lang.value])

@@ -1,4 +1,5 @@
 import { useConfigStore } from '@/stores/configStore'
+import { uiLocaleHeader } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { clearAllUserState } from '@/utils/userDataCleanup'
 
@@ -202,6 +203,9 @@ export async function api<T = any>(
 ): Promise<ApiResponse<T>> {
   const config = useConfigStore()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // AI 生成内容跟随界面语言：每次请求实时取当前语言（切语言后立刻生效）
+  // 服务端按此头指示模型用对应语言回答；无头时保持原行为（向后兼容）
+  headers['X-UI-Locale'] = uiLocaleHeader()
 
   const csrf = await getCsrfToken()
   if (csrf) headers['X-CSRF-Token'] = csrf
@@ -316,7 +320,7 @@ export async function apiForm<T = any>(path: string, formData: FormData): Promis
   let authRetried = false
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { 'X-UI-Locale': uiLocaleHeader() }
     // 注意：不设置 Content-Type，让浏览器自动设置 multipart boundary
     const token = config.config.token
     if (token) headers['Authorization'] = `Bearer ${token}`
@@ -383,7 +387,7 @@ export async function apiForm<T = any>(path: string, formData: FormData): Promis
 // 单次 blob 拉取（内部）：供 apiBlob 的 401 重试复用
 async function fetchBlob(method: string, path: string, timeoutMs: number): Promise<Response | null> {
   const config = useConfigStore()
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { 'X-UI-Locale': uiLocaleHeader() }
   const token = config.config.token
   if (token) headers['Authorization'] = `Bearer ${token}`
   const csrf = await getCsrfToken()
