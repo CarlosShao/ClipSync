@@ -376,16 +376,21 @@ describe('C. enabled 副作用与归属校验', () => {
   })
 
   it('纯函数 applySelectedModel：字符串/数组/对象三种历史形态都兼容', () => {
-    // 字符串（桌面端主形态）
-    expect(applySelectedModel({ p1: 'a' }, 'p1', 'b', true)).toEqual({ p1: 'b' })
-    expect(applySelectedModel({ p1: 'a' }, 'p1', 'a', false)).toEqual({})
+    // 字符串（桌面端主形态）—— ⚠️ 语义已按后续修正改写：
+    // 「已有别的选中时启用另一个」**不再覆盖**（旧断言 `{p1:'a'},'b',true → {p1:'b'}` 会悄悄改掉
+    //  聊天正在用的默认模型；详见 tests/ai-effective-model.test.js 的 ④ 组）
+    expect(applySelectedModel({ p1: 'a' }, 'p1', 'b', true)).toEqual({ p1: 'a' }) // 不覆盖已有选中
+    expect(applySelectedModel({ p1: 'a' }, 'p1', 'a', true)).toEqual({ p1: 'a' }) // 启用已选中：保持
+    expect(applySelectedModel({}, 'p1', 'b', true)).toEqual({ p1: 'b' }) // 无选中 ⇒ 建立选中
+    expect(applySelectedModel({ p1: 'a' }, 'p1', 'a', false)).toEqual({}) // 停用当前选中 ⇒ 清空
     expect(applySelectedModel({ p1: 'a' }, 'p1', 'b', false)).toEqual({ p1: 'a' })
-    // 数组
+    // 数组（多选语义：启用=加入 / 停用=移除）
     expect(applySelectedModel({ p1: ['a'] }, 'p1', 'b', true)).toEqual({ p1: ['a', 'b'] })
     expect(applySelectedModel({ p1: ['a', 'b'] }, 'p1', 'a', false)).toEqual({ p1: ['b'] })
     expect(applySelectedModel({ p1: ['a'] }, 'p1', 'a', false)).toEqual({})
     // 对象
     expect(applySelectedModel({ p1: { model: 'a' } }, 'p1', 'a', false)).toEqual({})
+    expect(applySelectedModel({ p1: { model: 'a' } }, 'p1', 'b', true)).toEqual({ p1: { model: 'a' } }) // 不覆盖
     expect(applySelectedModel({}, 'p1', 'x', true)).toEqual({ p1: 'x' })
     // 不污染入参
     const input = { p1: 'a' }

@@ -1,6 +1,7 @@
 import { pool } from '../db/pool.js'
 import { decrypt } from './encryption.js'
 import { buildUpstreamChat, safeUpstreamFetch } from './aiProviders.js'
+import { resolveEffectiveModel } from './aiModelSettings.js'
 import { logger } from './logger.js'
 import { isE2eItem } from './imageHash.js'
 import { isSafeStoredFilename } from '../services/fileRetentionCleanup.js'
@@ -43,6 +44,15 @@ export async function getOcrProvider(userId) {
   )
   if (result.rowCount === 0) return null
   const row = result.rows[0]
+  // 统一取模型（契约）：OCR 也要吃模型级 enabled —— 主模型被停用时改用另一个已启用模型；
+  // 没有任何启用模型时兜底回到主模型（永不失败，保持既有行为）。
+  // 之后再过视觉能力判定：换到的模型若不支持视觉，OCR 照旧静默跳过（返回 null）。
+  try {
+    const eff = await resolveEffectiveModel({ userId, providerRow: row })
+    if (eff?.model) row.model = eff.model
+  } catch (e) {
+    logger.warn('[aiOcr] resolveEffectiveModel failed, fallback to provider.model:', e.message)
+  }
   if (!providerSupportsVision(row)) return null
   return row
 }

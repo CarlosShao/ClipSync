@@ -18,10 +18,32 @@ import {
   getToolsForRole,
 } from '../utils/aiSystemPrompt.js'
 import { extractImageHashes, hashImageDataUrl } from '../utils/imageHash.js'
+// 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
+import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
 
 const router = Router()
 
 // 思考能力由前端 <think> 标签提示词 + 上游 reasoning_content 自动下发实现，无需后端模型匹配表。
+
+/**
+ * AI 小功能统一取模型：把 `providerRow.model` 换成"当前真正可用的那个模型"
+ * （优先级与模型级 enabled 校验见 utils/aiModelSettings.pickEffectiveModel）。
+ *
+ * · 显式传入且合法的 `model` 仍然最优先（/chat 的既有校验逻辑保留）——那种情况下**不要**调本函数；
+ * · 其它情况（未指定 / 指定了但不合法 / 小功能没有 model 入参）一律用它兜底；
+ * · 取不到时保持原值（函数保证永不失败：④ 兜底主模型）。
+ *
+ * ⚠️ 供应商层兜底链的既有差异（本次**只记录不改**，见任务说明）：本文件的 /chat、/summarize、
+ * /suggest、/similarity、/refactor-prompt 只调 `resolveUserProvider`（用户 is_default →
+ * 全局 ai_default_provider 族），拿不到就 404 `ai_no_provider`；而 routes/aiInline.js 额外兜底
+ * "任一 enabled 且有 key 的供应商"（页内结果卡不应因没设默认而整体不可用）。二者都是既有设计，
+ * 差异**只影响"用哪个供应商"，不影响"用哪个模型"**，故本次不统一（避免顺手改动 chat 的 404 语义）。
+ */
+async function applyEffectiveModel({ userId, providerId, providerRow }) {
+  const eff = await resolveEffectiveModel({ userId, providerId, providerRow })
+  if (eff?.model) providerRow.model = eff.model
+  return eff
+}
 
 // POST /api/ai/chat - SSE 流式代理（支持多轮 tool calling + 多代理并行编排）
 router.post('/chat', apiLimiter, async (req, res) => {
@@ -114,15 +136,22 @@ router.post('/chat', apiLimiter, async (req, res) => {
 
     // 模型覆盖：前端可在请求里指定本次使用的模型（多选标签场景）。
     // 校验规则：必须属于该供应商 models 列表，或与已存 model 一致（避免拼错/越权）。
+    // 显式且合法的 model **仍然最优先**（既有逻辑保留）；未指定或指定不合法时，
+    // 回退到统一取模型（模型级 enabled 生效：主模型被停用 ⇒ 改用另一个已启用模型）。
+    let explicitModelApplied = false
     if (options?.model && typeof options.model === 'string' && options.model.trim().length > 0) {
       const requested = options.model.trim()
       const allowed = Array.isArray(providerRow.models) ? providerRow.models : []
       const isAllowed = allowed.includes(requested) || requested === providerRow.model
       if (isAllowed) {
         providerRow.model = requested
+        explicitModelApplied = true
       } else {
         logger.warn(`[AI] requested model "${requested}" not in provider models (${allowed.join(',')}); ignoring override`)
       }
+    }
+    if (!explicitModelApplied) {
+      await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
     }
 
     // SSE 响应头
@@ -381,6 +410,8 @@ router.post('/summarize', apiLimiter, async (req, res) => {
     if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
+    // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
+    await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
     const MAX_SUMMARY_INPUT = 4000
     const truncated = content.slice(0, MAX_SUMMARY_INPUT)
     const messages = [
@@ -432,6 +463,8 @@ router.post('/similarity', apiLimiter, async (req, res) => {
     if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
+    // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
+    await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
     const truncated = content.slice(0, 4000)
 
     const messages = [
@@ -525,6 +558,8 @@ router.post('/refactor-prompt', apiLimiter, async (req, res) => {
     }
     const apiKey = decrypt(providerRow.api_key_encrypted)
     const role = req.user.roleKey || 'user'
+    // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
+    await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
 
     // SSE 响应头（与 /chat 一致）
     res.setHeader('Content-Type', 'text/event-stream')
@@ -665,6 +700,8 @@ router.post('/suggest', apiLimiter, async (req, res) => {
     if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
+    // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
+    await applyEffectiveModel({ userId: req.userId, providerId, providerRow })
     const MAX_SUGGEST_INPUT = 4000
 
     // 归一化一条输入（裁剪 / 校验）

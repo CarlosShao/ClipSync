@@ -6,6 +6,8 @@ import { logger } from '../utils/logger.js'
 import { runChatLoop } from './aiChatCore.js'
 import { resolveUserProvider } from '../utils/aiRuntimeConfig.js'
 import { buildAiFailure, providerPrecheckFailure } from '../utils/aiFailure.js'
+// 统一取模型（契约：小功能也要吃模型级 enabled —— 主模型被停用就改用另一个已启用模型）
+import { resolveEffectiveModel } from '../utils/aiModelSettings.js'
 
 const router = Router()
 
@@ -35,6 +37,9 @@ router.post('/', apiLimiter, async (req, res) => {
     if (!providerRow.api_key_encrypted) { const f = providerPrecheckFailure('no_key', providerRow); return res.status(f.httpStatus).json(f.body) }
 
     const apiKey = decrypt(providerRow.api_key_encrypted)
+    // 统一取模型：主模型被停用（模型级 enabled=false）时改用另一个已启用模型
+    const effModel = await resolveEffectiveModel({ userId: req.userId, providerId, providerRow })
+    if (effModel?.model) providerRow.model = effModel.model
     const MAX_INPUT = 24000
     const truncatedPrompt = prompt.slice(0, MAX_INPUT)
     const truncatedContext = typeof context === 'string' && context ? context.slice(0, MAX_INPUT) : ''
