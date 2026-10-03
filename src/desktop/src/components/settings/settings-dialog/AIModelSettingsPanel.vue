@@ -24,7 +24,7 @@
 //
 // 动效：本组件不引入任何过渡/关键帧（0 动画天然满足 reduce-motion）；弹窗动画来自既有
 // ModalDialog（≤150ms，globals.css 的 reduce-motion 会压掉）。
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import Input from '@/components/ui/input/Input.vue'
@@ -149,6 +149,101 @@ const onlyEnabled = ref(false)
 const onlyChat = ref(false)
 // 不适用对话分组：默认折叠（搜索时自动展开，避免命中结果被藏起来）
 const nonChatOpen = ref(false)
+
+/* ---------- 搜索框：一键清空 + 搜索历史（纯本地 localStorage，不上传） ---------- */
+
+/** 搜索历史持久化 key（带前缀 + 版本号，便于将来迁移；只存本地） */
+const SEARCH_HISTORY_KEY = 'clipsync:model-search-history:v1'
+const SEARCH_HISTORY_MAX = 10
+
+const searchWrapRef = ref<HTMLElement | null>(null)
+const historyOpen = ref(false)
+const searchHistory = ref<string[]>([])
+
+function loadSearchHistory() {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
+    if (!raw) return
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return
+    searchHistory.value = parsed
+      .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+      .map((v) => v.trim())
+      .slice(0, SEARCH_HISTORY_MAX)
+  } catch {
+    /* 隐私模式 / 脏数据：忽略，不影响搜索 */
+  }
+}
+loadSearchHistory()
+
+function persistSearchHistory() {
+  try {
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(searchHistory.value))
+  } catch {
+    /* 存不下就算了（不影响本次搜索） */
+  }
+}
+
+/** 记一条历史：去重（同词只留最新）、最近优先、最多 10 条 */
+function pushSearchHistory(keyword: string) {
+  const kw = keyword.trim()
+  if (!kw) return
+  searchHistory.value = [kw, ...searchHistory.value.filter((x) => x !== kw)].slice(0, SEARCH_HISTORY_MAX)
+  persistSearchHistory()
+}
+
+/** 回车 = 按当前输入过滤，并把它记进历史（"不选就回车"路径） */
+function commitSearchHistory() {
+  pushSearchHistory(search.value)
+  historyOpen.value = false
+}
+
+function openSearchHistory() {
+  if (searchHistory.value.length > 0) historyOpen.value = true
+}
+
+function closeSearchHistory() {
+  historyOpen.value = false
+}
+
+/** 点历史项：回填 + 过滤（并把它提到最前） */
+function applySearchHistory(keyword: string) {
+  search.value = keyword
+  pushSearchHistory(keyword)
+  historyOpen.value = false
+  focusSearchInput()
+}
+
+function removeSearchHistory(keyword: string) {
+  searchHistory.value = searchHistory.value.filter((x) => x !== keyword)
+  persistSearchHistory()
+  if (searchHistory.value.length === 0) historyOpen.value = false
+}
+
+function clearSearchHistory() {
+  searchHistory.value = []
+  persistSearchHistory()
+  historyOpen.value = false
+}
+
+function focusSearchInput() {
+  searchWrapRef.value?.querySelector('input')?.focus()
+}
+
+/** ✕ 一键清空：清空输入、恢复完整列表、焦点保持在搜索框 */
+function clearSearch() {
+  search.value = ''
+  closeSearchHistory()
+  focusSearchInput()
+}
+
+/** 点组件外部关闭历史下拉（与 CustomSelect 同一套做法） */
+function onSearchDocMouseDown(e: MouseEvent) {
+  if (!historyOpen.value) return
+  if (searchWrapRef.value && !searchWrapRef.value.contains(e.target as Node)) closeSearchHistory()
+}
+onMounted(() => document.addEventListener('mousedown', onSearchDocMouseDown))
+onUnmounted(() => document.removeEventListener('mousedown', onSearchDocMouseDown))
 
 // 刷新后的智能建议（一次性）
 const suggestion = ref<{ all: string[]; chat: string[]; nonChat: string[] } | null>(null)
@@ -1670,7 +1765,67 @@ watch(
 
       <!-- 搜索 / 筛选 + 批量启用/停用（把"误启用"一键救回来） -->
       <div class="aim-toolbar">
-        <Input v-model="search" class="aim-search" :placeholder="t('ai_model_search_ph', '搜索模型名 / 别名')" />
+        <!-- 搜索框：内有 ✕ 一键清空（有输入才显示）+ 聚焦时的搜索历史下拉（本地 localStorage） -->
+        <div ref="searchWrapRef" class="aim-search-wrap">
+          <Input
+            v-model="search"
+            class="aim-search"
+            :placeholder="t('ai_model_search_ph', '搜索模型名 / 别名')"
+            @focus="openSearchHistory()"
+            @keydown.enter.prevent="commitSearchHistory()"
+            @keydown.esc="closeSearchHistory()"
+          />
+          <button
+            v-if="search !== ''"
+            type="button"
+            class="aim-search-clear"
+            data-action="search-clear"
+            :title="t('ai_model_search_clear_h', '清空搜索')"
+            @click="clearSearch()"
+          >
+            <X :size="13" />
+          </button>
+
+          <!-- 搜索历史：最近优先、去重、最多 10 条；可删单条 / 一键清空；不选就回车按当前输入过滤 -->
+          <div v-if="historyOpen && searchHistory.length > 0" class="aim-history" data-action="search-history">
+            <div class="aim-history-head">
+              <span class="aim-history-title">{{ t('ai_model_search_history', '搜索历史') }}</span>
+              <button
+                type="button"
+                class="aim-history-clear"
+                data-action="search-history-clear"
+                :title="t('ai_model_search_history_clear', '清空历史')"
+                @mousedown.prevent
+                @click="clearSearchHistory()"
+              >
+                {{ t('ai_model_search_history_clear', '清空历史') }}
+              </button>
+            </div>
+            <div class="aim-history-list">
+              <div v-for="kw in searchHistory" :key="kw" class="aim-history-item" :data-history="kw">
+                <button
+                  type="button"
+                  class="aim-history-pick"
+                  :title="kw"
+                  @mousedown.prevent
+                  @click="applySearchHistory(kw)"
+                >
+                  {{ kw }}
+                </button>
+                <button
+                  type="button"
+                  class="aim-history-remove"
+                  data-action="search-history-remove"
+                  :title="t('ai_model_search_history_remove', '删除这条')"
+                  @mousedown.prevent
+                  @click="removeSearchHistory(kw)"
+                >
+                  <X :size="11" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
         <button
           type="button"
           class="aim-filter"
@@ -2391,6 +2546,131 @@ html.reduce-motion .aim-draft-form {
   flex: 1;
   min-width: 0;
   height: 30px;
+}
+/* 搜索框容器：承载 ✕ 清空按钮与历史下拉 */
+.aim-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.aim-search-wrap .aim-search {
+  flex: 1;
+  padding-right: 28px !important;
+}
+.aim-search-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.14s ease;
+}
+.aim-search-clear:hover {
+  color: var(--text-primary);
+}
+/* 搜索历史下拉：聚焦时展示（最近优先、去重、最多 10 条） */
+.aim-history {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-dropdown);
+  /* ≤160ms 的淡入 + 2px 位移（减少动效下不动） */
+  animation: aim-history-in 140ms ease-out;
+}
+@keyframes aim-history-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+html.reduce-motion .aim-history {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aim-history {
+    animation: none;
+  }
+}
+.aim-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 10px 6px;
+}
+.aim-history-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+.aim-history-clear {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.aim-history-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 0;
+}
+.aim-history-item:hover {
+  background: var(--bg-hover);
+}
+.aim-history-pick {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aim-history-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.aim-history-remove:hover {
+  color: var(--danger);
 }
 .aim-filter {
   flex-shrink: 0;

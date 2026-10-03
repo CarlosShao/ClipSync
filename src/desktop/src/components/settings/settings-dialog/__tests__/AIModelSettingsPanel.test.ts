@@ -2269,6 +2269,112 @@ describe('AIProviderSettings — 刷新零写入 + 批量启用/停用', () => {
   })
 })
 
+/* ===================== 搜索框：✕ 一键清空 + 搜索历史（本地） ===================== */
+
+describe('模型库 — 搜索框一键清空与搜索历史', () => {
+  const SEARCH_KEY = 'clipsync:model-search-history:v1'
+  const searchInput = () => document.querySelector<HTMLInputElement>('.aim-search-wrap input')!
+  const clearBtn = () => document.querySelector<HTMLButtonElement>('[data-action="search-clear"]')
+  const historyBox = () => document.querySelector<HTMLElement>('[data-action="search-history"]')
+  const historyItems = () => document.querySelectorAll<HTMLElement>('.aim-history-item')
+  const readHistory = () => JSON.parse(localStorage.getItem(SEARCH_KEY) || '[]') as string[]
+
+  async function typeSearch(value: string) {
+    const el = searchInput()
+    el.focus()
+    el.value = value
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+  }
+
+  /** 三个**对话**模型（都在同一组芯片里，避免非对话组默认折叠影响计数） */
+  const FIXTURE3 = () => [chatOn({ model: 'alpha-1' }), chatOn({ model: 'beta-2' }), chatOn({ model: 'gamma-3' })]
+
+  it('① 有输入时显示 ✕；点它清空输入、恢复完整列表、焦点仍在搜索框', async () => {
+    const m = mountPanel({ items: FIXTURE3() })
+    await flush()
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(3)
+    // 无输入 ⇒ 不显示 ✕
+    expect(clearBtn()).toBeNull()
+
+    await typeSearch('beta')
+    expect(clearBtn()).toBeTruthy()
+    // 过滤生效：只剩 beta-2
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(1)
+
+    clearBtn()!.click()
+    await flush()
+    expect(searchInput().value).toBe('')
+    expect(clearBtn()).toBeNull()
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(3)
+    expect(document.activeElement).toBe(searchInput())
+
+    m.unmount()
+  })
+
+  it('② ✕ 只在有输入时出现（空输入不显示）', async () => {
+    const m = mountPanel({ items: [chatOn()] })
+    await flush()
+    expect(clearBtn()).toBeNull()
+    await typeSearch('a')
+    expect(clearBtn()).toBeTruthy()
+    await typeSearch('')
+    expect(clearBtn()).toBeNull()
+    m.unmount()
+  })
+
+  it('③ 回车写历史（localStorage）；聚焦出下拉；点历史回填过滤；删单条 / 清空历史生效', async () => {
+    const m = mountPanel({ items: FIXTURE3() })
+    await flush()
+    expect(readHistory()).toEqual([])
+    expect(historyBox()).toBeNull() // 没历史 ⇒ 不显示下拉
+
+    // 搜一个词并回车 ⇒ 写入历史（本地持久化）
+    await typeSearch('alpha')
+    searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+    expect(readHistory()).toEqual(['alpha'])
+    expect(historyBox()).toBeNull() // 回车后收起
+
+    // 再搜一个 ⇒ 最近优先
+    await typeSearch('beta')
+    searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flush()
+    expect(readHistory()).toEqual(['beta', 'alpha'])
+
+    // 聚焦 ⇒ 下拉展示历史
+    searchInput().dispatchEvent(new Event('focus'))
+    await flush()
+    expect(historyBox()).toBeTruthy()
+    expect(historyItems()).toHaveLength(2)
+    expect(Array.from(historyItems()).map((el) => el.dataset.history)).toEqual(['beta', 'alpha'])
+
+    // 点历史项 ⇒ 回填并过滤（只留 o3-mini）
+    historyItems()[0].querySelector<HTMLButtonElement>('.aim-history-pick')!.click()
+    await flush()
+    expect(searchInput().value).toBe('beta')
+    expect(document.querySelectorAll('.aim-chip')).toHaveLength(1)
+    expect(document.querySelector('.aim-chip')!.getAttribute('data-model')).toBe('beta-2')
+
+    // 删单条 ⇒ 持久化同步
+    searchInput().dispatchEvent(new Event('focus'))
+    await flush()
+    historyBox()!.querySelector<HTMLButtonElement>('[data-action="search-history-remove"]')!.click()
+    await flush()
+    expect(readHistory()).toEqual(['alpha'])
+
+    // 一键清空历史
+    searchInput().dispatchEvent(new Event('focus'))
+    await flush()
+    historyBox()!.querySelector<HTMLButtonElement>('[data-action="search-history-clear"]')!.click()
+    await flush()
+    expect(readHistory()).toEqual([])
+    expect(historyBox()).toBeNull()
+
+    m.unmount()
+  })
+})
+
 beforeEach(() => {
   mocks.api.mockReset()
   mocks.showToast.mockReset()
@@ -2283,6 +2389,8 @@ beforeEach(() => {
   mocks.can.mockReturnValue(true)
   try {
     sessionStorage.clear()
+    // 搜索历史存在 localStorage：逐用例清空，避免互相污染
+    localStorage.clear()
   } catch {
     /* ignore */
   }
