@@ -113,7 +113,15 @@ function fmtTime(ts: number): string {
  */
 const AI_ACTS = [
   { key: 'summary', i18n: 'ai_act_summary', fallback: '总结', promptKey: 'drawerSummary' },
-  { key: 'translate', i18n: 'ai_act_translate', fallback: '翻译为英文', promptKey: 'drawerTranslate' },
+  // 目标语言固定英文（与界面语言无关）⇒ 请求体带 languageOverride: 'en'，
+  // 让服务端跳过按 X-UI-Locale 追加的语言强化要求（否则中文界面下会出现「只允许用简体中文回答」）
+  {
+    key: 'translate',
+    i18n: 'ai_act_translate',
+    fallback: '翻译为英文',
+    promptKey: 'drawerTranslate',
+    languageOverride: 'en',
+  },
   { key: 'extract', i18n: 'ai_act_extract', fallback: '提取关键信息', promptKey: 'drawerExtract' },
 ] as const
 
@@ -133,7 +141,9 @@ function onAiAct(act: (typeof AI_ACTS)[number]) {
     return
   }
   activeAiAct.value = act.key
-  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000))
+  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000), {
+    languageOverride: 'languageOverride' in act ? act.languageOverride : undefined,
+  })
 }
 
 function closeDrawerAi() {
@@ -147,7 +157,9 @@ function retryDrawerAi() {
   const content = fullContent.value.trim()
   if (!act || !content) return
   // 重试用当前语言重取（用户可能中途切了语言）
-  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000))
+  drawerAi.run(inlinePromptFor(act.promptKey), content.slice(0, 20000), {
+    languageOverride: 'languageOverride' in act ? act.languageOverride : undefined,
+  })
 }
 
 watch(

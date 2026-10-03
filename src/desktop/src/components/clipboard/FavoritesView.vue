@@ -30,7 +30,7 @@ import { setKeyboardLayer } from '@/composables/useClipboardKeyboard'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 import FavOrganizeFlow from '@/components/clipboard/FavOrganizeFlow.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
-import { inlinePromptFor } from '@/utils/inlinePrompts'
+import { inlineContextLabel, inlinePromptFor } from '@/utils/inlinePrompts'
 
 const props = defineProps<{ aiEnabled?: boolean }>()
 const emit = defineEmits<{
@@ -1246,7 +1246,10 @@ function buildFavoriteDigest(): string {
     .slice(0, 60)
     .map((item, i) => {
       const body =
-        item.type === 'image' ? '（图片）' : String(item.content || '').replace(/\s+/g, ' ').trim()
+        // 上下文标签按界面语言取（否则英文界面下『（图片）』会把模型输出带回中文）
+        item.type === 'image'
+          ? inlineContextLabel('image')
+          : String(item.content || '').replace(/\s+/g, ' ').trim()
       return `#${i} [${item.type}] id=${item.id} ${body.slice(0, 80)}`
     })
     .join('\n')

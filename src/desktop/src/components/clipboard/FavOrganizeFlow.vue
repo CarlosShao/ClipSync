@@ -6,7 +6,7 @@
 // 仅预览不落库：所有写操作都发生在用户确认「采纳执行」之后。
 import { ref, computed, watch, onMounted } from 'vue'
 import { useInlineAi } from '@/composables/useInlineAi'
-import { inlinePromptFor } from '@/utils/inlinePrompts'
+import { inlineContextLabel, inlinePromptFor } from '@/utils/inlinePrompts'
 import { useI18n } from '@/composables/useI18n'
 import { useSonner } from '@/composables/useSonner'
 import { useUser } from '@/composables/useUser'
@@ -54,7 +54,8 @@ const CONTEXT_ITEM_SLICE = 60
 // --- 上下文构建 ---
 function contentPreview(item: ClipItem): string {
   let raw: string // 三分支各自赋值，初值永不被读（P0-C C3：清掉存量 lint error，让 npm run lint 可用作门禁）
-  if (item.type === 'image') raw = '（图片）'
+  // 上下文标签按界面语言取（英文界面下这里原来写死『（图片）』，会把模型输出带回中文）
+  if (item.type === 'image') raw = inlineContextLabel('image')
   else if (item.type === 'file') {
     try {
       const meta = JSON.parse(item.content)

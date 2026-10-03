@@ -71,7 +71,12 @@ export function useInlineAi() {
   }
 
   /** 发起内联 AI 调用；重复调用会取消前一次 */
-  async function run(prompt: string, context?: string, opts?: { maxTokens?: number }) {
+  async function run(
+    prompt: string,
+    context?: string,
+    /** languageOverride：仅「翻译为英文」这类目标语言固定的变体传 'en'（其余不传 ⇒ 按界面语言） */
+    opts?: { maxTokens?: number; languageOverride?: 'en' | null },
+  ) {
     const my = ++seq
     controller?.abort()
     controller = new AbortController()
@@ -82,7 +87,7 @@ export function useInlineAi() {
     streaming.value = false
     error.value = ''
     try {
-      const res = await inlineChat(prompt, context, controller.signal, opts?.maxTokens)
+      const res = await inlineChat(prompt, context, controller.signal, opts?.maxTokens, opts?.languageOverride)
       if (my !== seq) return
       if (res.ok && typeof res.data?.text === 'string') {
         // 防御：done 但正文为空（推理型 provider 预算耗尽等）→ 转错误态，不出白卡

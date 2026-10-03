@@ -4,6 +4,8 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { X, Sparkles } from 'lucide-vue-next'
 import { getProviders, summarizeClipboard } from '@/api/ai'
 import { useI18n } from '@/composables/useI18n'
+// 「正在生成摘要…」占位用统一的流光组件（与点阵同频，见 utils/aiShimmer.ts）
+import ShimmerText from '@/components/ai/ShimmerText.vue'
 
 interface ClipboardChangedPayload {
   content?: string
@@ -190,7 +192,7 @@ onUnmounted(() => {
           {{ preview }}
         </div>
         <div class="float-summary mt-2 text-sm leading-relaxed text-foreground">
-          <span v-if="loading" class="text-muted-foreground">{{ tf('ai_summary_float_loading', '正在生成摘要...') }}</span>
+          <ShimmerText v-if="loading" :text="tf('ai_summary_float_loading', '正在生成摘要...')" />
           <span v-else>{{ summary }}</span>
         </div>
       </div>

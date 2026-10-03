@@ -17,7 +17,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { useI18n } from '@/composables/useI18n'
 import { useConfigStore } from '@/stores/configStore'
-import { INLINE_LANG_TAIL, INLINE_PROMPTS, inlinePromptFor, type InlinePromptVariant } from '@/utils/inlinePrompts'
+import {
+  INLINE_LANG_TAIL,
+  INLINE_PROMPTS,
+  inlinePromptFor,
+  type InlinePromptVariant,
+  INLINE_CONTEXT_LABELS,
+  inlineContextLabel,
+} from '@/utils/inlinePrompts'
 
 const VARIANTS: InlinePromptVariant[] = [
   'diagnose',
@@ -154,5 +161,77 @@ describe('页内 AI 小功能提示词跟随界面语言', () => {
         expect(src, `${rel} 仍写死中文提示词：${bad}`).not.toContain(bad)
       }
     }
+
+    // 上下文标签：只看 **context 拼装函数体**（组件里还有 i18n 的 UI 文案 fallback，那是正常的）
+    const fnBody = (src: string, name: string) => {
+      const start = src.indexOf(`function ${name}`)
+      if (start < 0) throw new Error(`未找到函数 ${name}`)
+      const end = src.indexOf('\n}', start)
+      // 去掉注释：注释里提到旧文案（说明改动原因）不算泄漏
+      return src
+        .slice(start, end < 0 ? src.length : end)
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+    }
+    const contextSites: [string, string][] = [
+      ['components/settings/DevicesView.vue', 'buildDiagContext'],
+      ['components/clipboard/FavOrganizeFlow.vue', 'contentPreview'],
+      ['components/clipboard/FavoritesView.vue', 'buildFavoriteDigest'],
+    ]
+    for (const [rel, fn] of contextSites) {
+      const body = fnBody(readFileSync(resolve(process.cwd(), 'src', rel), 'utf8'), fn)
+      for (const bad of ['（图片）', '已配对设备', '端到端加密：已开启', '本机最近同步流水']) {
+        expect(body, `${rel} 的 ${fn} 上下文标签仍写死中文：${bad}`).not.toContain(bad)
+      }
+      expect(body, `${rel} 的 ${fn} 应改用 inlineContextLabel`).toContain('inlineContextLabel')
+    }
+  })
+
+  it('⑥ languageOverride：只有「翻译为英文」带 languageOverride=en，其余变体不带', async () => {
+    const { setLang } = useI18n()
+    setLang('zh') // 中文界面：翻译变体仍必须显式声明目标语言，否则会与服务端的"用中文回答"冲突
+    const { inlineChat } = await import('@/api/ai')
+
+    await inlineChat(inlinePromptFor('drawerTranslate'), 'hello', undefined, undefined, 'en')
+    expect(bodyOf('/api/ai/inline').languageOverride).toBe('en')
+
+    await inlineChat(inlinePromptFor('review'), 'ctx')
+    expect('languageOverride' in bodyOf('/api/ai/inline')).toBe(false)
+
+    // 接线守卫：抽屉里只有 translate 变体带 languageOverride
+    const drawer = readFileSync(resolve(process.cwd(), 'src/components/clipboard/ClipDetailDrawer.vue'), 'utf8')
+    expect(drawer).toMatch(/promptKey: 'drawerTranslate',\s*\n\s*languageOverride: 'en'/)
+    expect(drawer).not.toMatch(/promptKey: 'drawerSummary',\s*\n\s*languageOverride/)
+    expect(drawer).not.toMatch(/promptKey: 'drawerExtract',\s*\n\s*languageOverride/)
+  })
+
+  it('⑦ 上下文标签：en 下不含中日韩字符，且真实请求体的 context 无中文', async () => {
+    const { setLang } = useI18n()
+    setLang('en')
+    for (const key of Object.keys(INLINE_CONTEXT_LABELS) as (keyof typeof INLINE_CONTEXT_LABELS)[]) {
+      const label = inlineContextLabel(key, { n: 3 })
+      expect(CJK.test(label), `en 标签含中文：${key} = ${label}`).toBe(false)
+    }
+    setLang('zh')
+    for (const key of Object.keys(INLINE_CONTEXT_LABELS) as (keyof typeof INLINE_CONTEXT_LABELS)[]) {
+      const label = inlineContextLabel(key, { n: 3 })
+      expect(label.length).toBeGreaterThan(0)
+    }
+
+    // 真实请求体：en 语言 + 用双语标签拼出的 context ⇒ 不含中文
+    setLang('en')
+    const context = [
+      inlineContextLabel('pairedDevices', { n: 2 }),
+      inlineContextLabel('e2eOn'),
+      inlineContextLabel('recentSyncLog'),
+      `${inlineContextLabel('image')} clipboard item`,
+    ].join('\n')
+    expect(CJK.test(context)).toBe(false)
+
+    const { inlineChat } = await import('@/api/ai')
+    await inlineChat(inlinePromptFor('diagnose'), context)
+    const body = bodyOf('/api/ai/inline')
+    expect(CJK.test(String(body.context))).toBe(false)
+    expect(String(body.context)).toContain('Paired devices (2):')
   })
 })

@@ -7,6 +7,9 @@ import { useSonner } from '@/composables/useSonner'
 import { Copy, X, RefreshCw, Sparkles, MessageSquare } from 'lucide-vue-next'
 import AiStreamText from './AiStreamText.vue'
 import FxLatticeLoader from '@/components/fx/FxLatticeLoader.vue'
+import { useReducedMotion } from '@/components/fx/useReducedMotion'
+// 「Working…」流光与左侧点阵**同频同缓动**（周期算式与出处见 utils/aiShimmer.ts）
+import { SHIMMER_CYCLE_MS, SHIMMER_EASE } from '@/utils/aiShimmer'
 
 const props = defineProps<{
   title: string
@@ -29,6 +32,8 @@ const { tf } = useI18n()
 const toast = useSonner()
 
 const loadingLabel = computed(() => tf('inline_ai_loading', '分析中…'))
+// 减少动效命中 ⇒ 不挂流光类（静态文字）；样式里还有 prefers-reduced-motion 兜底
+const reducedMotion = useReducedMotion()
 // 流式展示值：打字机在播用 displayText；播完（done）用完整 text；body 插槽覆盖时此值仅影响拷贝兜底
 const streamedText = computed(() => props.displayText || props.text)
 
@@ -67,6 +72,9 @@ function continueInChat() {
     <!-- 等待后端返回：晶格加载（fx/LatticeLoader 的 working 态，自带角色与状态播报） -->
     <div v-if="status === 'loading' && !(streaming || streamedText)" class="iac-loading">
       <FxLatticeLoader
+        class="iac-loading-lattice"
+        :class="{ 'iac-shimmer': !reducedMotion }"
+        :style="{ '--iac-shimmer-cycle': SHIMMER_CYCLE_MS + 'ms', '--iac-shimmer-ease': SHIMMER_EASE }"
         :label="loadingLabel"
         :announce="loadingLabel"
         status="working"
@@ -167,6 +175,42 @@ function continueInChat() {
   padding: 16px 12px;
   font-size: 12.5px;
   color: var(--text-secondary);
+}
+/* 「Working…」文字表面的流光：与左侧点阵**同频**（648ms / cubic-bezier(0.77,0,0.175,1)，
+   值来自 utils/aiShimmer.ts，测试会解析点阵源码钉住同频）。
+   目标是 FxLatticeLoader 内部的标签元素 ⇒ 必须 :deep()；点阵本身不动。 */
+.iac-loading .iac-shimmer :deep(.fxl-text) {
+  background-image: linear-gradient(
+    100deg,
+    currentColor 0%,
+    currentColor 38%,
+    var(--accent) 50%,
+    currentColor 62%,
+    currentColor 100%
+  );
+  background-size: 260% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: iac-shimmer-sweep var(--iac-shimmer-cycle, 648ms) var(--iac-shimmer-ease, ease-in-out) infinite;
+}
+@keyframes iac-shimmer-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+/* 兜底：系统偏好减少动效 ⇒ 静态文字（JS 侧已不挂 .iac-shimmer） */
+@media (prefers-reduced-motion: reduce) {
+  .iac-loading .iac-shimmer :deep(.fxl-text) {
+    animation: none;
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    color: inherit;
+  }
 }
 .iac-error {
   display: flex;

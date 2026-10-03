@@ -792,7 +792,24 @@ export interface InlineAiResult {
   error?: string
 }
 
-export function inlineChat(prompt: string, context?: string, signal?: AbortSignal, maxTokens?: number) {
+export function inlineChat(
+  prompt: string,
+  context?: string,
+  signal?: AbortSignal,
+  maxTokens?: number,
+  /**
+   * 目标语言覆盖：只有「翻译为英文」这类**目标语言与界面语言无关**的变体才传 'en'，
+   * 服务端据此跳过按 X-UI-Locale 追加的语言强化要求（否则中文界面下会出现
+   * 「只允许用简体中文回答」与功能冲突）。其余变体不传 ⇒ 按界面语言。
+   */
+  languageOverride?: 'en' | null,
+) {
   // maxTokens 仅透传，钳制在服务端（64-4096）；JSON 类输出（整理/模板/审查）需要放大配额
-  return api<InlineAiResult>('POST', '/api/ai/inline', { prompt, context, maxTokens }, { signal })
+  const body: { prompt: string; context?: string; maxTokens?: number; languageOverride?: 'en' } = {
+    prompt,
+    context,
+    maxTokens,
+  }
+  if (languageOverride) body.languageOverride = languageOverride
+  return api<InlineAiResult>('POST', '/api/ai/inline', body, { signal })
 }

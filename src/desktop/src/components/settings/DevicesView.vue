@@ -16,7 +16,7 @@ import Button from '@/components/ui/button/Button.vue'
 import { useSyncLog } from '@/composables/useSyncLog'
 import InlineAiCard from '@/components/ai/InlineAiCard.vue'
 // 页内小功能提示词按界面语言取（zh/en 双份一处维护 + 末尾语言要求）——见 utils/inlinePrompts.ts
-import { inlinePromptFor } from '@/utils/inlinePrompts'
+import { inlineContextLabel, inlinePromptFor } from '@/utils/inlinePrompts'
 import FxSelectionRing from '@/components/fx/FxSelectionRing.vue'
 import { useInlineAi } from '@/composables/useInlineAi'
 import { e2ePublicKey } from '@/utils/e2eCrypto'
@@ -68,15 +68,23 @@ const diagAi = useInlineAi()
 const showDiag = ref(false)
 
 function buildDiagContext(): string {
+  // 设备名分隔符与括号也按界面语言（中文顿号 / 英文逗号 + 半角括号）
   const devs =
-    deviceList.value.map((d) => `${d.name}（${d.online ? t('dev_online') : t('dev_offline')}）`).join('、') ||
-    t('dev_empty')
+    deviceList.value
+      .map((d) => `${d.name}(${d.online ? t('dev_online') : t('dev_offline')})`)
+      .join(inlineContextLabel('deviceSeparator')) || t('dev_empty')
   const lines =
     syncLog.events.value
       .slice(0, 10)
       .map((e) => `${e.dir === 'down' ? '↓' : '↑'} ${e.kind}${e.size ? ' · ' + e.size : ''} · ${e.source} · ${logAgo(e.ts)}`)
       .join('\n') || t('dev_synclog_empty', '暂无同步记录')
-  return `已配对设备（${deviceList.value.length} 台）：${devs}\n端到端加密：已开启\n本机最近同步流水：\n${lines}`
+  // 上下文里的标签也按界面语言取（否则英文界面下这段中文会把模型输出带回中文）
+  return (
+    `${inlineContextLabel('pairedDevices', { n: deviceList.value.length })}${devs}\n` +
+    `${inlineContextLabel('e2eOn')}\n` +
+    `${inlineContextLabel('recentSyncLog')}\n` +
+    lines
+  )
 }
 
 function runDiagnose() {

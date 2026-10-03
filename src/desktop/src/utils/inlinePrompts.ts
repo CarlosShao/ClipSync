@@ -166,6 +166,39 @@ export function inlinePromptLocale(): 'zh' | 'en' {
 }
 
 /**
+ * 页内小功能**上下文数据里的标签**（也在一处维护）。
+ *
+ * 为什么也要本地化：prompt 正文已双语，但上下文里残留的中文标签（「已配对设备（N 台）」「（图片）」等）
+ * 会让模型倾向继续用中文作答 —— 这是上一轮报告里点名的残留风险。
+ */
+export const INLINE_CONTEXT_LABELS = {
+  /** 图片条目的占位（收藏清单 / 整理上下文里） */
+  image: { zh: '（图片）', en: '(image)' },
+  /** 文件条目的占位 */
+  file: { zh: '（文件）', en: '(file)' },
+  /** 诊断上下文：已配对设备标题（{n} = 台数） */
+  pairedDevices: { zh: '已配对设备（{n} 台）：', en: 'Paired devices ({n}):' },
+  /** 诊断上下文：端到端加密状态 */
+  e2eOn: { zh: '端到端加密：已开启', en: 'End-to-end encryption: on' },
+  /** 诊断上下文：同步流水标题 */
+  recentSyncLog: { zh: '本机最近同步流水：', en: 'Recent sync activity on this device:' },
+  /** 设备名之间的分隔符（中文顿号 / 英文逗号） */
+  deviceSeparator: { zh: '、', en: ', ' },
+} as const
+
+export type InlineContextLabelKey = keyof typeof INLINE_CONTEXT_LABELS
+
+/** 按当前界面语言取上下文标签（可带 {n} 之类的占位符） */
+export function inlineContextLabel(key: InlineContextLabelKey, params?: Record<string, string | number>): string {
+  const lang = inlinePromptLocale()
+  let out: string = INLINE_CONTEXT_LABELS[key][lang]
+  if (params) {
+    for (const [k, v] of Object.entries(params)) out = out.replace(`{${k}}`, String(v))
+  }
+  return out
+}
+
+/**
  * 取某个页内小功能的提示词：正文按当前界面语言，**末尾**再补一句语言要求。
  * 每次调用实时取语言 ⇒ 切语言后下一个请求立刻生效。
  */
