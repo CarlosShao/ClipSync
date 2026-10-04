@@ -319,10 +319,15 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
       );
     }
 
+    // paid_at 兜底（2026-10-04 审计）：放宽闸允许退「cancelled/pending + 渠道已收款」的残留单，
+    // 这类单本地**从没写过 paid_at**，而管理台对账报告与退款率 KPI 都按 `paid_at` 过滤 →
+    // 不补就会被账目整类漏掉（钱进了也退了，报表里却当没发生）。补成退款时刻。
+    // 注：refundMeta 已含 refund_amount，故 30 天成交/退款两侧对冲，账目自洽。
     await client.query(
       `UPDATE payment_orders
           SET status = 'refunded',
               refunded_at = $2,
+              paid_at = COALESCE(paid_at, $2),
               metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb,
               updated_at = NOW()
         WHERE id = $1`,

@@ -464,25 +464,39 @@ router.post('/create-order', authenticateToken, async (req, res) => {
  * 进程内 Map 即可 —— 多副本部署下每副本各限一份，本来就是限流语义。
  */
 const CHANNEL_QUERY_TTL_MS = 5000;
-const channelQueryCache = new Map(); // orderNo -> { at, result }
+const channelQueryCache = new Map(); // orderNo -> { at, result } | { at, error }
+
+/** 防无界增长：只保留最近 1000 个订单（成功与失败条目都算） */
+function evictChannelQueryCacheIfNeeded() {
+  if (channelQueryCache.size <= 1000) return;
+  let dropped = 0;
+  for (const key of channelQueryCache.keys()) {
+    channelQueryCache.delete(key);
+    if (++dropped >= 200) break;
+  }
+}
 
 async function queryTradeCached(orderNo) {
   const now = Date.now();
   const hit = channelQueryCache.get(orderNo);
-  if (hit && now - hit.at < CHANNEL_QUERY_TTL_MS) return hit.result;
-
-  const result = await queryTrade(orderNo);
-  channelQueryCache.set(orderNo, { at: now, result });
-
-  // 防无界增长：只保留最近 1000 个订单
-  if (channelQueryCache.size > 1000) {
-    let dropped = 0;
-    for (const key of channelQueryCache.keys()) {
-      channelQueryCache.delete(key);
-      if (++dropped >= 200) break;
-    }
+  if (hit && now - hit.at < CHANNEL_QUERY_TTL_MS) {
+    // 负缓存（2026-10-04 审计）：失败同样在 TTL 内快速失败并原样抛出，不再重复打网关。
+    // 原实现只缓存成功结果 → 查单失败时每次都重新外呼，恰是本缓存要防的 QPS 放大。
+    // 缓存只是限流器不是真相源，最多让兜底晚 TTL 生效，不会让"已付"被漏掉（另有回调路径）。
+    if (hit.error) throw hit.error;
+    return hit.result;
   }
-  return result;
+
+  try {
+    const result = await queryTrade(orderNo);
+    channelQueryCache.set(orderNo, { at: now, result });
+    evictChannelQueryCacheIfNeeded();
+    return result;
+  } catch (err) {
+    channelQueryCache.set(orderNo, { at: now, error: err });
+    evictChannelQueryCacheIfNeeded();
+    throw err;
+  }
 }
 
 router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
