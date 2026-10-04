@@ -40,8 +40,11 @@ env:
 #   - lint / 语法 / 测试：失败 ⇒ job 红 ⇒ 下游 deploy 不放行。不再有 || true、不再有 continue-on-error。
 #   - 飞书通知：本质可选（webhook 抽风不该把一次好提交判成坏提交）。原先是 `|| true`（完全静默），
 #     现在改成 `|| echo "::warning::…"`：仍然不阻塞判定，但失败会在 run 页面上留下可见告警。
-# 已知残余：lint job 当前会因为 src/server 没装 eslint 而**真实变红**（不是回归，是第一次如实反映）。
-#   修法见证据文件 §6 U1 —— 需要一个 owner 批准的新增依赖，本票禁止加。
+# 已修（审计 Q1）：src/server 现在自带 eslint 依赖（eslint / @eslint/js / globals，走 lockfile）
+#   与 eslint.config.js，lint 步骤从"结构性红"变成真门禁（实测 `npx eslint .` = 0 error / 151 warning）。
+#   判据边界：这条门禁只把 **error** 判红；那 151 条既有 warn（no-unused-vars 等，逐条列在
+#   src/server/eslint.config.js 里）不阻塞合并。要连 warn 一起冻结，再给 eslint 加
+#   `--max-warnings=151`（数字写死，只允许变少）即可，但不是这次要办的事。
 
 jobs:
   # ============ 1. 静态检查（必须通过）============
@@ -85,23 +88,34 @@ jobs:
             if (bad.length) { console.error(bad.join("\n")); process.exit(1); }
           '
 
-      # P0-C C2 去掉了这里原来的 `|| true`（锚点 :56）。
-      # 不能直接跑 `npx eslint`：src/server 的 devDependencies 里没有 eslint（只有 supertest/vitest），
-      # npx 会每次从 npm 现拉一个 floating 版本（不走 lockfile ⇒ 自身就是供应链面），
-      # 而且仓库里没有 eslint.config.* / .eslintrc*，拉到的 v9+ 只认 flat config ⇒ 必然 exit 2。
-      # 所以这里先做**确定性探测**（只看本地 node_modules，不受 npx 缓存影响，实测：
-      # src/server=ABSENT、src/admin-console=PRESENT），探测不到就明确失败并给出修法，绝不静默放行。
-      - name: Lint gate (eslint, only if it is actually installed from the lockfile)
+      # P0-C C2 去掉了这里原来的 `|| true`（锚点 :56）。审计 Q1 之前，因为 src/server 的
+      # devDependencies 里没有 eslint、仓库里也没有 eslint.config.*，这一步是**结构性红**：
+      # 探测必然失败 ⇒ 每次跑都红 ⇒ 红本身不再携带信息（新引入的问题和"没装依赖"长得一样）。
+      # 现在依赖 + 配置都补齐了（本票），这一步才是真门禁。
+      #
+      # 探测步骤保留：它现在防的是"依赖被移走"（例如有人清了 lockfile 里的 eslint）。
+      # 那种情况下这里必须明确红，而不是让 npx 静默去 npm 现拉一个 floating 版本
+      # （不走 lockfile ⇒ 自身就是供应链面）。
+      - name: Lint gate (eslint, from the lockfile)
         working-directory: src/server
         run: |
           if ! node -e 'require.resolve("eslint/package.json", { paths: [process.cwd()] })' 2>/dev/null; then
             echo "::error::eslint 不在 src/server 的依赖里（npm ci 后 node_modules 里没有它），lint 这一步无法成为真门禁。"
-            echo "::error::修法：给 src/server 增加 eslint 依赖 + 一份匹配的配置（需 owner 批准新增依赖），"
-            echo "::error::装好后本步骤的探测会自动放行，下面的 lint 就会真实拦截。"
+            echo "::error::修法：确认 src/server/package.json 的 devDependencies 里有 eslint/@eslint/js/globals，且 package-lock.json 已同步。"
+            exit 1
+          fi
+          if [ ! -f eslint.config.js ]; then
+            echo "::error::src/server/eslint.config.js 不存在：ESLint v9 只认 flat config，缺了它这一步会 exit 2（等于永久红）。"
             exit 1
           fi
           node -e 'const r=require("eslint/package.json").version; if(!r) process.exit(1); console.log("eslint "+r)'
-          npx --no-install eslint src/ --ext .js --max-warnings=0
+          # 与本地/本文件说明里完全同一条命令：工作目录 src/server 下 `npx eslint .`
+          # （覆盖 src/ 与 tests/；不再写 src/ --ext .js —— flat config 下 --ext 没有意义，
+          #  而只查 src/ 会把 55 个测试文件排除在 lint 之外）。
+          # 刻意不带 --max-warnings=0：当前代码有 151 条既有 warn（no-unused-vars/no-empty 等，
+          # 清单逐条写在 src/server/eslint.config.js 里），加了它门禁会再次永久变红。
+          # 这条门禁的判据是 **0 error**。
+          npx --no-install eslint .
 
       - name: 通知飞书 Lint 结果（可选步骤，失败不影响判定）
         if: env.FEISHU_WEBHOOK_URL != '' && always()
