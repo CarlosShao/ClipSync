@@ -18,7 +18,7 @@
 //     orders14d: [{ date: 'YYYY-MM-DD', amount, refund }] × 14（generate_series 补零）,
 //     planDistribution: [{ plan: free|pro|enterprise, count }]（固定三行）,
 //     channels: [{ channel, label, percent }]（固定三行）,
-//     pendingItems: []   // 真实待办（退款审核/试用到期/对账差异/异常登录）后续迭代接入
+//     pendingItems: []   // 真实待办聚合（六类），无待办为空数组 —— 见文末「待处理事项」段
 //   }
 //
 // 口径说明（无历史快照表的简化定义，均为可复算的即时聚合）：
@@ -32,6 +32,9 @@
 import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
+// 「退款申请卡在处理中」的阈值与退款审核侧同源（见该常量注释）：看板报出来的"卡住"
+// 必须正是管理台点「重试」会放行的那一批，否则运营会在看板上看到一个点不动的待办。
+import { STUCK_AFTER_MS } from '../../services/refundRequest.js';
 
 const router = Router();
 
@@ -192,7 +195,8 @@ router.get('/', async (req, res) => {
     const channelTotal = channelRows.reduce((sum, r) => sum + Number(r.cnt), 0);
     const channelMap = new Map(channelRows.map((r) => [r.channel, Number(r.cnt)]));
 
-    // ── 9. 待处理事项（AF-20）：待审核用户 + 退款处理中订单 + 超 24h 待支付订单 ──
+    // ── 9. 待处理事项（AF-20）：待审核用户 + 退款处理中订单 + 异常到账 + 超 24h 待支付
+    //        订单 + 卡在处理中的退款申请 + 金额不符被拒 ──
     const pendingItems = [];
 
     // 9.1 待审核用户（signup_waitlist 开关期间注册）
@@ -283,6 +287,59 @@ router.get('/', async (req, res) => {
       });
     }
 
+    // 9.5 退款申请卡在处理中：CAS 抢成 processing 之后（本地落库前）进程崩溃/重启，
+    //      这一行会一直停在 processing —— 钱可能已退也可能没退，管理台得先去支付宝
+    //      查单再决定重试（见 services/refundRequest.js#reconcileStuckProcessing）。
+    //      阈值取 STUCK_AFTER_MS：与「点重试时是否判定为卡住」同一口径，否则看板会报出
+    //      一条点不动的待办。type 复用 'reconcile'（与 9.3 同类：需人工对账），前端零改动；
+    //      actionTo 的 processing Tab 是退款审核页的既定契约（?status=processing）。
+    const { rows: stuckRefundRows } = await pool.query(
+      `SELECT id, order_no, amount::float8 AS amount, updated_at
+       FROM refund_requests
+       WHERE status = 'processing'
+         AND updated_at < NOW() - ($1::int * INTERVAL '1 millisecond')
+       ORDER BY updated_at ASC
+       LIMIT 5`,
+      [STUCK_AFTER_MS]
+    );
+    for (const row of stuckRefundRows) {
+      pendingItems.push({
+        id: `refund-stuck-${row.id}`,
+        title: '退款申请卡在处理中（可对账并重试）',
+        type: 'reconcile',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        occurredAt: formatMinute(row.updated_at),
+        actionLabel: '去对账',
+        actionTo: '/refund-review?status=processing',
+      });
+    }
+
+    // 9.6 金额不符，履约被拒：渠道回调/查单报的金额与订单金额对不上 → 不履约（S1 防低价单冒用），
+    //      但**钱可能已经在渠道侧收了** —— 必须让运营看见并人工核对/退款。
+    //      标记由 services/orderFulfillment.js#markOrderPaid 在拒绝履约时写入。
+    //      ⚠️ 必须带 q：这类单在订单页默认 7 天窗口之外很常见，只给 status 等于把待办变死链。
+    const { rows: amountMismatchRows } = await pool.query(`
+      SELECT order_no, amount::float8 AS amount, updated_at,
+             metadata->>'amount_mismatch_at' AS mismatch_at
+      FROM payment_orders
+      WHERE status = 'pending'
+        AND metadata->>'amount_mismatch' = 'true'
+      ORDER BY updated_at DESC
+      LIMIT 5`);
+    for (const row of amountMismatchRows) {
+      pendingItems.push({
+        id: `amount-mismatch-${row.order_no}`,
+        title: '金额不符，履约被拒（钱可能已收）',
+        type: 'reconcile',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        // 打标时刻优于 updated_at：订单此后若被别的路径动过（补标记、渠道重放），
+        // 仍显示"何时发现金额不符"这个真正需要人工追溯的时间点。
+        occurredAt: formatMinute(row.mismatch_at || row.updated_at),
+        actionLabel: '核对订单',
+        actionTo: `/orders?status=pending&q=${encodeURIComponent(row.order_no)}`,
+      });
+    }
+
     const data = {
       statsAt: formatStatsAt(),
       kpis: {
@@ -315,7 +372,8 @@ router.get('/', async (req, res) => {
         label,
         percent: channelTotal > 0 ? Math.round(((channelMap.get(channel) || 0) / channelTotal) * 100) : 0,
       })),
-      // AF-20：真实待办聚合（待审核用户 / 退款处理中 / 超 24h 待支付），无待办为空数组
+      // AF-20：真实待办聚合（待审核用户 / 退款处理中 / 异常到账 / 超 24h 待支付 /
+      //        卡在处理中的退款申请 / 金额不符被拒），无待办为空数组
       pendingItems,
     };
 

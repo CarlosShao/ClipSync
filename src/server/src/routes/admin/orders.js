@@ -271,7 +271,9 @@ export function refundErrorToAdmin(err) {
     MISSING_ORDER_KEY: [4000, '订单号不能为空'],
     ORDER_NOT_FOUND: [40404, '订单不存在'],
     ALREADY_REFUNDED: [40901, '该订单已退款，不能重复退款'],
-    ORDER_NOT_REFUNDABLE: [40005, '仅已支付订单可退款'],
+    // 放宽后（isRefundableStatus）：已支付，或「渠道已确认收款」的 cancelled/pending 残留单也能退，
+    // 文案不能再写"仅已支付订单"——那会把可退的单说成不可退，运营直接放弃处理。
+    ORDER_NOT_REFUNDABLE: [40005, '该订单状态不可退款（仅已支付订单，或渠道已确认收款的订单可退）'],
     REFUND_CHANNEL_UNSUPPORTED: [40006, '该订单的支付渠道不支持在线退款，请线下退款后人工核账'],
     ALIPAY_NOT_CONFIGURED: [5030, '支付渠道凭据未配置，无法在线退款'],
     REFUND_CHANNEL_FAILED: [5020, '渠道退款失败，订单保持已支付（资金未退回）'],

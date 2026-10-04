@@ -3,6 +3,7 @@
 //
 // 挂载（routes/admin/index.js）：
 //   adminRouter.use('/ops', opsRouter) → GET   /api/admin/ops/overview
+//                                       GET   /api/admin/ops/alipay-status  （渠道凭据自检，只读）
 //                                       GET   /api/admin/ops/backups
 //                                       GET   /api/admin/ops/backups/download   （AN-06 备份下载）
 //                                       POST  /api/admin/ops/actions            （AN-06 运维动作区）
@@ -44,6 +45,8 @@ import { getRedisClient } from '../../utils/redis-client.js';
 import { logger } from '../../utils/logger.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { logAuditEvent } from '../../utils/audit.js';
+// D2：支付宝渠道凭据自检（原本只在启动期打日志，运营在后台看不到）
+import { checkAlipayCredentials } from '../../utils/alipay.js';
 // AN-06 运维动作区：缓存失效与配置重载
 import { invalidateFlagsCache, getFeatureFlags } from '../../utils/featureFlags.js';
 import { invalidateLimitsCache, getRuntimeLimits } from '../../utils/runtimeLimits.js';
@@ -256,6 +259,35 @@ router.get('/overview', requirePerm('admin.ops.view'), async (_req, res) => {
   } catch (err) {
     logger.error('[admin/ops] overview failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '获取运维概览失败' });
+  }
+});
+
+/**
+ * GET /api/admin/ops/alipay-status
+ * 支付宝渠道凭据自检（只读、幂等、不抛错）。
+ *
+ * 为什么要有这个端点：checkAlipayCredentials() 能查出「ALIPAY_PUBLIC_KEY 其实填的是
+ * **应用公钥**」「私钥格式坏（PKCS#1/PKCS#8、漏 PEM 头、复制截断）」「APP_ID 未配」这类
+ * 问题 —— 它们的后果是**回调验签 100% 失败、用户付了真钱订阅永远不开**。此前这个自检
+ * 只在进程启动时调一次并打日志，运营只能翻容器日志，后台看不到。
+ *
+ * 权限：沿用本文件既有的 requirePerm('admin.ops.view') —— 052 迁移已有的**只读**运维
+ * 权限点（默认仅授 super_admin），不是写权限 admin.configs.manage，也不新增权限键。
+ * 该键是运维页所有端点的统一口径，本端点属于同一受众。
+ *
+ * ⚠️ 响应只回 { ok, problems[] } 文案，绝不回显任何密钥值（checkAlipayCredentials 本身
+ * 也只在 problems 里描述问题，不带密钥内容）。自检异常一律降级成一条问题，
+ * 不 500 —— 一个诊断端点不该比被诊断的东西更容易坏。
+ */
+router.get('/alipay-status', requirePerm('admin.ops.view'), (_req, res) => {
+  try {
+    return res.json({ code: 0, data: checkAlipayCredentials() });
+  } catch (err) {
+    logger.warn('[admin/ops] alipay credential check failed', { error: err.message });
+    return res.json({
+      code: 0,
+      data: { ok: false, problems: [`凭据自检执行异常：${err.message}`] },
+    });
   }
 });
 

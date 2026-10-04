@@ -35,4 +35,6 @@ export const queryKeys = {
   // AN-15 / AN-08：活跃告警 + 存储用量
   opsAlerts: () => ['ops-alerts'] as const,
   opsStorage: () => ['ops-storage'] as const,
+  // H1/H4：支付宝渠道凭据自检（只读，决定渠道当前能否收款）
+  opsAlipayStatus: () => ['ops-alipay-status'] as const,
 };

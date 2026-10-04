@@ -159,6 +159,35 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
           channelAmount: expectedAmount,
           channel,
         });
+
+        // 拒绝履约必须留下**数据**证据：此前只有一行日志，管理台完全没有数据源，
+        // 运营看不到「钱可能已收、权益没发」这类单（overview 待办据此单列一类）。
+        // 只写标量、不写回调报文原文（原文可能含敏感字段）。
+        //
+        // ⚠️ 事务已 ROLLBACK，不能复用 client，只能另起一次连接单独打标；
+        // 打标失败仅记日志，绝不改变返回值 —— 履约判定此刻已经定死，打标只是事后留痕。
+        // 金额一律存字符串：渠道回报可能是非数值（Number.isFinite 为 false 也走本分支），
+        // jsonb 数字装不下 NaN。
+        await pool
+          .query(
+            `UPDATE payment_orders
+                SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                      'amount_mismatch', true,
+                      'amount_mismatch_expected', $2::text,
+                      'amount_mismatch_actual', $3::text,
+                      'amount_mismatch_at', NOW()::text
+                    ),
+                    updated_at = NOW()
+              WHERE id = $1`,
+            [order.id, String(order.amount ?? ''), String(expectedAmount)]
+          )
+          .catch((err) =>
+            logger.error('[fulfillment] failed to mark amount_mismatch', {
+              orderNo,
+              error: err.message,
+            })
+          );
+
         return { ok: false, changed: false, reason: 'amount_mismatch', order };
       }
     }

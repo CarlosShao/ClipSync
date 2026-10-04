@@ -1,10 +1,11 @@
-import { Alert, Modal, Skeleton, Timeline } from 'antd';
+import { Alert, Button, Modal, Skeleton, Timeline, Tooltip } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { getOrder } from '@/api/orders';
+import { getOrder, isOrderRefundable } from '@/api/orders';
 import { StatusTag } from '@/components/StatusTag';
 import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers';
 import { fmtMoney, fmtTime } from '@/utils/format';
+import { hasPerm } from '@/utils/permissions';
 import type { Order } from '@/api/types';
 import styles from './OrderDetailModal.module.css';
 
@@ -12,6 +13,11 @@ interface OrderDetailModalProps {
   open: boolean;
   orderNo: string | null;
   onClose: () => void;
+  /**
+   * 异常到账发起退款（H2/H4）：由宿主页面接管（它持有 RefundModal 与退款 mutation）。
+   * 不传则只展示告警不给按钮——详情弹窗自己不发退款请求，避免和列表页各写一套。
+   */
+  onRequestRefund?: (order: Order) => void;
 }
 
 interface TimelineEntry {
@@ -79,7 +85,7 @@ function buildOrderTimeline(order: Order): TimelineEntry[] {
                 退款完成 <span className={styles.tlTime}>{fmtMoney(order.refundAmount)}</span>
               </>
             ),
-          },
+          }
     );
   }
 
@@ -87,7 +93,12 @@ function buildOrderTimeline(order: Order): TimelineEntry[] {
 }
 
 /** 订单详情弹窗（T-A4）：全字段 + 状态时间线，数据走 GET /admin/orders/:orderNo */
-export function OrderDetailModal({ open, orderNo, onClose }: OrderDetailModalProps) {
+export function OrderDetailModal({
+  open,
+  orderNo,
+  onClose,
+  onRequestRefund,
+}: OrderDetailModalProps) {
   const { data, isLoading } = useQuery({
     // queryKeys 工厂未提供订单详情键，沿用域前缀 ['orders', ...] 以便退款后随前缀一起失效
     queryKey: ['orders', 'detail', orderNo],
@@ -96,6 +107,11 @@ export function OrderDetailModal({ open, orderNo, onClose }: OrderDetailModalPro
   });
 
   const status = data ? orderDisplayStatus(data) : null;
+  // RB-07：退款为高危操作（admin.orders.refund superAdminOnly），入口按权限裁剪（不绕过服务端）
+  const canRefund = hasPerm('admin.orders.refund');
+  // 异常到账单里还可退的那些（cancelled / pending + channelReportsPaid）；
+  // 已退款或无该标记时不给入口——服务端同样会以 40005 拒绝，给了按钮只会白填一次原因
+  const refundable = data ? isOrderRefundable(data) : false;
 
   return (
     <Modal
@@ -126,7 +142,33 @@ export function OrderDetailModal({ open, orderNo, onClose }: OrderDetailModalPro
               showIcon
               style={{ marginBottom: 12 }}
               message="异常到账：渠道已付款，但本地订单未履约"
-              description="渠道侧确认收到款项，本地订单却仍是「待支付」（钱收了、货没给）。请立即核对：能履约就补履约，不能履约必须在支付宝商户后台原路退款后再人工核账；切勿直接关单。"
+              description={
+                <>
+                  {/* 整段用字符串字面量：中文没有空格可断行，写成 JSX 文本会被格式化器
+                      在 <b> 前后换行、渲染出多余空格 */}
+                  {
+                    '渠道侧确认收到款项，本地订单却没有履约（钱收了、货没给），属「异常到账」，需人工处置：能履约就补履约；不能履约请用下方按钮原路退款（与常规退款同一端点，全额、不可撤销），退款完成后到支付宝商户后台核对该笔流水。'
+                  }
+                  <br />
+                  {'切勿直接关单——关单只会让这笔钱在本地失去处置入口。'}
+                </>
+              }
+              action={
+                onRequestRefund && refundable ? (
+                  <Tooltip title={canRefund ? '' : '缺少权限 admin.orders.refund'}>
+                    <span>
+                      <Button
+                        danger
+                        size="small"
+                        disabled={!canRefund}
+                        onClick={() => onRequestRefund(data)}
+                      >
+                        异常到账：发起退款
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : null
+              }
             />
           ) : null}
           <dl className={styles.kv}>
@@ -160,7 +202,10 @@ export function OrderDetailModal({ open, orderNo, onClose }: OrderDetailModalPro
           </dl>
           <div className={styles.sectTitle}>状态时间线</div>
           <Timeline
-            items={buildOrderTimeline(data).map((item) => ({ color: item.color, children: item.children }))}
+            items={buildOrderTimeline(data).map((item) => ({
+              color: item.color,
+              children: item.children,
+            }))}
           />
         </>
       )}

@@ -1,6 +1,6 @@
 import { Alert, Form, Input, Modal } from 'antd';
 import { useEffect, useState } from 'react';
-import { channelLabel } from '@/components/StatusTag/mappers';
+import { channelLabel, orderStatusLabel } from '@/components/StatusTag/mappers';
 import { fmtMoney } from '@/utils/format';
 import type { Order } from '@/api/types';
 import styles from './RefundModal.module.css';
@@ -63,6 +63,13 @@ export function RefundModal({
   /** 服务端以 PARTIAL_REFUND_NOT_SUPPORTED 拒绝时给出行内说明（拦截器只 toast 一句原文） */
   const [partialRejected, setPartialRejected] = useState(false);
 
+  /**
+   * 异常到账（H2/H4）：本地未履约（已关闭/待支付）但渠道已收款——与常规「已支付退款」
+   * 是两种场景，同一端点同一弹窗，必须在弹窗里说清，否则运营会照常规退款的口径理解
+   * （以为在退一笔"已生效的订单"）。
+   */
+  const abnormalPaid = order?.channelReportsPaid === true && order.status !== 'paid';
+
   useEffect(() => {
     if (open && order) {
       form.setFieldsValue({ reason: '' });
@@ -114,6 +121,19 @@ export function RefundModal({
             <br />
             退款将全额退回并立即取消该订单对应的订阅权益，操作不可撤销。
           </p>
+          {abnormalPaid && order ? (
+            <Alert
+              className={styles.alert}
+              type="warning"
+              showIcon
+              message="异常到账处置：渠道已收款，本地未履约"
+              description={
+                // 动态状态名 + 长中文说明：整句用模板字面量（JSX 文本会在元素/表达式边界
+                // 被格式化器换行，渲染出多余空格）
+                `这笔订单本地状态是「${orderStatusLabel[order.status]}」，但渠道已报告付款，属「异常到账」（钱收了、货没给）的人工处置：退款走与常规退款同一端点，全额原路退回，成功后本地订单转「已退款」。请在退款原因里写明是异常到账处置，便于事后对账核对。`
+              }
+            />
+          ) : null}
           {partialRejected ? (
             <Alert
               className={styles.alert}

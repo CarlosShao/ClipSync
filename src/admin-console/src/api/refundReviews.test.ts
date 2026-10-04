@@ -1,16 +1,51 @@
 /**
- * 退款审核失败提示（api/refundReviews.ts#refundReviewFailureHint）单测
- *
- * 锁 H3 冷却分支的接线：服务端在 REFUND_REQUEST_PROCESSING 的响应体里带
- * retryAfterSeconds（还差几秒可重试），提示必须把它用进去 —— 否则运营只能看到
- * 「请等约 2 分钟」这种无依据的估算，而真正剩余时间只有服务端知道。
+ * 退款审核域单测：
+ *  ① refundReviewFailureHint —— H3 冷却分支的接线：服务端在 REFUND_REQUEST_PROCESSING 的
+ *     响应体里带 retryAfterSeconds（还差几秒可重试），提示必须把它用进去，否则运营只能看到
+ *     「请等约 2 分钟」这种无依据的估算，而真正剩余时间只有服务端知道。
+ *  ② getRefundReviews —— processing 筛选项透传：服务端一直支持按 processing 筛，
+ *     前端若把它吞掉（白名单/映射漏项），「处理中」Tab 会静默退化成「全部」，
+ *     运营看到的列表与 Tab 名不符却毫无提示。
  */
-import { describe, expect, it } from 'vitest';
-import { refundReviewFailureHint } from '@/api/refundReviews';
+import { describe, expect, it, vi } from 'vitest';
+
+/** vi.mock 会被提升到 import 之前，故用 vi.hoisted 先建桩再引用（否则工厂里撞 TDZ） */
+const { apiGetMock } = vi.hoisted(() => ({ apiGetMock: vi.fn() }));
+
+vi.mock('@/api/client', () => ({
+  apiGet: apiGetMock,
+  apiPost: vi.fn(),
+  apiPut: vi.fn(),
+}));
+
+import { getRefundReviews, refundReviewFailureHint } from '@/api/refundReviews';
+import type { RefundReview } from '@/api/refundReviews';
 
 /** 构造 axios 形态的业务失败（拦截器 reject 的就是这个对象） */
 function apiFailure(data: Record<string, unknown>): unknown {
   return { response: { status: 409, data } };
+}
+
+/** 列表行工厂：单测只关心分页壳搬运与筛选透传，其余字段给最小合法值 */
+function reviewOf(partial: Partial<RefundReview> = {}): RefundReview {
+  return {
+    id: 'rr_test',
+    status: 'processing',
+    requestedAt: '2026-10-04T10:00:00+08:00',
+    reviewedAt: null,
+    userReason: '重复付款',
+    reviewNote: null,
+    reviewedByName: null,
+    orderNo: 'ORD_TEST',
+    amount: 99,
+    currency: 'CNY',
+    planName: 'Pro',
+    userName: 'Carlos',
+    userPhone: '138****2765',
+    paidAt: '2026-10-04T09:59:00+08:00',
+    windowDaysAtRequest: 7,
+    ...partial,
+  };
 }
 
 describe('refundReviewFailureHint —— 审核失败行内提示', () => {
@@ -57,10 +92,39 @@ describe('refundReviewFailureHint —— 审核失败行内提示', () => {
     expect(refundReviewFailureHint(apiFailure({ code: 'ALREADY_REFUNDED' }))).toContain(
       '该订单已完成退款'
     );
-    expect(refundReviewFailureHint(apiFailure({ code: 'WEIRD_NEW_CODE', message: '新校验未通过' }))).toBe(
-      '新校验未通过'
-    );
+    expect(
+      refundReviewFailureHint(apiFailure({ code: 'WEIRD_NEW_CODE', message: '新校验未通过' }))
+    ).toBe('新校验未通过');
     // 连 message 都没有时的兜底
     expect(refundReviewFailureHint({})).toContain('请核对最新状态后重试');
+  });
+});
+
+describe('getRefundReviews —— 「处理中」Tab 的筛选透传', () => {
+  it('status=processing 原样交给服务端，不被前端过滤掉', async () => {
+    apiGetMock.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
+
+    await getRefundReviews({ page: 1, pageSize: 10, status: 'processing' });
+
+    expect(apiGetMock).toHaveBeenCalledWith('/admin/refund-reviews', {
+      params: { page: 1, pageSize: 10, status: 'processing' },
+    });
+  });
+
+  it('items 分页壳搬运成 useTableQuery 认的 list（分页字段一并带出）', async () => {
+    apiGetMock.mockResolvedValue({
+      items: [reviewOf()],
+      total: 1,
+      page: 2,
+      pageSize: 10,
+    });
+
+    const page = await getRefundReviews({ page: 2, pageSize: 10, status: 'processing' });
+
+    expect(page.list).toHaveLength(1);
+    expect(page.list[0]?.status).toBe('processing');
+    expect(page.total).toBe(1);
+    expect(page.page).toBe(2);
+    expect(page.pageSize).toBe(10);
   });
 });

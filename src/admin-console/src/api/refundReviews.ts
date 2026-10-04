@@ -14,14 +14,18 @@ import type { PageData } from '@/api/types';
 
 /**
  * refund_requests.status。
- * 契约冻结的**筛选**取值只有 pending | approved | rejected | all，但行内还可能出现
- * 瞬时态 processing（管理员已认领、正在调渠道、结果未知）——列表读得到它，
- * 类型不写进来就会在展示层被迫断言，故这里如实列出（本页不给它开 Tab）。
+ * 行内可能出现瞬时态 processing（管理员已认领、正在调渠道、结果未知）——
+ * 服务端可长时间卡在这个状态（认领后进程重启），故审核页**为它单开了一个 Tab**
+ * （H3 逃生口：卡住的单只能靠「对账并重试」再调一次 approve 收口）。
  */
 export type RefundReviewStatus = 'pending' | 'processing' | 'approved' | 'rejected';
 
-/** 列表筛选取值（契约冻结：pending | approved | rejected | all，不含 processing） */
-export type RefundReviewStatusFilter = 'pending' | 'approved' | 'rejected' | 'all';
+/**
+ * 列表筛选取值：pending | processing | approved | rejected | all。
+ * processing 是 2026-10-04 打通的——服务端 listRefundRequestsForAdmin 一直支持按它筛，
+ * 前端此前不含它，运营找卡在打款中的单只能在「全部」里肉眼翻。
+ */
+export type RefundReviewStatusFilter = 'pending' | 'processing' | 'approved' | 'rejected' | 'all';
 
 /** 列表行：GET /admin/refund-reviews 的 items 元素 */
 export interface RefundReview {

@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import {
   downloadBackupFile,
+  getAlipayStatus,
   getOpsAlerts,
   getOpsBackups,
   getOpsOverview,
@@ -15,6 +16,7 @@ import {
   postOpsAction,
   postOpsCleanup,
 } from '@/api/ops';
+import { ALIPAY_BROKEN_TITLE, ALIPAY_OK_TITLE, alipayProblemList } from './alipayStatus';
 import { ApiError } from '@/api/client';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
@@ -277,6 +279,22 @@ export default function OpsPage() {
     refetchInterval: 60_000,
   });
 
+  /**
+   * H1/H4：支付宝渠道凭据自检（只读）。按页面节奏 30s 轮询——运营改完环境变量重启 API 后，
+   * 不用来回跳页就能看到「能不能收钱」恢复；这也是把它放在本页（而非设置页）的原因：
+   * 端点与页面同受 admin.ops.view 约束，能打开本页的人必定有权读它（不会被 403 干扰）。
+   * isError 与 ok=false 必须分开表达：读不到 ≠ 渠道坏。
+   */
+  const {
+    data: alipayData,
+    isLoading: alipayLoading,
+    isError: alipayError,
+  } = useQuery({
+    queryKey: queryKeys.opsAlipayStatus(),
+    queryFn: getAlipayStatus,
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
   // ── AN-06 运维动作区：统一 ConfirmReasonModal → POST /ops/actions ──
   const [actionModal, setActionModal] = useState<{ open: boolean; action: OpsActionKey | null }>({
     open: false,
@@ -342,6 +360,9 @@ export default function OpsPage() {
   // D1：对象存储状态（旧版本后端不返回该字段 → undefined，卡片显示占位）
   const os = data?.objectStorage;
 
+  // H1/H4：渠道异常时的可操作条目（ok=true 为空数组；服务端未给条目时回落兜底文案）
+  const alipayProblems = alipayData ? alipayProblemList(alipayData) : [];
+
   const statusMeta = data ? STATUS_META[data.status] : null;
   const maxRequests = Math.max(1, ...samples.map((s) => s.requests));
   const maxErrors = Math.max(1, ...samples.map((s) => s.errors));
@@ -401,6 +422,64 @@ export default function OpsPage() {
                 <span className={styles.kvValue}>{formatMs(data?.redis?.latencyMs)}</span>
               </div>
             </div>
+          </Card>
+
+          {/*
+            H1/H4：支付宝渠道状态（只读）。缺公钥/密钥填错会让 create-order 直接拒绝收钱，
+            而**只有付款用户能感知**（后台上看不到任何异常）——所以这里必须给出「现在能不能收钱」。
+            三种状态严格分开：能收（绿）/ 收不了（红 + 逐条待改项）/ 没读到（灰，不代表渠道异常）。
+          */}
+          <Card
+            size="small"
+            title="支付宝渠道状态"
+            className={styles.spanAll}
+            extra={<span className={styles.metricSub}>只读自检 · 凭据异常时用户无法下单付款</span>}
+          >
+            {alipayLoading ? (
+              <Spin size="small" />
+            ) : alipayError ? (
+              // 读失败只说「我们没读到」，不能复用异常文案——否则会把「管理台读不到」误判成「渠道坏了」
+              <div className={styles.emptyHint}>
+                读取失败：未能从服务端取到渠道状态（接口未就绪或无权限），这不代表支付宝渠道异常。
+                请稍后重试或确认服务端版本。
+              </div>
+            ) : alipayData ? (
+              <div className={styles.kv}>
+                <div className={styles.kvRow}>
+                  <span className={styles.kvLabel}>能否收款</span>
+                  <span className={styles.kvValue}>
+                    {alipayData.ok ? <Tag color="green">正常</Tag> : <Tag color="red">异常</Tag>}
+                  </span>
+                </div>
+                <div className={styles.kvRow}>
+                  <span className={styles.kvLabel}>结论</span>
+                  <span className={styles.kvValue}>
+                    {alipayData.ok ? ALIPAY_OK_TITLE : ALIPAY_BROKEN_TITLE}
+                  </span>
+                </div>
+                {alipayData.ok ? (
+                  <div className={styles.metricSub}>
+                    下单与回调验签所需凭据齐全：用户可以正常付款，付款成功后订阅自动开通。
+                  </div>
+                ) : (
+                  <>
+                    <div className={styles.kvRow}>
+                      <span className={styles.kvLabel}>需要处理</span>
+                      <span className={styles.kvValue}>{alipayProblems.length} 项</span>
+                    </div>
+                    <ul className={styles.problemList}>
+                      {alipayProblems.map((problem) => (
+                        <li key={problem}>{problem}</li>
+                      ))}
+                    </ul>
+                    <div className={styles.metricSub}>
+                      当前用户下单会被服务端直接拒绝（渠道收不了钱）。请按上述条目修正支付宝环境变量，
+                      重启 API 服务后回本页确认恢复。
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
           </Card>
 
           {/* 指标卡：请求 / 错误 / p95 */}
@@ -550,8 +629,8 @@ export default function OpsPage() {
               <div className={styles.metricSub}>—</div>
             ) : !os.configured ? (
               <div className={styles.metricSub}>
-                当前使用本地磁盘存储（STORAGE_TYPE=local）。
-                多实例部署前须切换为对象存储，否则 A 实例上传的文件 B 实例读不到。
+                当前使用本地磁盘存储（STORAGE_TYPE=local）。 多实例部署前须切换为对象存储，否则 A
+                实例上传的文件 B 实例读不到。
               </div>
             ) : (
               <div className={styles.kv}>

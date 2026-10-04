@@ -499,3 +499,60 @@ describe('markOrderPaid · 升级单履约', () => {
     expect(subs.rows[0].canceled_at).toBeNull();
   });
 });
+
+describe('markOrderPaid · 金额不符拒绝履约（S1）', () => {
+  /**
+   * 这两条用例锁的是**管理台待办的数据源**：金额不符是"钱可能已在渠道收了、
+   * 权益却没发"的一类单，overview 的「金额不符，履约被拒（钱可能已收）」
+   * 就是查 payment_orders.metadata->>'amount_mismatch' = 'true'。
+   * 只在日志里记一笔的话，运营永远看不到它。
+   */
+  it('渠道金额与订单金额不符 → 拒绝履约，并把标量证据写进 metadata', async () => {
+    const order = await seedPendingOrder({
+      amount: 9.9,
+      metadata: { planId: plan.Pro.id, billingCycle: 'monthly' },
+    });
+
+    // 典型攻击形态：只付 0.01 想开 9.9 的套餐
+    const result = await markOrderPaid({
+      orderNo: order.order_no,
+      channel: 'alipay',
+      expectedAmount: 0.01,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('amount_mismatch');
+
+    const row = await getOrder(order.order_no);
+    // 绝不履约
+    expect(row.status).toBe('pending');
+    expect(row.paid_at).toBeNull();
+    const subs = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM user_subscriptions WHERE user_id = $1',
+      [TEST_USER_ID]
+    );
+    expect(subs.rows[0].n).toBe(0);
+
+    // 证据只写标量（不落回调报文原文）
+    expect(row.metadata.amount_mismatch).toBe(true);
+    expect(row.metadata.amount_mismatch_expected).toBe('9.90'); // 订单金额
+    expect(row.metadata.amount_mismatch_actual).toBe('0.01'); // 渠道金额
+    expect(typeof row.metadata.amount_mismatch_at).toBe('string');
+    expect(Number.isNaN(Date.parse(row.metadata.amount_mismatch_at))).toBe(false);
+  });
+
+  it('expectedAmount 缺失 = 不做校验 → 正常履约，且绝不打 amount_mismatch 标记', async () => {
+    const order = await seedPendingOrder({
+      amount: plan.Pro.monthly,
+      metadata: { planId: plan.Pro.id, billingCycle: 'monthly' },
+    });
+
+    const result = await markOrderPaid({ orderNo: order.order_no, channel: 'alipay' });
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(true);
+
+    const row = await getOrder(order.order_no);
+    expect(row.status).toBe('paid');
+    expect(row.metadata.amount_mismatch).toBeUndefined();
+  });
+});

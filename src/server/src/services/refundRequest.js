@@ -49,6 +49,15 @@ import {
 
 const USER_AGENT_MAX = 300;
 
+/**
+ * 「processing 卡住了」的判定阈值（毫秒）。
+ *
+ * 导出而非内联：这个数同时是**管理台看板待办**的筛选条件
+ * （routes/admin/overview.js 的「退款申请卡在处理中」），两处必须是同一个口径 ——
+ * 否则看板会把一条还能自己跑完的申请报成"卡住"，或者反过来漏报真正卡死的。
+ */
+export const STUCK_AFTER_MS = 120 * 1000;
+
 /** 对外返回的申请单形状（列名映射集中一处，路由不再各写各的） */
 function toDto(row) {
   return {
@@ -369,7 +378,6 @@ export async function listRefundRequestsForAdmin({ status = 'pending', page = 1,
  * @returns {Promise<{ok:true, request:object, order:object}>} 与 approveRefundRequest 同形
  */
 async function reconcileStuckProcessing({ row, actorUserId, ip, userAgent }) {
-  const STUCK_AFTER_MS = 120 * 1000;
   const ageMs = Date.now() - new Date(row.updated_at).getTime();
   if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < STUCK_AFTER_MS) {
     throw new RefundError(

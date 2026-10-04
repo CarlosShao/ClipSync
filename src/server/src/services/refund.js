@@ -27,7 +27,8 @@
 // 关于「行锁」的位置：渠道打款是网络调用，若在调用前 FOR UPDATE 就会把行锁
 // 横跨一次外部 HTTP（并发退款会互相排队、锁等待还可能超时后留下「钱退了库没改」）。
 // 因此复核锁放在**渠道成功之后、落库之前**：先无锁读做前置校验，
-// 落库时在事务里重新加锁复核 status='paid'，两个并发退款只有一个生效，
+// 落库时在事务里重新加锁复核「状态仍可退」（isRefundableStatus —— 预检与复核必须是
+// 同一个判定函数，否则放宽的状态会在复核处被拒回去），两个并发退款只有一个生效，
 // 另一个 409 REFUND_STATE_CONFLICT（渠道侧另有 out_request_no 幂等兜底）。
 //
 // 错误契约：一律抛 RefundError{ status, code, message, extra }，由调用方路由
@@ -60,9 +61,12 @@ export const UUID_ORDER_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
  * 退款资金动作所需的订单列（refundPaidOrder 的取数口径）。
  * 调用方需要别的列时用 locateOrder 的 columns 参数显式声明（白名单常量，
  * 绝不接受请求体里的字符串 —— 那是 SQL 注入面）。
+ *
+ * metadata 是**必需**项而非可选：状态闸要读 metadata.channel_reports_paid
+ * （见 isRefundableStatus —— 渠道已收款但本地关单的残留单必须能退）。
  */
 export const REFUND_ORDER_COLUMNS = `id, user_id, subscription_id, order_no, amount, currency,
-       payment_method, payment_channel, status, transaction_id`;
+       payment_method, payment_channel, status, transaction_id, metadata`;
 
 /** key 命中 UUID 形状 → 按主键定位，否则按业务单号定位 */
 export function orderKeyColumn(key) {
@@ -106,7 +110,41 @@ export class RefundError extends Error {
 }
 
 /**
- * 对**已支付**订单执行真实全额退款。
+ * 「这笔订单的状态允许退款吗」——状态闸的唯一实现（2026-10-04 放宽）。
+ *
+ * 原实现是硬条件 `status === 'paid'`。它有一个致命后果：orderCloseSweep 修复（H2）之后
+ * sweep 已绝不关已付单，但**历史数据与竞态残留**仍在 —— 渠道侧 TRADE_SUCCESS 收了钱、
+ * 本地却已是 cancelled。这类单在系统里**没有任何路径**能把钱退回去，管理台只会回
+ * 40005「仅已支付订单可退款」，钱永远留在商户账户里。
+ *
+ * 放宽范围刻意极小：必须带 `metadata.channel_reports_paid === true` 这一条
+ * **渠道明确报告已收款**的证据（orderCloseSweep 查单后写入），且只认两个状态：
+ *   · cancelled —— 关单后到账的典型残留，本次要解决的对象；
+ *   · pending   —— 同样是"渠道已收钱、本地未履约"，与看板 9.3 待办同一口径。
+ *     （放行的理由：这个标记只可能由渠道查单实锤写入，pending 只是本地还没跟上；
+ *       真正危险的是"没有证据就退"，那正是本函数拒绝的。）
+ *   · failed    —— 不放行。failed 是渠道侧明确失败的终态，与 channel_reports_paid
+ *     自相矛盾（状态可疑），这种脏数据宁可由人工核账，不自动打款。
+ *
+ * 放宽**不构成新的资金风险面**：状态只是放行条件之一，渠道侧仍受
+ * `out_request_no = 订单号` 的退款幂等保护，本地落库仍有行锁 + 本函数复核
+ * （两处都调它，不会出现"预检放行、事务内复核又拒掉"）。
+ *
+ * @param {object} order 至少含 status 与 metadata（列口径见 REFUND_ORDER_COLUMNS）
+ * @returns {boolean}
+ */
+export function isRefundableStatus(order) {
+  if (!order) return false;
+  if (order.status === 'paid') return true;
+  if (order.status !== 'cancelled' && order.status !== 'pending') return false;
+  // jsonb 里写的是布尔 true；`->>` 取出来才是字符串 'true'。两种形态都认。
+  const flag = order.metadata?.channel_reports_paid;
+  return flag === true || flag === 'true';
+}
+
+/**
+ * 对**已支付**订单执行真实全额退款（另见 isRefundableStatus：带渠道已收款证据的
+ * cancelled/pending 残留单同样可退）。
  *
  * @param {object} p
  * @param {string} [p.orderId]  payment_orders.id（UUID）或 order_no（按形状自动判别）
@@ -142,7 +180,7 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
       orderNo: order.order_no,
     });
   }
-  if (order.status !== 'paid') {
+  if (!isRefundableStatus(order)) {
     throw new RefundError(400, 'ORDER_NOT_REFUNDABLE', 'Order is not paid, cannot refund', {
       orderNo: order.order_no,
       status: order.status,
@@ -259,13 +297,15 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
   try {
     await client.query('BEGIN');
 
-    // 行级锁 + 复核：渠道打款有耗时，期间并发进来的另一次退款只能有一个生效
+    // 行级锁 + 复核：渠道打款有耗时，期间并发进来的另一次退款只能有一个生效。
+    // ⚠️ 复核条件必须与预检**同一个函数**（isRefundableStatus）—— 少改一处会让
+    // 上面已放行的「渠道已收款残留单」走到这里又被拒，钱照样退不出去，且报错更难懂。
     const locked = await client.query(
-      'SELECT id, status, subscription_id FROM payment_orders WHERE id = $1 FOR UPDATE',
+      'SELECT id, status, subscription_id, metadata FROM payment_orders WHERE id = $1 FOR UPDATE',
       [order.id]
     );
     const row = locked.rows[0];
-    if (!row || row.status !== 'paid') {
+    if (!row || !isRefundableStatus(row)) {
       await client.query('ROLLBACK');
       logger.warn('[refund] skipped: order state changed concurrently', {
         orderNo: order.order_no,
@@ -420,4 +460,4 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
   };
 }
 
-export default { refundPaidOrder, RefundError };
+export default { refundPaidOrder, isRefundableStatus, RefundError };

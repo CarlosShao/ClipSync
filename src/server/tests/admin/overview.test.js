@@ -35,6 +35,8 @@ import express from 'express';
 import request from 'supertest';
 import { pool } from '../../src/db/pool.js';
 import adminRouter from '../../src/routes/admin/index.js';
+// 看板「退款申请卡在处理中」的阈值必须与退款审核侧同源（本条用例即是这条约束的守卫）
+import { STUCK_AFTER_MS } from '../../src/services/refundRequest.js';
 
 function buildApp() {
   const app = express();
@@ -87,7 +89,8 @@ const CHANNEL_ROWS = [
 /**
  * 按 overview.js 各子查询的特征片段分发 mock 行；
  * overrides 按 { users, revenue, mrr, devices, paid, daily, plans, channels,
- *                waitlist, refunding, channelPaid, stalePending } 覆盖。
+ *                waitlist, refunding, channelPaid, stalePending,
+ *                stuckRefund, amountMismatch } 覆盖。
  */
 function setupOverviewMocks(overrides = {}) {
   const rows = {
@@ -99,12 +102,14 @@ function setupOverviewMocks(overrides = {}) {
     daily: makeDailyRows(),
     plans: PLAN_ROWS,
     channels: CHANNEL_ROWS,
-    // 四类待办默认空 —— 新增分支不得命中上面的既有特征串，否则既有用例的
+    // 六类待办默认空 —— 新增分支不得命中上面的既有特征串，否则既有用例的
     // pendingItems === [] 断言会跟着变
     waitlist: [],
     refunding: [],
     channelPaid: [],
     stalePending: [],
+    stuckRefund: [],
+    amountMismatch: [],
     ...overrides,
   };
   const wrap = (row) => ({ rows: Array.isArray(row) ? row : [row], rowCount: Array.isArray(row) ? row.length : 1 });
@@ -124,6 +129,8 @@ function setupOverviewMocks(overrides = {}) {
     if (sql.includes("COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'")) {
       return wrap(rows.stalePending);
     }
+    if (sql.includes('FROM refund_requests')) return wrap(rows.stuckRefund);
+    if (sql.includes("metadata->>'amount_mismatch' = 'true'")) return wrap(rows.amountMismatch);
     return { rows: [], rowCount: 0 };
   });
 }
@@ -300,6 +307,70 @@ describe('GET /api/admin/overview —— 看板聚合', () => {
       s.includes("COALESCE(metadata->>'channel_reports_paid'")
     );
     expect(staleSql).toContain("<> 'true'");
+  });
+
+  it('新增两类待办：退款申请卡在处理中 / 金额不符被拒（都可对账，且都带得动跳转）', async () => {
+    setupOverviewMocks({
+      stuckRefund: [
+        {
+          id: 'rr-1',
+          order_no: 'ORD-STUCK-REFUND',
+          amount: 99,
+          updated_at: new Date('2026-10-03T05:06:00Z'),
+        },
+      ],
+      amountMismatch: [
+        {
+          order_no: 'ORD-AMOUNT-MISMATCH',
+          amount: 9.9,
+          updated_at: new Date('2026-10-03T07:08:00Z'),
+          // 打标时刻（NOW()::text 形态）—— occurredAt 取它而不是 updated_at
+          mismatch_at: '2026-10-03 05:06:30.123+00',
+        },
+      ],
+    });
+
+    const res = await request(buildApp()).get('/api/admin/overview');
+    const items = res.body.data.pendingItems;
+    expect(items).toHaveLength(2);
+
+    const stuck = items.find((i) => i.title === '退款申请卡在处理中（可对账并重试）');
+    expect(stuck).toEqual({
+      id: 'refund-stuck-rr-1',
+      title: '退款申请卡在处理中（可对账并重试）',
+      type: 'reconcile', // 复用既有 type，前端零改动
+      target: 'ORD-STUCK-REFUND · ¥99.00',
+      occurredAt: '2026-10-03 05:06',
+      actionLabel: '去对账',
+      actionTo: '/refund-review?status=processing', // 退款审核页的 processing Tab 契约
+    });
+
+    const mismatch = items.find((i) => i.title === '金额不符，履约被拒（钱可能已收）');
+    expect(mismatch).toEqual({
+      id: 'amount-mismatch-ORD-AMOUNT-MISMATCH',
+      title: '金额不符，履约被拒（钱可能已收）',
+      type: 'reconcile',
+      target: 'ORD-AMOUNT-MISMATCH · ¥9.90',
+      // 有打标时刻就用打标时刻（比 updated_at 更贴近"何时发现")
+      occurredAt: '2026-10-03 05:06',
+      actionLabel: '核对订单',
+      // ⚠️ 必须带 q：订单页默认近 7 天窗口，只给 status 运营就翻不到目标单
+      actionTo: '/orders?status=pending&q=ORD-AMOUNT-MISMATCH',
+    });
+
+    // 卡住阈值与退款审核侧同源（services/refundRequest.js#STUCK_AFTER_MS = 2 分钟）：
+    // 看板报出来的"卡住"必须正好是管理台点重试会放行的那批
+    expect(STUCK_AFTER_MS).toBe(120 * 1000);
+    const stuckCall = pool.query.mock.calls.find(([s]) => s.includes('FROM refund_requests'));
+    const [stuckSql, stuckParams] = stuckCall;
+    expect(stuckSql).toContain("status = 'processing'");
+    expect(stuckSql).toContain("INTERVAL '1 millisecond'");
+    expect(stuckParams).toEqual([STUCK_AFTER_MS]);
+    // 只看还在 pending 的单：已 paid/refunded 的不该以「钱可能已收」再出现一次
+    const [mismatchSql] = pool.query.mock.calls.find(([s]) =>
+      s.includes("metadata->>'amount_mismatch' = 'true'")
+    );
+    expect(mismatchSql).toContain("status = 'pending'");
   });
 
   it('权限：requireRole(50) 门槛 —— admin 放行，普通 user 返回 403 { code: 4030 }', async () => {

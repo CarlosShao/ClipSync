@@ -40,6 +40,27 @@ export function getReconciliation(): Promise<ReconciliationReport> {
   return apiGet<ReconciliationReport>('/admin/reconciliation');
 }
 
+/**
+ * 这一行能否走退款端点（POST /admin/orders/:orderNo/refund）——**必须与服务端的窄口径一致**，
+ * 放行过宽只会换来 40005（ORDER_NOT_REFUNDABLE）并让运营白填一次原因：
+ *
+ *  - paid：常规路径，全额原路退回并立即取消订阅权益。
+ *  - refunded：无论资金是否已退回（refundAmount=null 的「退款处理中」）都不得再发起退款。
+ *  - cancelled / pending + channelReportsPaid：**异常到账**（H2/H4）——渠道已收款、本地未履约
+ *    （sweep 查单发现渠道已付款故没有关单；cancelled 的是 H2 之前关单的历史/竞态数据）。
+ *    钱在渠道手里，只能原路退回，故服务端对这**一种**情形放宽了状态闸。
+ *    没有该标记时一律不放行——服务端仍会拒。
+ *  - failed / 无标记的 pending、cancelled：渠道没收钱，无钱可退。
+ */
+export function isOrderRefundable(order: Pick<Order, 'status' | 'channelReportsPaid'>): boolean {
+  if (order.status === 'paid') return true;
+  if (order.status === 'refunded') return false;
+  return (
+    (order.status === 'cancelled' || order.status === 'pending') &&
+    order.channelReportsPaid === true
+  );
+}
+
 /** 单次导出分页大小（对齐审计导出惯例） */
 const EXPORT_PAGE_SIZE = 200;
 

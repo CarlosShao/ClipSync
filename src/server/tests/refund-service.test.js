@@ -83,6 +83,7 @@ async function seedOrder({
   paymentMethod = 'alipay',
   amount = 9.9,
   withSubscription = true,
+  metadata = {},
 } = {}) {
   let subscriptionId = null;
   if (withSubscription) {
@@ -107,7 +108,7 @@ async function seedOrder({
     `INSERT INTO payment_orders
        (user_id, subscription_id, plan_id, order_no, amount, currency,
         payment_method, payment_channel, status, paid_at, transaction_id, created_at, updated_at, metadata)
-     VALUES ($1, $2, $3, $4, $5, 'CNY', $6, $6, $7, $8, '202609192200000000', NOW(), NOW(), '{}')
+     VALUES ($1, $2, $3, $4, $5, 'CNY', $6, $6, $7, $8, '202609192200000000', NOW(), NOW(), $9)
      RETURNING id, order_no`,
     [
       VICTIM_USER_ID,
@@ -118,6 +119,7 @@ async function seedOrder({
       paymentMethod,
       status,
       status === 'paid' ? new Date() : null,
+      JSON.stringify(metadata),
     ]
   );
   return { orderId: order.rows[0].id, orderNo: order.rows[0].order_no, subscriptionId };
@@ -428,6 +430,94 @@ describe('refundPaidOrder · 服务真库行为', () => {
   });
 });
 
+// ───────────────────────── A2. 「异常到账处置」：状态闸放宽 ─────────────────────────
+
+describe('refundPaidOrder · 状态闸放宽（仅认「渠道已收款」这一条证据）', () => {
+  /**
+   * 背景：orderCloseSweep 修复（H2）之后 sweep 已绝不关已付单，但**历史数据与竞态**仍在
+   * —— 渠道侧 TRADE_SUCCESS 收了钱、本地却已是 cancelled。此前状态闸硬要 paid，
+   * 这类单在系统内没有任何路径能退款（管理台只会回 40005）。
+   *
+   * 放宽的唯一凭据是 orderCloseSweep 写入的 metadata.channel_reports_paid（渠道查单实锤），
+   * 下面四条用例把「放行的」与「仍然拒绝的」两侧都钉住。
+   */
+  it('cancelled + channel_reports_paid=true → 允许退款（钱在渠道、本地已关单的残留单）', async () => {
+    const { orderId, orderNo, subscriptionId } = await seedOrder({
+      status: 'cancelled',
+      metadata: { channel_reports_paid: true, closed_by_channel: false },
+    });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
+
+    const result = await refundPaidOrder({
+      orderNo,
+      actorUserId: ADMIN_USER_ID,
+      reason: '关单后渠道仍收款，人工退款',
+    });
+
+    expect(fn).toHaveBeenCalledTimes(1); // 真的打了款
+    expect(result.order.status).toBe('refunded');
+
+    const order = await readOrder(orderId);
+    expect(order.status).toBe('refunded');
+    expect(order.refunded_at).toBeTruthy();
+    expect(Number(order.metadata.refund_amount)).toBe(9.9);
+    // 渠道收款证据保留在 metadata 上（对账时仍能看出这单当初为什么能退）
+    expect(order.metadata.channel_reports_paid).toBe(true);
+    // 与 paid 单同样收回权益
+    expect((await readSubscription(subscriptionId)).status).toBe('canceled');
+    expect(await auditRows('payment_refund', orderId)).toHaveLength(1);
+  });
+
+  it('pending + channel_reports_paid=true → 同样允许退款（与看板「异常到账」同一口径）', async () => {
+    const { orderId, orderNo } = await seedOrder({
+      status: 'pending',
+      metadata: { channel_reports_paid: true },
+    });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
+
+    const result = await refundPaidOrder({ orderNo, actorUserId: ADMIN_USER_ID, reason: '渠道已收款' });
+
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(result.order.status).toBe('refunded');
+    expect((await readOrder(orderId)).status).toBe('refunded');
+  });
+
+  it('cancelled **无** 该标记 → 仍然 400 ORDER_NOT_REFUNDABLE，不碰渠道', async () => {
+    const { orderId, orderNo } = await seedOrder({ status: 'cancelled' });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
+
+    const err = await refundPaidOrder({ orderNo, actorUserId: ADMIN_USER_ID, reason: 'x' }).catch((e) => e);
+    expect(err).toBeInstanceOf(RefundError);
+    expect(err.status).toBe(400);
+    expect(err.code).toBe('ORDER_NOT_REFUNDABLE');
+    expect(fn).not.toHaveBeenCalled();
+    expect((await readOrder(orderId)).status).toBe('cancelled');
+  });
+
+  it('pending **无** 该标记 → 仍然 400 ORDER_NOT_REFUNDABLE（没证据就是不能退）', async () => {
+    const { orderId, orderNo } = await seedOrder({ status: 'pending' });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
+
+    const err = await refundPaidOrder({ orderNo, actorUserId: ADMIN_USER_ID, reason: 'x' }).catch((e) => e);
+    expect(err.code).toBe('ORDER_NOT_REFUNDABLE');
+    expect(fn).not.toHaveBeenCalled();
+    expect((await readOrder(orderId)).status).toBe('pending');
+  });
+
+  it('failed + 该标记 → 仍然拒绝（failed 是渠道明确失败态，带此标记属数据自相矛盾，交人工核账）', async () => {
+    const { orderId, orderNo } = await seedOrder({
+      status: 'failed',
+      metadata: { channel_reports_paid: true },
+    });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y' });
+
+    const err = await refundPaidOrder({ orderNo, actorUserId: ADMIN_USER_ID, reason: 'x' }).catch((e) => e);
+    expect(err.code).toBe('ORDER_NOT_REFUNDABLE');
+    expect(fn).not.toHaveBeenCalled();
+    expect((await readOrder(orderId)).status).toBe('failed');
+  });
+});
+
 // ───────────────────────── B. 管理台退款路由（薄壳） ─────────────────────────
 
 describe('POST /api/admin/orders/:orderNo/refund —— 真库端到端（A1 修复后必须动真钱）', () => {
@@ -531,6 +621,40 @@ describe('POST /api/admin/orders/:orderNo/refund —— 真库端到端（A1 修
 
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ code: 40005, refundCode: 'ORDER_NOT_REFUNDABLE' });
+  });
+
+  it('管理台退「渠道已收款」的 cancelled 残留单 → 200 真退款（钱能退回去了）', async () => {
+    const { orderId, orderNo } = await seedOrder({
+      status: 'cancelled',
+      metadata: { channel_reports_paid: true },
+    });
+    const fn = stubGatewayResponse({ code: '10000', fund_status: 'Y', refund_amount: '9.90' });
+
+    const res = await request(buildAdminApp())
+      .post(`/api/admin/orders/${orderNo}/refund`)
+      .send({ reason: '关单后到账，退款' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ orderNo, status: 'refunded' });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect((await readOrder(orderId)).status).toBe('refunded');
+    // 管理动作审计照旧（走的是同一个 refundPaidOrder，没有旁路）
+    expect(await auditRows('admin.orders.refund', orderId)).toHaveLength(1);
+  });
+
+  it('cancelled **无** 渠道收款标记 → 400 { code: 40005 }，文案已按放宽后的口径改写', async () => {
+    const { orderId, orderNo } = await seedOrder({ status: 'cancelled' });
+    stubGatewayResponse({ code: '10000', fund_status: 'Y' });
+
+    const res = await request(buildAdminApp())
+      .post(`/api/admin/orders/${orderNo}/refund`)
+      .send({ reason: 'xcancelled 无证据' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: 40005, refundCode: 'ORDER_NOT_REFUNDABLE' });
+    // 放宽后再说"仅已支付订单可退款"是错的（会把可退的单说成不可退），文案必须指出证据口径
+    expect(res.body.message).toContain('渠道已确认收款');
+    expect((await readOrder(orderId)).status).toBe('cancelled');
   });
 
   it('渠道退款失败 → 502，管理台不得显示「已退款」', async () => {

@@ -9,7 +9,7 @@ import { RefundModal } from '@/components/RefundModal';
 import { ReconciliationModal } from '@/components/ReconciliationModal';
 import { StatusTag } from '@/components/StatusTag';
 import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers';
-import { fetchAllOrders, getOrders, refundOrder } from '@/api/orders';
+import { fetchAllOrders, getOrders, isOrderRefundable, refundOrder } from '@/api/orders';
 import { buildOrdersCsv, buildOrdersCsvFilename, downloadTextFile } from './ordersCsv';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
@@ -234,34 +234,48 @@ export default function OrdersPage() {
     {
       title: '操作',
       dataIndex: 'orderNo',
-      width: 140,
-      render: (_: string, record) => (
-        <span onClick={(e) => e.stopPropagation()}>
-          <Button size="small" onClick={() => setDetailNo(record.orderNo)}>
-            详情
-          </Button>
-          {record.status === 'paid' ? (
-            <Tooltip title={canRefund ? '全额退款：款项原路退回，对应订阅立即取消' : '缺少权限'}>
-              <span>
-                <Button
-                  danger
-                  size="small"
-                  style={{ marginLeft: 6 }}
-                  disabled={!canRefund}
-                  onClick={() => setRefundTarget(record)}
-                >
-                  退款
-                </Button>
-              </span>
-            </Tooltip>
-          ) : null}
-          {/* AF-15：人工关单口径取消——已支付订单不允许人工关单，
-              超时未支付订单由服务端定时任务自动关闭（src/server/src/services/orderCloseSweep.js）。
-              状态列统一显示「已关闭」，但**关单来源不同**：详情弹窗按服务端派生的
-              autoClosed / closedByChannel / channelReportsPaid 分流展示（超时未付 / 渠道关单 /
-              异常到账），列表这里不额外加标签，避免与状态标签重复。 */}
-        </span>
-      ),
+      width: 165,
+      render: (_: string, record) => {
+        const refundable = isOrderRefundable(record);
+        // 异常到账（渠道已收款、本地未履约）：与常规已支付单走同一端点，但口径完全不同，
+        // 提示必须分开写，否则运营会以为是「用户申请退款」那套流程
+        const abnormalPaid = refundable && record.status !== 'paid';
+        return (
+          <span onClick={(e) => e.stopPropagation()}>
+            <Button size="small" onClick={() => setDetailNo(record.orderNo)}>
+              详情
+            </Button>
+            {refundable ? (
+              <Tooltip
+                title={
+                  !canRefund
+                    ? '缺少权限'
+                    : abnormalPaid
+                      ? '异常到账：渠道已收款但本地未履约，原路退回这笔钱（不关单、不走人工标记）'
+                      : '全额退款：款项原路退回，对应订阅立即取消'
+                }
+              >
+                <span>
+                  <Button
+                    danger
+                    size="small"
+                    style={{ marginLeft: 6 }}
+                    disabled={!canRefund}
+                    onClick={() => setRefundTarget(record)}
+                  >
+                    {abnormalPaid ? '异常退款' : '退款'}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : null}
+            {/* AF-15：人工关单口径取消——已支付订单不允许人工关单，
+                超时未支付订单由服务端定时任务自动关闭（src/server/src/services/orderCloseSweep.js）。
+                状态列统一显示「已关闭」，但**关单来源不同**：详情弹窗按服务端派生的
+                autoClosed / closedByChannel / channelReportsPaid 分流展示（超时未付 / 渠道关单 /
+                异常到账），列表这里不额外加标签，避免与状态标签重复。 */}
+          </span>
+        );
+      },
     },
   ];
 
@@ -341,6 +355,12 @@ export default function OrdersPage() {
         open={Boolean(detailNo)}
         orderNo={detailNo}
         onClose={() => setDetailNo(null)}
+        // 异常到账（H1/H4）在详情里发起退款：复用本页的 RefundModal 与退款 mutation，
+        // 不另写一套。先收起详情——两个弹窗叠着会挡住订单上下文，运营看不到自己在退哪一单
+        onRequestRefund={(order) => {
+          setDetailNo(null);
+          setRefundTarget(order);
+        }}
       />
 
       <RefundModal

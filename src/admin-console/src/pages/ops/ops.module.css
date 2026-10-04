@@ -58,6 +58,15 @@
   color: var(--text-3);
 }
 
+/* H1/H4：支付宝渠道异常条目（逐条可操作——运营照着条目改环境变量，故用感叹色而非灰字） */
+.problemList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--red);
+}
+
 /* CO-33：备份文件列表（紧凑行：文件名 + kind Tag + 大小 + 时间） */
 .backupList {
   display: flex;

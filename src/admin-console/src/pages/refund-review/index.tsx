@@ -42,6 +42,12 @@ const DEFAULT_FILTERS: ReviewFilters = { status: 'pending' };
 
 const STATUS_TABS: { key: RefundReviewStatusFilter; label: string }[] = [
   { key: 'pending', label: '待审核' },
+  /*
+   * processing（H3）：管理员已认领、正在调渠道、结果未知的单，服务端卡住时不会自愈，
+   * 只能靠操作员手动「对账并重试」收口。此前这类单混在「全部」里靠肉眼找，
+   * 而它恰恰是最需要主动介入的一类（钱可能已在路上）。
+   */
+  { key: 'processing', label: '处理中' },
   { key: 'approved', label: '已通过' },
   { key: 'rejected', label: '已驳回' },
   { key: 'all', label: '全部' },
