@@ -124,10 +124,24 @@ const mainNavActiveKey = computed(() =>
 )
 
 // MA-06：管理控制台外链地址。
-// 优先取本地覆盖键 clipsync-admin-url（localStorage）；否则由当前服务器地址派生
-// 同主机 + 5273 端口（管理台约定端口）；地址为空/非法时回落 http://localhost:5273。
+// 优先取本地覆盖键 clipsync-admin-url（localStorage）；否则**跟随「设置 → 服务器地址」**：
+//   · 生产 API（*.clipchain.top）→ 指向已部署的线上管理台 https://admin.clipchain.top
+//     （它同源 /api，本来就是生产；本地 dev 管理台被安全闸拒绝指向生产，见
+//      admin-console/src/api/upstream.ts 的 PRODUCTION_HOSTS）；
+//   · 其余（本地/自建）→ 同主机 + 5273 端口（管理台 dev 约定端口）。
+// 地址为空/非法时回落 http://localhost:5273。
 // hostname 强制用 localhost（而非 serverUrl 的 127.0.0.1）：浏览器对 localhost 有
 // IPv6/IPv4 双栈回退，两种监听形态的管理台 dev server 都能命中。
+//
+// ⚠️ 域名与 src/shared/domains.js（ROOT_DOMAIN / DOMAINS.admin）保持一致——本文件无法 import 它。
+const PROD_ROOT_DOMAIN = 'clipchain.top'
+const PROD_ADMIN_ORIGIN = `https://admin.${PROD_ROOT_DOMAIN}`
+
+function isProductionServer(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  return h === PROD_ROOT_DOMAIN || h.endsWith(`.${PROD_ROOT_DOMAIN}`)
+}
+
 function resolveAdminConsoleUrl(): string {
   const override = (localStorage.getItem('clipsync-admin-url') || '').trim()
   if (override) return override
@@ -135,6 +149,7 @@ function resolveAdminConsoleUrl(): string {
   if (server) {
     try {
       const u = new URL(server)
+      if (isProductionServer(u.hostname)) return PROD_ADMIN_ORIGIN
       u.port = '5273'
       u.hostname = 'localhost'
       return u.origin
@@ -146,16 +161,19 @@ function resolveAdminConsoleUrl(): string {
 }
 
 /**
- * 管理台链接：在已解析地址上补 `?api=`，把桌面端「设置 → 服务器地址」交出去。
- * 这是「几个项目共用一个入口」的落地方式——管理台 dev 构建会接管该地址直连同一后端
+ * 管理台链接：本地管理台补 `?api=`，把桌面端「设置 → 服务器地址」交出去。
+ * 这是「几个项目共用一个入口」的落地方式——管理台 **dev 构建**会接管该地址直连同一后端
  * （生产构建按 import.meta.env.DEV 忽略它，线上页面不存在改指向的入口），
  * 不必再在管理台单独维护一份 .env 里的代理目标。
+ * 线上管理台不补该参数：它同源直连生产，带了也不会被读取。
  */
 function adminConsoleUrl(path: string): string {
   const url = new URL(resolveAdminConsoleUrl())
   url.pathname = path
   const server = configStore.serverUrl.trim()
-  if (server) url.searchParams.set('api', server)
+  if (server && !isProductionServer(url.hostname)) {
+    url.searchParams.set('api', server)
+  }
   return url.toString()
 }
 
