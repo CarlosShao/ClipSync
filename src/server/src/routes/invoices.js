@@ -325,7 +325,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
         po.payment_method,
         po.amount AS order_amount,
         sp.name AS plan_name,
-        sp.price AS plan_price
+        -- G3 遗留：011a 重建后 subscription_plans 已无 price 列，引用它会 42703 → 本端点恒 500。
+        -- 改为按实际计费周期取月价/年价（us 已在下方 JOIN；us 为空时回落月价）。
+        CASE us.billing_cycle WHEN 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END AS plan_price
       FROM invoices i
       LEFT JOIN payment_orders po ON i.payment_order_id = po.id
       LEFT JOIN user_subscriptions us ON us.id = COALESCE(i.subscription_id, po.subscription_id)
