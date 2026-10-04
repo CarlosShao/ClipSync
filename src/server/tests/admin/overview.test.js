@@ -124,11 +124,12 @@ function setupOverviewMocks(overrides = {}) {
     if (sql.includes('AS cnt')) return wrap(rows.channels);
     if (sql.includes("registration_status = 'pending'")) return wrap(rows.waitlist);
     if (sql.includes("metadata->>'refund_amount' IS NULL")) return wrap(rows.refunding);
-    // 9.3 / 9.4 是两条不同 SQL：前者用 = 'true'，后者用 COALESCE(...) <> 'true'
+    // 9.3 / 9.4 / 9.6 是三条不同 SQL，按各自**唯一**标记路由：
+    // 9.4 与 9.6 现在都含 `COALESCE(metadata->>'channel_reports_paid' ...)` 排除子串，
+    // 不能再靠它区分；也不能只看 `INTERVAL '24 hours'`（设备在线统计也用它）——
+    // 9.4 用 `created_at < NOW() - INTERVAL '24 hours'`，9.6 用 `amount_mismatch`。
     if (sql.includes("metadata->>'channel_reports_paid' = 'true'")) return wrap(rows.channelPaid);
-    if (sql.includes("COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'")) {
-      return wrap(rows.stalePending);
-    }
+    if (sql.includes("created_at < NOW() - INTERVAL '24 hours'")) return wrap(rows.stalePending);
     if (sql.includes('FROM refund_requests')) return wrap(rows.stuckRefund);
     if (sql.includes("metadata->>'amount_mismatch' = 'true'")) return wrap(rows.amountMismatch);
     return { rows: [], rowCount: 0 };
@@ -303,10 +304,13 @@ describe('GET /api/admin/overview —— 看板聚合', () => {
     expect(byTitle('用户等待审核').actionTo).toBe('/users?status=waitlist');
 
     // 异常到账必须从「待支付超 24 小时」里排除，否则同一单以误导性标题重复出现
+    // （按唯一标记定位 9.4 的 SQL——9.6 现在也含同款排除子串，设备统计也用了 INTERVAL '24 hours'）
     const [staleSql] = pool.query.mock.calls.find(([s]) =>
-      s.includes("COALESCE(metadata->>'channel_reports_paid'")
+      s.includes("created_at < NOW() - INTERVAL '24 hours'")
     );
     expect(staleSql).toContain("<> 'true'");
+    // 9.4 同时要排除「金额不符」单，避免与 9.6 重复（9.3 > 9.6 > 9.4 的优先级链）
+    expect(staleSql).toContain("metadata->>'amount_mismatch'");
   });
 
   it('新增两类待办：退款申请卡在处理中 / 金额不符被拒（都可对账，且都带得动跳转）', async () => {
@@ -371,6 +375,8 @@ describe('GET /api/admin/overview —— 看板聚合', () => {
       s.includes("metadata->>'amount_mismatch' = 'true'")
     );
     expect(mismatchSql).toContain("status = 'pending'");
+    // 与 9.3 互斥：已被渠道实锤收款的单只走 9.3，不再以「金额不符」重复出现
+    expect(mismatchSql).toContain("metadata->>'channel_reports_paid'");
   });
 
   it('权限：requireRole(50) 门槛 —— admin 放行，普通 user 返回 403 { code: 4030 }', async () => {

@@ -265,13 +265,16 @@ router.get('/', async (req, res) => {
     }
 
     // 9.4 待支付订单超 24 小时（占压订单，需人工确认是否关闭）
-    //     排除了上面那类"渠道其实已收款"的单，避免同一单以误导性标题重复出现。
+    //     与 9.3/9.6 互斥——同一单只应出现在一条待办里，优先级 9.3 > 9.6 > 9.4。
+    //     排除"渠道其实已收款"（9.3）与"金额不符"（9.6）两类，避免同一单以误导性标题重复出现。
     const { rows: stalePendingRows } = await pool.query(`
       SELECT order_no, amount::float8 AS amount, created_at
       FROM payment_orders
       WHERE status = 'pending'
         AND created_at < NOW() - INTERVAL '24 hours'
         AND COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'
+        AND COALESCE(metadata->>'amount_mismatch', 'false') <> 'true'
+        AND COALESCE(metadata->>'channel_unverifiable', 'false') <> 'true'
       ORDER BY created_at DESC
       LIMIT 5`);
     for (const row of stalePendingRows) {
@@ -318,12 +321,14 @@ router.get('/', async (req, res) => {
     //      但**钱可能已经在渠道侧收了** —— 必须让运营看见并人工核对/退款。
     //      标记由 services/orderFulfillment.js#markOrderPaid 在拒绝履约时写入。
     //      ⚠️ 必须带 q：这类单在订单页默认 7 天窗口之外很常见，只给 status 等于把待办变死链。
+    //      与 9.3 互斥（优先级 9.3 > 9.6）：已被渠道查单实锤"已收款"的单只走 9.3，不再重复出现。
     const { rows: amountMismatchRows } = await pool.query(`
       SELECT order_no, amount::float8 AS amount, updated_at,
              metadata->>'amount_mismatch_at' AS mismatch_at
       FROM payment_orders
       WHERE status = 'pending'
         AND metadata->>'amount_mismatch' = 'true'
+        AND COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'
       ORDER BY updated_at DESC
       LIMIT 5`);
     for (const row of amountMismatchRows) {
@@ -335,6 +340,28 @@ router.get('/', async (req, res) => {
         // 打标时刻优于 updated_at：订单此后若被别的路径动过（补标记、渠道重放），
         // 仍显示"何时发现金额不符"这个真正需要人工追溯的时间点。
         occurredAt: formatMinute(row.mismatch_at || row.updated_at),
+        actionLabel: '核对订单',
+        actionTo: `/orders?status=pending&q=${encodeURIComponent(row.order_no)}`,
+      });
+    }
+
+    // 9.7 渠道状态未知：订单超时未付，但我方缺签名凭据、无法向渠道核实（orderCloseSweep 保护性跳过）。
+    //      这类单**绝不能**按"用户忘了付"处理——万一用户真付过，本地查不到，只能人工核。
+    //      与 9.4 互斥：打过该标记的单不再进「待支付超 24 小时」。
+    const { rows: unverifiableRows } = await pool.query(`
+      SELECT order_no, amount::float8 AS amount, updated_at
+      FROM payment_orders
+      WHERE status = 'pending'
+        AND metadata->>'channel_unverifiable' = 'true'
+      ORDER BY updated_at DESC
+      LIMIT 5`);
+    for (const row of unverifiableRows) {
+      pendingItems.push({
+        id: `channel-unverifiable-${row.order_no}`,
+        title: '渠道状态未知：无法核实是否已收款（需人工核对）',
+        type: 'reconcile',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        occurredAt: formatMinute(row.updated_at),
         actionLabel: '核对订单',
         actionTo: `/orders?status=pending&q=${encodeURIComponent(row.order_no)}`,
       });

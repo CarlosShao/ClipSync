@@ -212,6 +212,37 @@ describe('orderCloseSweep · 超时关单（审计 H2 重写后的不变量）',
     expect((await readOrder(order.order_no)).status).toBe('pending');
   });
 
+  it('★公钥在（我方是 alipay 商户）但缺应用私钥签不了名 → 绝不本地关单，保持 pending 待人工', async () => {
+    const order = await seedOrder({ status: 'pending', channel: 'alipay', ageHours: 30 });
+
+    // 配置回退：回调验签公钥仍在，但 query/close 需要的签名凭据丢了
+    const savedPrivate = process.env.ALIPAY_PRIVATE_KEY;
+    delete process.env.ALIPAY_PRIVATE_KEY;
+    // 一旦代码错误地去调渠道（签不了名本不该调），桩会抛错让用例直接失败
+    const fn = stubGateway({
+      'alipay.trade.query': WAIT_BUYER_PAY,
+      'alipay.trade.close': CLOSE_OK,
+    });
+    try {
+      const result = await runOrderCloseSweep();
+
+      expect(result.swept).toBe(true);
+      expect(result.closedCount).toBe(0);
+      expect(result.deferredUnverifiable).toBe(1);
+      // 根本无法签名 → 一个渠道接口都不该调
+      expect(fn).not.toHaveBeenCalled();
+
+      const after = await readOrder(order.order_no);
+      expect(after.status).toBe('pending'); // 绝不本地 cancelled（可能是一笔真付过的单）
+      expect(after.metadata.auto_closed).toBeUndefined();
+      // 必须在数据上留痕，管理台/订单核对据此发现问题
+      expect(after.metadata.channel_unverifiable).toBe(true);
+      expect(after.metadata.channel_unverifiable_at).toBeTruthy();
+    } finally {
+      process.env.ALIPAY_PRIVATE_KEY = savedPrivate;
+    }
+  });
+
   it('★渠道关单失败 → 本轮跳过，订单保持 pending（绝不在渠道还开着时就本地关掉）', async () => {
     const order = await seedOrder();
 
