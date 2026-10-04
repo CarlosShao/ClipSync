@@ -450,6 +450,41 @@ router.post('/create-order', authenticateToken, async (req, res) => {
  * 代价说明：每次轮询都会打一次支付宝网关。前端轮询间隔应 ≥3s，
  * 且订单付清后前端即停止轮询（本接口对已支付订单不再外呼）。
  */
+/**
+ * 按订单的渠道查询短缓存（M5，2026-10-03 审计）。
+ *
+ * 问题：轮询兜底此前**每次轮询都真打一次支付宝网关**。`apiLimiter` 按用户分桶
+ * 300 次/分，所以**单个用户**就能制造 5 QPS 的出站 HTTPS（DNS+TLS+往返）；
+ * 多用户同时停在支付遮罩上线性放大，容易撞支付宝侧的**应用级 QPS 限制**，
+ * 把 `trade.query` 打成失败 —— 而失败在下面被吞成一行 warn，兜底静默失效，
+ * 前端却还在一直轮询。
+ *
+ * 这是一个**限流器，不是真相源**：缓存过期必然回源；订单最终是否已付另有
+ * 回调路径保证，缓存不会让「已付」被漏掉，最多让兜底晚 TTL 毫秒生效。
+ * 进程内 Map 即可 —— 多副本部署下每副本各限一份，本来就是限流语义。
+ */
+const CHANNEL_QUERY_TTL_MS = 5000;
+const channelQueryCache = new Map(); // orderNo -> { at, result }
+
+async function queryTradeCached(orderNo) {
+  const now = Date.now();
+  const hit = channelQueryCache.get(orderNo);
+  if (hit && now - hit.at < CHANNEL_QUERY_TTL_MS) return hit.result;
+
+  const result = await queryTrade(orderNo);
+  channelQueryCache.set(orderNo, { at: now, result });
+
+  // 防无界增长：只保留最近 1000 个订单
+  if (channelQueryCache.size > 1000) {
+    let dropped = 0;
+    for (const key of channelQueryCache.keys()) {
+      channelQueryCache.delete(key);
+      if (++dropped >= 200) break;
+    }
+  }
+  return result;
+}
+
 router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -473,7 +508,7 @@ router.get('/order/:orderNo/status', authenticateToken, async (req, res) => {
 
     if (order.status === 'pending' && isAlipayOrder && isAlipayConfigured()) {
       try {
-        const trade = await queryTrade(order.order_no);
+        const trade = await queryTradeCached(order.order_no);
         if (trade.paid) {
           const fulfilled = await markOrderPaid({
             orderNo: order.order_no,

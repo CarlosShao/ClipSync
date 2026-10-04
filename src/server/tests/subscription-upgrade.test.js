@@ -447,6 +447,34 @@ describe('markOrderPaid · 升级单履约', () => {
     expect(active.rows[0].n).toBe(1);
   });
 
+  it('M8：两笔同套餐订单**并发**支付 → 仍然只有一条 active 订阅', async () => {
+    // 修前：markOrderPaid 只锁**订单行**，而两笔订单是两行 —— 两个事务可以并发跑，
+    // 各自都读到"该用户该套餐还没有 active 订阅"，于是各自 INSERT，
+    // 同一用户同一套餐出现两条 active（上面那条串行用例覆盖不到这个窗口）。
+    // 修后：markOrderPaid 先对 user_id 取事务级 advisory lock，同一用户的履约被串行化。
+    //
+    // 说明：并发用例只能"最好努力"地触发竞态 —— 加锁后本用例是**确定性通过**的；
+    // 若把锁去掉，它在竞态真正发生时才会红。故断言的是**不变量本身**（active 只有一条），
+    // 而不是某个具体的执行顺序。
+    const meta = { planId: plan.Enterprise.id, billingCycle: 'monthly' };
+    const first = await seedPendingOrder({ amount: plan.Enterprise.monthly, metadata: meta });
+    const second = await seedPendingOrder({ amount: plan.Enterprise.monthly, metadata: meta });
+
+    const results = await Promise.all([
+      markOrderPaid({ orderNo: first.order_no, channel: 'alipay', expectedAmount: plan.Enterprise.monthly }),
+      markOrderPaid({ orderNo: second.order_no, channel: 'alipay', expectedAmount: plan.Enterprise.monthly }),
+    ]);
+
+    expect(results.every((r) => r.ok)).toBe(true);
+
+    const active = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM user_subscriptions
+        WHERE user_id = $1 AND plan_id = $2 AND status = 'active'`,
+      [TEST_USER_ID, plan.Enterprise.id]
+    );
+    expect(active.rows[0].n).toBe(1);
+  });
+
   it('无 proration 的同套餐订单（续费兜底）→ 顺延已有订阅，不插新行、不写 canceled_at', async () => {
     const { subscriptionId } = await seedActiveSubscription({
       planId: plan.Pro.id,

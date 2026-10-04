@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { logger } from '../utils/logger.js';
 import { createStripeSignatureVerifier, verifyAlipayNotify } from '../middleware/webhook-signature.js';
-import { markOrderPaid } from '../services/orderFulfillment.js';
+import { markOrderPaid, markOrderClosed } from '../services/orderFulfillment.js';
 import { isAlipayNotifyConfigured } from '../utils/alipay.js';
 
 /**
@@ -63,6 +63,20 @@ router.post('/alipay', async (req, res) => {
     return res.status(503).send('failure');
   }
 
+  // M2（2026-10-03 审计）：身份校验必须 **fail-closed**，配置不全就直接拒收。
+  //
+  // 原写法是 `if (expectedAppId && appId && appId !== expectedAppId)` —— 三重前置条件，
+  // 只要 env 漏配/改名（expectedAppId 为空）**或**报文里没有 app_id，整条校验就
+  // **静默跳过**；而 isAlipayNotifyConfigured() 当时只查公钥，所以「有公钥、无 app_id」
+  // 时 handler 会继续往下走。此时唯一剩下的防线只有金额比对 —— 攻击者完全可以拿
+  // 自己的商户号，用受害者的 out_trade_no 与相同金额下单付款，取得一份**合法签名**的
+  // 通知打进来，从而白拿订阅。
+  const expectedAppId = String(process.env.ALIPAY_APP_ID || '').trim();
+  if (!expectedAppId) {
+    logger.error('[alipay-notify] ALIPAY_APP_ID not configured, cannot verify merchant identity');
+    return res.status(503).send('failure');
+  }
+
   const verified = verifyAlipayNotify(params);
   if (!verified) {
     logger.warn('[alipay-notify] signature verification FAILED', {
@@ -73,11 +87,25 @@ router.post('/alipay', async (req, res) => {
     return res.status(401).send('failure');
   }
 
-  // app_id 必须与本商户一致，防止他人用自己商户号的合法签名打过来
-  const expectedAppId = process.env.ALIPAY_APP_ID || '';
-  if (expectedAppId && appId && appId !== expectedAppId) {
-    logger.warn('[alipay-notify] app_id mismatch, rejecting', { got: appId });
+  // 报文缺 app_id 同样拒收（不能因为"字段没有"就放行）
+  if (!appId) {
+    logger.warn('[alipay-notify] notify carries no app_id, rejecting', { outTradeNo });
     return res.status(401).send('failure');
+  }
+  if (String(appId).trim() !== expectedAppId) {
+    logger.warn('[alipay-notify] app_id mismatch, rejecting', { got: appId, outTradeNo });
+    return res.status(401).send('failure');
+  }
+
+  // seller_id（收款方支付宝 PID）：官方建议比对，且它是「这笔钱真的进了我的账户」
+  // 的直接证据，比 app_id 更贴近资金。未配置则不校验（保持向后兼容），配了就强制。
+  const expectedSellerId = String(process.env.ALIPAY_SELLER_ID || '').trim();
+  if (expectedSellerId) {
+    const gotSellerId = String(params.seller_id || '').trim();
+    if (gotSellerId !== expectedSellerId) {
+      logger.warn('[alipay-notify] seller_id mismatch, rejecting', { got: gotSellerId, outTradeNo });
+      return res.status(401).send('failure');
+    }
   }
 
   logger.info('[alipay-notify] verified', { outTradeNo, tradeStatus, tradeNo });
@@ -106,6 +134,21 @@ router.post('/alipay', async (req, res) => {
       });
       return res.status(500).send('failure');
     }
+  } else if (tradeStatus === 'TRADE_CLOSED') {
+    // M6（2026-10-03 审计）：关单通知此前只"记日志并确认收到"，本地订单仍是 pending
+    // → 前端继续轮询、每次轮询继续打渠道，直到 24h 后 sweep 才关，白白消耗渠道 QPS。
+    //
+    // ⚠️ TRADE_CLOSED 也可能是「**全额退款后**交易关闭」，所以只能对 **pending** 生效，
+    // 绝不能覆盖 paid / refunded 等终态 —— 那会抹掉资金事实（见 markOrderClosed 的 WHERE）。
+    const closed = await markOrderClosed({
+      orderNo: outTradeNo,
+      rawPayload: { tradeStatus, tradeNo },
+    });
+    logger.info('[alipay-notify] TRADE_CLOSED handled', {
+      outTradeNo,
+      applied: closed.changed,
+      reason: closed.reason,
+    });
   } else {
     logger.info('[alipay-notify] non-success status ignored', { outTradeNo, tradeStatus });
   }

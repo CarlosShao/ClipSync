@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
+import crypto from 'node:crypto';
 import pool from '../src/db/pool.js';
+import { ensureAuthUser } from './test-helpers.js';
 
 /**
  * 支付回调路由可达性回归测试
@@ -171,5 +173,241 @@ describe('M1：回调不得被传输层缓存短路（幂等由履约层保证�
 
     expect([401, 503]).toContain(res.status);
     if (res.status === 401) expect(String(res.text)).toBe('failure');
+  });
+});
+
+/**
+ * M2（2026-10-03 审计）：商户身份校验必须 fail-closed。
+ *
+ * 原写法 `if (expectedAppId && appId && appId !== expectedAppId)` 有三重前置条件 ——
+ * env 漏配或报文缺 app_id 时整条校验**静默跳过**，此时唯一剩下的防线只有金额比对：
+ * 攻击者拿自己的商户号、用受害者的 out_trade_no 与相同金额下单付款，就能取得一份
+ * **合法签名**的通知打进来，白拿订阅。
+ *
+ * 本组用例用**真签名**（自建 RSA2 密钥对）走完整链路，只让 app_id / seller_id 出错，
+ * 从而确定"被拒"是因为身份校验而不是验签。
+ */
+describe('M2：商户身份校验 fail-closed（真签名，只让身份字段出错）', () => {
+  const ENV_KEYS_M2 = ['ALIPAY_APP_ID', 'ALIPAY_PUBLIC_KEY', 'ALIPAY_SELLER_ID', 'ALIPAY_PRIVATE_KEY'];
+  const saved = {};
+  const { privateKey: PRIV, publicKey: PUB } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  });
+
+  /** 复刻 buildSignString 的口径：ASCII 升序、剔除空值、回调验签还要排 sign_type */
+  function buildSignString(params) {
+    return Object.keys(params)
+      .filter((k) => k !== 'sign' && k !== 'sign_type')
+      .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
+      .sort()
+      .map((k) => `${k}=${params[k]}`)
+      .join('&');
+  }
+
+  function signedNotify(overrides = {}) {
+    const params = {
+      app_id: '2021000000000000',
+      out_trade_no: 'ORD_M2_TEST',
+      trade_no: '2026100422000000001',
+      trade_status: 'TRADE_SUCCESS',
+      total_amount: '9.90',
+      sign_type: 'RSA2',
+      ...overrides,
+    };
+    for (const k of Object.keys(params)) if (params[k] === undefined) delete params[k];
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(buildSignString(params), 'utf8');
+    return { ...params, sign: signer.sign(PRIV, 'base64') };
+  }
+
+  beforeAll(() => {
+    for (const k of ENV_KEYS_M2) saved[k] = process.env[k];
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    delete process.env.ALIPAY_SELLER_ID;
+  });
+
+  afterAll(() => {
+    for (const k of ENV_KEYS_M2) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it('签名有效但报文缺 app_id → 401', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/alipay')
+      .type('form')
+      .send(signedNotify({ app_id: undefined }));
+
+    expect(res.status).toBe(401);
+    expect(String(res.text)).toBe('failure');
+  });
+
+  it('签名有效但 app_id 是别人的商户号 → 401（跨商户重放）', async () => {
+    const res = await request(app)
+      .post('/api/webhooks/alipay')
+      .type('form')
+      .send(signedNotify({ app_id: '2088999999999999' }));
+
+    expect(res.status).toBe(401);
+    expect(String(res.text)).toBe('failure');
+  });
+
+  it('本商户未配置 ALIPAY_APP_ID → 503（无法确认身份就绝不收）', async () => {
+    const prev = process.env.ALIPAY_APP_ID;
+    delete process.env.ALIPAY_APP_ID;
+    try {
+      const res = await request(app).post('/api/webhooks/alipay').type('form').send(signedNotify());
+      expect(res.status).toBe(503);
+      expect(String(res.text)).toBe('failure');
+    } finally {
+      process.env.ALIPAY_APP_ID = prev;
+    }
+  });
+
+  it('配了 ALIPAY_SELLER_ID 时 seller_id 不匹配 → 401', async () => {
+    process.env.ALIPAY_SELLER_ID = '2088000000000001';
+    try {
+      const res = await request(app)
+        .post('/api/webhooks/alipay')
+        .type('form')
+        .send(signedNotify({ seller_id: '2088000000000002' }));
+
+      expect(res.status).toBe(401);
+      expect(String(res.text)).toBe('failure');
+    } finally {
+      delete process.env.ALIPAY_SELLER_ID;
+    }
+  });
+
+  it('app_id 与 seller_id 都对 → 越过身份校验（订单不存在 → 500 让支付宝重试）', async () => {
+    process.env.ALIPAY_SELLER_ID = '2088000000000001';
+    try {
+      const res = await request(app)
+        .post('/api/webhooks/alipay')
+        .type('form')
+        .send(signedNotify({ seller_id: '2088000000000001', out_trade_no: 'ORD_M2_NOT_EXIST' }));
+
+      // 身份校验通过后进入履约：订单不存在 → 500 failure（让支付宝重试，留人工排查窗口）
+      expect(res.status).toBe(500);
+      expect(String(res.text)).toBe('failure');
+    } finally {
+      delete process.env.ALIPAY_SELLER_ID;
+    }
+  });
+});
+
+/**
+ * M6（2026-10-03 审计）：`TRADE_CLOSED` 通知必须把本地 pending 订单收口。
+ *
+ * 修前只被"记日志并确认收到"忽略 → 本地订单仍是 pending，前端继续轮询、每次轮询
+ * 继续打渠道查单，直到 24h 后 sweep 才关。
+ *
+ * ⚠️ 边界：`TRADE_CLOSED` 也可能是「全额退款后交易关闭」，**绝不能覆盖终态**
+ * （那会抹掉资金事实）。所以这里同时钉住"paid 订单不受影响"。
+ */
+describe('M6：TRADE_CLOSED 收口 pending 订单，但不覆盖终态', () => {
+  const M6_APP_ID = '2021000000000000';
+  const { privateKey: PRIV6, publicKey: PUB6 } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  });
+
+  function buildSignString6(params) {
+    return Object.keys(params)
+      .filter((k) => k !== 'sign' && k !== 'sign_type')
+      .filter((k) => params[k] !== undefined && params[k] !== null && params[k] !== '')
+      .sort()
+      .map((k) => `${k}=${params[k]}`)
+      .join('&');
+  }
+
+  function signedNotify6(overrides = {}) {
+    const params = {
+      app_id: M6_APP_ID,
+      trade_status: 'TRADE_CLOSED',
+      sign_type: 'RSA2',
+      ...overrides,
+    };
+    for (const k of Object.keys(params)) if (params[k] === undefined) delete params[k];
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(buildSignString6(params), 'utf8');
+    return { ...params, sign: signer.sign(PRIV6, 'base64') };
+  }
+
+  const saved6 = {};
+  let orderSeq = 0;
+  const createdOrders = [];
+
+  async function seedOrder(status) {
+    const orderNo = `ORDM6${Date.now()}${orderSeq++}`;
+    // 注意：status 只当一次参数用（同一参数既进列又参与比较会让 PG 推断出不一致类型）
+    const paidAt = status === 'paid' ? new Date() : null;
+    const { rows } = await pool.query(
+      `INSERT INTO payment_orders
+         (user_id, order_no, amount, currency, payment_method, payment_channel, status, paid_at, metadata)
+       VALUES ((SELECT id FROM users LIMIT 1), $1, 9.9, 'CNY', 'alipay', 'alipay', $2, $3, '{}'::jsonb)
+       RETURNING order_no`,
+      [orderNo, status, paidAt]
+    );
+    createdOrders.push(rows[0].order_no);
+    return rows[0].order_no;
+  }
+
+  beforeAll(async () => {
+    // 全局测试清理会把 users 清空，而 payment_orders.user_id 是 NOT NULL → 先确保有账号行
+    await ensureAuthUser(pool);
+    for (const k of ['ALIPAY_PUBLIC_KEY', 'ALIPAY_APP_ID', 'ALIPAY_SELLER_ID']) saved6[k] = process.env[k];
+    process.env.ALIPAY_PUBLIC_KEY = PUB6;
+    process.env.ALIPAY_APP_ID = M6_APP_ID;
+    delete process.env.ALIPAY_SELLER_ID;
+  });
+
+  afterAll(async () => {
+    for (const k of Object.keys(saved6)) {
+      if (saved6[k] === undefined) delete process.env[k];
+      else process.env[k] = saved6[k];
+    }
+    if (createdOrders.length) {
+      await pool
+        .query('DELETE FROM payment_orders WHERE order_no = ANY($1::text[])', [createdOrders])
+        .catch(() => {});
+    }
+  });
+
+  it('pending 订单收到 TRADE_CLOSED → 本地置 cancelled 并留痕', async () => {
+    const orderNo = await seedOrder('pending');
+
+    const res = await request(app)
+      .post('/api/webhooks/alipay')
+      .type('form')
+      .send(signedNotify6({ out_trade_no: orderNo, trade_no: 'T_M6_1' }));
+
+    expect(res.status).toBe(200);
+    expect(String(res.text)).toBe('success');
+
+    const { rows } = await pool.query(
+      'SELECT status, metadata FROM payment_orders WHERE order_no = $1',
+      [orderNo]
+    );
+    expect(rows[0].status).toBe('cancelled');
+    expect(rows[0].metadata.closed_by_channel).toBe(true);
+  });
+
+  it('已 paid 的订单收到 TRADE_CLOSED（全额退款后关单）→ 状态绝不被覆盖', async () => {
+    const orderNo = await seedOrder('paid');
+
+    const res = await request(app)
+      .post('/api/webhooks/alipay')
+      .type('form')
+      .send(signedNotify6({ out_trade_no: orderNo, trade_no: 'T_M6_2' }));
+
+    expect(res.status).toBe(200);
+    const { rows } = await pool.query('SELECT status FROM payment_orders WHERE order_no = $1', [orderNo]);
+    expect(rows[0].status).toBe('paid'); // 资金事实不能被关单通知抹掉
   });
 });

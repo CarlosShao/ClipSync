@@ -90,6 +90,27 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
   try {
     await client.query('BEGIN');
 
+    // M8（2026-10-03 审计）：『同一用户 + 同一套餐最多一条 active 订阅』这条不变量
+    // 此前只靠「先查有没有、没有就 INSERT」维持，而 markOrderPaid 锁的是**订单行** ——
+    // 不同订单之间可以并发：用户对同一套餐建了两个 pending 单并几乎同时支付时，
+    // 两个事务各自读到"没有 active 订阅"，各自 INSERT，就会开出两条 active。
+    //
+    // 这里对 user_id 取**事务级 advisory lock**，把同一用户的履约串行化。
+    // 先无锁读一次 user_id 只为拿到锁键（真正的行锁仍是下面那条 FOR UPDATE）。
+    //
+    // 为什么不用部分唯一索引：现网可能已存在重复行，加索引的迁移有失败/需先清洗的风险；
+    // advisory lock 零 schema 变更，且随 COMMIT/ROLLBACK 自动释放。
+    const pre = await client.query('SELECT user_id FROM payment_orders WHERE order_no = $1', [orderNo]);
+    if (pre.rows.length === 0) {
+      await client.query('ROLLBACK');
+      logger.warn('[fulfillment] order not found', { orderNo, channel });
+      return { ok: false, changed: false, reason: 'order_not_found' };
+    }
+    const lockUserId = pre.rows[0].user_id;
+    if (lockUserId) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [String(lockUserId)]);
+    }
+
     // 行级锁：并发回调/轮询同时到达时，只有一个事务能拿到这一行
     const { rows } = await client.query(
       `SELECT id, user_id, subscription_id, amount, status, metadata
@@ -338,4 +359,42 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
   }
 }
 
-export default { markOrderPaid };
+/**
+ * 渠道侧已关单（`TRADE_CLOSED` 通知，M6 2026-10-03 审计）。
+ *
+ * 修前的样子：`TRADE_CLOSED` 只被"如实记日志并确认收到"忽略，本地订单仍是 `pending`
+ * → 前端继续轮询、每次轮询继续打渠道查单，直到 24h 后 orderCloseSweep 才关，
+ * 白白消耗渠道 QPS，用户也一直看到"待支付"。
+ *
+ * ⚠️ **只能对 `pending` 生效**：`TRADE_CLOSED` 也可能是「全额退款后交易关闭」，
+ * 覆盖 `paid` / `refunded` 会抹掉资金事实（退款对账不变量）。WHERE 里的
+ * `status = 'pending'` 就是这条保证。
+ *
+ * @returns {Promise<{ok:boolean, changed:boolean, reason:string, order?:object}>}
+ */
+export async function markOrderClosed({ orderNo, rawPayload = null } = {}) {
+  if (!orderNo) return { ok: false, changed: false, reason: 'missing_order_no' };
+  try {
+    const { rows } = await pool.query(
+      `UPDATE payment_orders
+          SET status = 'cancelled',
+              updated_at = NOW(),
+              metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+        WHERE order_no = $1
+          AND status = 'pending'
+        RETURNING id, order_no, user_id, status`,
+      [orderNo, JSON.stringify({ closed_by_channel: true, raw: rawPayload })]
+    );
+    if (rows.length === 0) {
+      // 不是 pending（已付/已退/已关）→ 什么都不做，绝不覆盖终态
+      return { ok: true, changed: false, reason: 'not_pending' };
+    }
+    logger.info('[fulfillment] order closed by channel', { orderNo });
+    return { ok: true, changed: true, reason: 'closed', order: rows[0] };
+  } catch (err) {
+    logger.error('[fulfillment] markOrderClosed failed', { orderNo, error: err.message });
+    return { ok: false, changed: false, reason: 'internal_error' };
+  }
+}
+
+export default { markOrderPaid, markOrderClosed };

@@ -116,6 +116,9 @@ services:
       ALIPAY_PRIVATE_KEY: ${ALIPAY_PRIVATE_KEY}
       ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY}
       ALIPAY_NOTIFY_URL: ${ALIPAY_NOTIFY_URL}
+      # 收款方支付宝 PID：可选。配了就在回调里强制比对 seller_id（比 app_id 更贴近资金，
+      # 是「这笔钱真进了我的账户」的直接证据）；未配/为空则跳过该校验（向后兼容）。
+      ALIPAY_SELLER_ID: ${ALIPAY_SELLER_ID:-}
       ALIPAY_SANDBOX: ${ALIPAY_SANDBOX:-false}
 
       # 日志配置
