@@ -320,9 +320,13 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
     // 但角色为 system 且 metadata.is_context_summary=true 的"自动压缩摘要"行
     // 不属于前端要管理的内容，必须保留——否则下次进入对话时上一次压缩的要点
     // 就被下一次 saveCurrent 覆盖，破坏"无感延续记忆"。
-    await pool.query('BEGIN')
+    // 事务必须跑在同一条物理连接上：pool.query 每次可能取到不同连接，
+    // BEGIN/COMMIT/ROLLBACK 会落到别的连接上，事务就是假的——中途失败无法回滚，
+    // 且残留未结束事务的连接被放回连接池后会污染后续请求。
+    const client = await pool.connect()
     try {
-      await pool.query(
+      await client.query('BEGIN')
+      await client.query(
         `DELETE FROM ai_messages
          WHERE conversation_id = $1
            AND COALESCE(metadata->>'is_context_summary', 'false') <> 'true'`,
@@ -344,7 +348,7 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
           ...(typeof m.metadata === 'object' && m.metadata ? m.metadata : {}),
           ...(Array.isArray(m.thinkingSegments) && m.thinkingSegments.length > 0 ? { thinkingSegments: m.thinkingSegments } : {}),
         }
-        const result = await pool.query(
+        const result = await client.query(
           `INSERT INTO ai_messages (conversation_id, role, content, thinking, tool_calls, tool_results, metadata, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::jsonb, '{}'::jsonb), COALESCE($8, NOW()))
            RETURNING id, role, content, thinking, tool_calls, tool_results, metadata, created_at`,
@@ -363,12 +367,15 @@ router.post('/:id/messages', apiLimiter, async (req, res) => {
       }
 
       // 更新对话 updated_at
-      await pool.query('UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1', [id])
-      await pool.query('COMMIT')
+      await client.query('UPDATE ai_conversations SET updated_at = NOW() WHERE id = $1', [id])
+      await client.query('COMMIT')
       res.status(201).json({ messages: inserted })
     } catch (txErr) {
-      await pool.query('ROLLBACK')
+      // 回滚尽力而为：即使回滚本身失败，也要把原始错误抛给外层
+      try { await client.query('ROLLBACK') } catch (rollbackErr) { logger.error('Save AI messages rollback failed:', rollbackErr) }
       throw txErr
+    } finally {
+      client.release()
     }
     return
 

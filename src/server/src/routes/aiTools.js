@@ -3810,18 +3810,25 @@ async function executeToolInner(toolName, args, userId, role) {
         if (check.rows.length !== ids.length) {
           return { error: 'FOREIGN_COLLECTION', code: 'FOREIGN_COLLECTION', message: '部分收藏夹不属于当前用户' }
         }
-        await pool.query('BEGIN')
+        // 事务必须跑在同一条物理连接上：pool.query 每次可能取到不同连接，
+        // BEGIN/COMMIT/ROLLBACK 会落到别的连接上，事务就是假的——中途失败无法回滚，
+        // 且残留未结束事务的连接被放回连接池后会污染后续请求。
+        const client = await pool.connect()
         try {
+          await client.query('BEGIN')
           for (const o of pairs) {
-            await pool.query(
+            await client.query(
               'UPDATE favorite_collections SET sort_order = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3',
               [o.sortOrder, o.id, userId]
             )
           }
-          await pool.query('COMMIT')
+          await client.query('COMMIT')
         } catch (e) {
-          await pool.query('ROLLBACK')
+          // 回滚尽力而为：即使回滚本身失败，也要把原始错误抛给外层
+          try { await client.query('ROLLBACK') } catch (rollbackErr) { logger.error('reorder_collections rollback failed:', rollbackErr) }
           throw e
+        } finally {
+          client.release()
         }
         return { success: true, reordered: pairs.length }
       }
