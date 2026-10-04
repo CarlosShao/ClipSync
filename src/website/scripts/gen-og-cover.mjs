@@ -67,7 +67,7 @@ h1 .hl::after{content:'';position:absolute;left:0;right:0;bottom:6px;height:26px
   <div class="center">
     <div class="kicker">CROSS-DEVICE CLIPBOARD</div>
     <h1>手机复制，<br>电脑<span class="hl">秒粘</span>。</h1>
-    <div class="sub">端到端加密 · Windows / macOS / Linux / Android</div>
+    <div class="sub">全程加密 · Windows / macOS / Linux / Android</div>
   </div>
   <div class="foot">
     <span class="l">© 2026 CLIPSYNC</span>

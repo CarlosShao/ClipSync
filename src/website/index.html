@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ClipSync — 手机复制，电脑秒粘</title>
-<meta name="description" content="ClipSync 让你的手机与电脑共享同一个剪贴板。手机上复制，电脑上直接粘贴——端到端加密，服务器看不到内容。支持 Windows / macOS / Linux / Android，2 台设备免费开始。">
+<meta name="description" content="ClipSync 让你的手机与电脑共享同一个剪贴板。手机上复制，电脑上直接粘贴——全程 TLS 传输加密，并可开启条目级端到端加密。支持 Windows / macOS / Linux / Android，2 台设备免费开始。">
 
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
@@ -14,12 +14,12 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ClipSync">
 <meta property="og:title" content="ClipSync — 手机复制，电脑秒粘">
-<meta property="og:description" content="手机上复制，电脑上直接粘贴。端到端加密，服务器看不到内容。Windows / macOS / Linux / Android，2 台设备免费开始。">
+<meta property="og:description" content="手机上复制，电脑上直接粘贴。全程 TLS 传输加密，可选条目级端到端加密。Windows / macOS / Linux / Android，2 台设备免费开始。">
 <meta property="og:image" content="/og-cover.png">
 <meta property="og:locale" content="zh_CN">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="ClipSync — 手机复制，电脑秒粘">
-<meta name="twitter:description" content="手机上复制，电脑上直接粘贴。端到端加密，服务器看不到内容。">
+<meta name="twitter:description" content="手机上复制，电脑上直接粘贴。全程 TLS 传输加密，可选条目级端到端加密。">
 <meta name="twitter:image" content="/og-cover.png">
 
 <!-- 无 JS 降级：关闭 JS 时 .reveal 元素直接可见（仅少动效，内容全可读；T-W1 复核项）。
@@ -53,7 +53,7 @@
   <div>
     <div class="kicker">CLIPSYNC — CROSS-DEVICE CLIPBOARD · V1.5</div>
     <h1>复制之间，<br>设备不再<span class="en"> far apart</span>。</h1>
-    <p class="lede">ClipSync 让你的手机与电脑共享同一个剪贴板。手机上复制，电脑上直接粘贴——端到端加密，服务器看不到内容。</p>
+    <p class="lede">ClipSync 让你的手机与电脑共享同一个剪贴板。手机上复制，电脑上直接粘贴——全程 TLS 传输加密，端到端加密可自行开启。</p>
     <div class="hero-cta">
       <a class="btn" href="#download">免费下载</a>
       <a class="btn line" href="#pricing">查看定价</a>
@@ -118,8 +118,8 @@
 <section class="wrap sec" id="encrypt" style="background:#f7f6f2;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="sec-no reveal"><b>02</b><span>ENCRYPTION</span></div>
   <div>
-    <h2 class="reveal">端到端加密，<br>是我们唯一能接受的答案。</h2>
-    <p class="desc reveal">密钥只存在于你的设备上。中转服务器看到的一切，都只是密文。</p>
+    <h2 class="reveal">端到端加密，<br>由你随时开启。</h2>
+    <p class="desc reveal">开启后，密钥只存在于你的设备上，中转服务器看到的一切都只是密文；未开启时由全链路 TLS 传输加密保护。</p>
     <div class="enc-grid">
       <div class="enc-card reveal">
         <div class="row"><span class="who">手机</span><div class="box plain">验证码：G-7K4QX</div></div>
@@ -129,7 +129,7 @@
         <div class="row"><span class="who">电脑</span><div class="box plain">验证码：G-7K4QX ✓</div></div>
       </div>
       <div class="check-list reveal">
-        <div class="check-item"><span class="no">2.1</span><span><b>密钥永不上传。</b>加密与解密全部发生在你的设备上，ClipSync 服务器只负责传递密文。</span></div>
+        <div class="check-item"><span class="no">2.1</span><span><b>密钥永不上传。</b>开启端到端加密后，加解密全部发生在你的设备上，ClipSync 服务器只负责传递密文。</span></div>
         <div class="check-item"><span class="no">2.2</span><span><b>扫码配对。</b>新设备通过密钥握手加入你的设备组，过程无需输入任何密码。</span></div>
         <div class="check-item"><span class="no">2.3</span><span><b>随时下线。</b>设备丢失可在任意其他设备上将其移除，密钥即刻失效。</span></div>
         <div class="check-item"><span class="no">2.4</span><span><b>自动过期。</b>剪贴板内容按策略自动销毁；手动删除即彻底删除。</span></div>
@@ -169,7 +169,7 @@
       <div class="pt-col"><div>同时在线设备</div><div>2 台</div><div>10 台</div><div>100 台</div></div>
       <div class="pt-col"><div>剪贴板历史</div><div>50 条</div><div>500 条 · 全文搜索</div><div>5,000 条 · 全文搜索</div></div>
       <div class="pt-col"><div>单文件上限 / 存储空间</div><div>1MB / 100MB</div><div>10MB / 1GB</div><div>50MB / 10GB</div></div>
-      <div class="pt-col"><div>端到端加密 · AI 分类 · 离线队列</div><div class="yes">✓</div><div class="yes">✓</div><div class="yes">✓</div></div>
+      <div class="pt-col"><div>端到端加密（可选） · AI 分类 · 离线队列</div><div class="yes">✓</div><div class="yes">✓</div><div class="yes">✓</div></div>
       <div class="pt-col"><div>版本历史回溯</div><div>3 天</div><div>30 天</div><div>365 天</div></div>
       <div class="pt-col"><div>推送提醒 · 模板变量</div><div class="no">—</div><div class="yes">✓</div><div class="yes">✓</div></div>
       <div class="pt-col"><div>团队管理 · 审计日志 · 优先支持</div><div class="no">—</div><div class="no">—</div><div class="yes">✓</div></div>
@@ -193,7 +193,7 @@
       "@context": "https://schema.org",
       "@type": "Product",
       "name": "ClipSync 剪贴板同步订阅",
-      "description": "手机与电脑共享同一个剪贴板：手机复制、电脑直接粘贴，端到端加密。",
+      "description": "手机与电脑共享同一个剪贴板：手机复制、电脑直接粘贴，全程传输加密并可选端到端加密。",
       "brand": { "@type": "Brand", "name": "ClipSync" },
       "offers": [
         { "@type": "Offer", "name": "Free", "price": "0", "priceCurrency": "CNY", "availability": "https://schema.org/InStock" },
@@ -239,7 +239,7 @@
   <div class="sec-no reveal"><b>06</b><span>FAQ</span></div>
   <div class="faq">
     <details class="reveal"><summary>换了新手机，剪贴板和密钥怎么办？<span class="pl">＋</span></summary><div class="ans">新设备扫码配对时通过加密握手安全接入；旧设备可随时在其他设备上移除。历史记录随账号在密文状态下同步到新设备（按套餐上限）。</div></details>
-    <details class="reveal"><summary>服务器能看到了我复制的内容吗？<span class="pl">＋</span></summary><div class="ans">不能。内容在设备上完成 AES-256-GCM 加密后才上传，服务器全程只见密文。这也是我们敢把「安全」写进产品第一屏的原因。</div></details>
+    <details class="reveal"><summary>服务器能看到了我复制的内容吗？<span class="pl">＋</span></summary><div class="ans">开启端到端加密后不能：内容在设备上完成 AES-256-GCM 加密后才上传，服务器全程只见密文。未开启时内容以全链路 TLS 传输加密保护、服务端可读（用于跨设备同步与 AI 分类）；可在设置中随时开启端到端加密。</div></details>
     <details class="reveal"><summary>iOS 什么时候支持？<span class="pl">＋</span></summary><div class="ans">iOS 在路线图中。当前 Windows / macOS / Linux / Android 已就绪，订阅在各端通用。</div></details>
     <details class="reveal"><summary>如何取消订阅？<span class="pl">＋</span></summary><div class="ans">在客户端「订阅」页一键取消，当期结束前仍可继续使用，之后自动回到 Free，数据不会丢失。</div></details>
     <details class="reveal"><summary>有学生或开源开发者优惠吗？<span class="pl">＋</span></summary><div class="ans">有的——凭教育邮箱或 GitHub 开源主页联系我们，可申请 Pro 免费额度（名额有限）。</div></details>
