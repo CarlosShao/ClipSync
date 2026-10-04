@@ -3,6 +3,7 @@ import pool from '../db/pool.js';
 import { broadcastToUser } from '../ws/server.js';
 import { isValidUUID, validatePagination } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
+import { checkClipboardLimit } from '../middleware/subscriptionCheck.js';
 import { logger } from '../utils/logger.js';
 import * as jsdiff from 'jsdiff';
 
@@ -18,8 +19,12 @@ const router = Router();
  * Response:
  *   results: Array<{ clientId, serverId?, status: 'ok'|'conflict'|'error', serverData? }>
  *   conflicts: Array of conflict items
+ *
+ * 审计 Q3：push 会 INSERT clipboard_items，与 POST /api/clipboard 是同一条写入口，
+ * 必须过同一道条目配额闸（subscriptionCheck 已在挂载层把 req.user.plan 备好）。
+ * 此前只在 /api/clipboard 上挂了 checkClipboardLimit，免费用户可绕过同步通道超配额。
  */
-router.post('/push', apiLimiter, async (req, res) => {
+router.post('/push', apiLimiter, checkClipboardLimit, async (req, res) => {
   try {
     const { deviceId, changes } = req.body;
 
