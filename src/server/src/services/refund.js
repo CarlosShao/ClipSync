@@ -304,12 +304,42 @@ export async function refundPaidOrder({ orderId, orderNo, actorUserId, reason, i
       canceledSubscriptionId = canceled.rows[0]?.id || null;
     }
 
-    // 退款即收回权益：users 上的冗余订阅状态同步回 free（配额判定读这里）
+    // 退款即收回权益：users 上的冗余订阅状态（订阅配额/功能判定读这里）。
+    //
+    // ⚠️ 2026-10-03 审计 M3：这里**不能无条件写 free**。
+    // `refundPaidOrder` 有三个调用方 —— 管理员直退（admin/orders.js）、用户自助退款
+    // （routes/payments.js）、退款审核通过（refundRequest.js）。其中只有**审核通过**
+    // 那条在事后调了 `recomputeUserEntitlement` 兜底，另两条没有。而管理员直退
+    // 不受「必须是当前生效订阅最近一笔订单」的限制 —— 无条件写 free 会把用户
+    // **当前仍在生效**的订阅在 users 表降级（`user_subscriptions` 里却还是 active），
+    // 而 `subscriptionCheck` / `planFeature` 判权益读的正是 users 这两个字段，
+    // 用户因此被实际降权到 Free。
+    //
+    // 口径与 refundRequest.js#recomputeUserEntitlement **同源**（同样的
+    // active + current_period_end > NOW() 判定与排序，同样取最近到期的一条），
+    // 保证三个调用方得到一致结果。此处内联而非 import，是为了避免
+    // refund.js ←→ refundRequest.js 的循环依赖。
+    const remaining = await client.query(
+      `SELECT us.id, LOWER(sp.name) AS plan_key
+         FROM user_subscriptions us
+         LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
+        WHERE us.user_id = $1
+          AND us.status = 'active'
+          AND us.current_period_end > NOW()
+        ORDER BY us.current_period_end DESC
+        LIMIT 1`,
+      [order.user_id]
+    );
+    const stillEntitled = remaining.rows[0] || null;
     await client.query(
       `UPDATE users
-          SET subscription_status = 'free', current_subscription_id = NULL
-        WHERE id = $1`,
-      [order.user_id]
+          SET subscription_status = $1, current_subscription_id = $2
+        WHERE id = $3`,
+      [
+        stillEntitled ? stillEntitled.plan_key || 'pro' : 'free',
+        stillEntitled ? stillEntitled.id : null,
+        order.user_id,
+      ]
     );
 
     await client.query('COMMIT');

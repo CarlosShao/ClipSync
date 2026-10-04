@@ -269,6 +269,11 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
     }
 
     // 开发票（invoice_no 唯一，冲突说明已开过，忽略）
+    //
+    // ⚠️ 2026-10-03 审计 M3：subscription_id 必须取**刚激活的那条订阅**
+    // （activatedSubscriptionId），不能用 order.subscription_id —— 后者是建单时读到的旧值：
+    //   · 新订路径下它是 NULL（订阅记录是同事务稍后才创建并回填的）→ 发票挂空
+    //   · 升级路径下它指向**被取代的旧订阅** → 发票挂错
     let invoiceNo = null;
     try {
       const invRes = await client.query(
@@ -278,7 +283,7 @@ export async function markOrderPaid({ orderNo, transactionId = null, channel = n
          RETURNING invoice_no`,
         [
           order.user_id,
-          order.subscription_id,
+          activatedSubscriptionId,
           order.id,
           `INV${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
           order.amount,

@@ -549,6 +549,47 @@ export async function refundTrade({ outTradeNo, refundAmount, outRequestNo }) {
   };
 }
 
+/**
+ * 查询退款结果（`alipay.trade.fastpay.refund.query`）。
+ *
+ * ⚠️ 这是本项目此前**完全缺失**的能力（2026-10-03 审计 H3）：迁移 074 的注释明确
+ * 要求「停在 processing 的退款行必须先去支付宝查单，不能盲重试」，但全仓只有
+ * `alipay.trade.refund`（发起）而没有它的查询接口，所以那一行一旦卡住就没有任何
+ * 手段能确认钱到底退没退。
+ *
+ * 查询键与发起时**同源**：`refundPaidOrder` 固定用订单号做 `out_request_no`
+ * （全额退款的幂等键），所以这里用同一对 `out_trade_no + out_request_no` 反查，
+ * 天然一一对应，不需要额外存储渠道侧的退款单号。
+ *
+ * 成功判定：`refund_status === 'REFUND_SUCCESS'`。没有退款记录时支付宝不返回该字段，
+ * 此时 `refunded=false`（含义是"渠道侧没有这笔退款"），**不可**据此认定失败以外的结论。
+ *
+ * @param {object} p
+ * @param {string} p.outTradeNo   商户订单号
+ * @param {string} [p.outRequestNo] 退款请求号；缺省用 outTradeNo（与发起侧口径一致）
+ * @returns {Promise<{refunded:boolean, refundStatus:string|null, refundAmount:string|null,
+ *                    tradeNo:string|null, outRequestNo:string, payload:object}>}
+ */
+export async function queryRefund({ outTradeNo, outRequestNo } = {}) {
+  if (!outTradeNo) throw new Error('queryRefund: outTradeNo is required');
+  const bizContent = {
+    out_trade_no: outTradeNo,
+    out_request_no: String(outRequestNo || outTradeNo),
+  };
+
+  const payload = await callGateway('alipay.trade.fastpay.refund.query', bizContent);
+  const refundStatus = payload.refund_status || null;
+
+  return {
+    refunded: refundStatus === 'REFUND_SUCCESS',
+    refundStatus,
+    refundAmount: payload.refund_fee || payload.refund_amount || null,
+    tradeNo: payload.trade_no || null,
+    outRequestNo: payload.out_request_no || bizContent.out_request_no,
+    payload,
+  };
+}
+
 export default {
   isAlipayConfigured,
   isAlipayNotifyConfigured,
@@ -557,6 +598,7 @@ export default {
   queryTrade,
   closeTrade,
   refundTrade,
+  queryRefund,
   signParams,
   verifyParams,
   verifyResponseSignature,

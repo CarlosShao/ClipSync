@@ -10,6 +10,8 @@ import {
   rejectRefundRequest,
   listRefundRequestsForAdmin,
 } from '../src/services/refundRequest.js';
+// M3：直接调它 = 走「管理员直退」那条调用方（此前没有权益重算兜底的那条）
+import { refundPaidOrder } from '../src/services/refund.js';
 
 /**
  * 两段式退款（任务板 #40~#43）：申请不动钱、审核才动钱。
@@ -497,5 +499,162 @@ describe('管理台审核列表查询', () => {
     expect(all.pageSize).toBe(1);
     expect(all.total).toBe(1);
     expect(all.items).toHaveLength(1);
+  });
+});
+
+/**
+ * M3（2026-10-03 审计）：退款只能收回**这笔单对应的**权益，不得把用户当前仍在生效的
+ * 订阅一并降级。
+ *
+ * 原实现：`refundPaidOrder` 无条件 `UPDATE users SET subscription_status='free'`。
+ * 但它的三个调用方里只有「退款审核通过」那条事后调了 recomputeUserEntitlement，
+ * 管理员直退（admin/orders.js）与用户自助（routes/payments.js）都没有 ——
+ * 而管理员直退不受「必须是当前生效订阅最近一笔订单」的限制，于是退一笔历史单
+ * 会把用户**当前**的订阅在 users 表降级（user_subscriptions 里却还是 active），
+ * 而 subscriptionCheck / planFeature 判权益读的正是 users 这两个字段。
+ *
+ * 这里直接调 `refundPaidOrder`（= 管理员直退那条调用方），正是不被兜底覆盖的路径。
+ */
+describe('M3：退款不得降权用户当前生效的其它订阅', () => {
+  it('用户另有一条 active 订阅时，退掉旧单不得把 users 写成 free', async () => {
+    const { orderId, subscriptionId: subA } = await seedOrder();
+
+    // 订阅 B：模拟「审核期间用户又买了新套餐」，到期更晚
+    const subB = await pool.query(
+      `INSERT INTO user_subscriptions
+         (user_id, plan_id, status, billing_cycle, start_date, end_date,
+          current_period_start, current_period_end, created_at, updated_at)
+       VALUES ($1, (SELECT id FROM subscription_plans WHERE name = 'Enterprise'),
+               'active', 'monthly', NOW(), NOW() + INTERVAL '1 month',
+               NOW(), NOW() + INTERVAL '60 day', NOW(), NOW())
+       RETURNING id`,
+      [TEST_USER_ID]
+    );
+    await pool.query(
+      'UPDATE users SET subscription_status = $2, current_subscription_id = $1 WHERE id = $3',
+      [subB.rows[0].id, 'enterprise', TEST_USER_ID]
+    );
+
+    stubGatewayResponse({ code: '10000', msg: 'Success', refund_fee: '9.90' });
+    await refundPaidOrder({ orderId: String(orderId), actorUserId: OTHER_USER_ID, reason: 'M3' });
+
+    expect((await readOrder(orderId)).status).toBe('refunded');
+    expect((await readSub(subA)).status).toBe('canceled');
+
+    // 关键断言：users 必须仍指向订阅 B
+    const user = await readUser();
+    expect(user.subscription_status).toBe('enterprise');
+    expect(user.current_subscription_id).toBe(subB.rows[0].id);
+  });
+
+  it('用户没有其它生效订阅时，退掉唯一订阅才回落 free（不能因此永不回收）', async () => {
+    const { orderId, subscriptionId } = await seedOrder();
+
+    stubGatewayResponse({ code: '10000', msg: 'Success', refund_fee: '9.90' });
+    await refundPaidOrder({ orderId: String(orderId), actorUserId: OTHER_USER_ID, reason: 'M3' });
+
+    expect((await readSub(subscriptionId)).status).toBe('canceled');
+    const user = await readUser();
+    expect(user.subscription_status).toBe('free');
+    expect(user.current_subscription_id).toBeNull();
+  });
+});
+
+/**
+ * H3（2026-10-03 审计）：卡在 `processing` 的申请单必须能被对账收口。
+ *
+ * 触发场景：CAS 抢成 processing 之后、本地落库之前进程崩溃/重启。此时申请单的 CAS
+ * 要求 status='pending'，而 refundPaidOrder 的复核要求订单仍是 paid —— 两条路都堵死，
+ * 管理台只能看着这一行（迁移 074 的注释要求「先去渠道查单」，但此前没有查询实现）。
+ *
+ * 修后：先按 out_request_no 查渠道，再释放回 pending 并重走一次正常流程。
+ * 安全性来自「渠道侧 out_request_no 幂等 + 订单行锁复核」，所以不会退第二次钱。
+ */
+describe('H3：卡在 processing 的退款申请必须能对账收口', () => {
+  /** 按 method 路由响应：查单与发起退款是两个不同的 response key */
+  function stubRoutedGateway({ refundQuery, refund }) {
+    const fn = vi.fn(async (_url, opts) => {
+      const method = new URLSearchParams(opts.body).get('method');
+      const payload = method === 'alipay.trade.fastpay.refund.query' ? refundQuery : refund;
+      const valueText = JSON.stringify(payload);
+      const key = `${method.replace(/\./g, '_')}_response`;
+      return { text: async () => `{"${key}":${valueText},"sign":"${signWith(valueText)}"}` };
+    });
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+
+  /** 制造「认领后崩溃」的现场：status=processing 且 updated_at 已经很久 */
+  async function makeStuck(requestId) {
+    await pool.query(
+      `UPDATE refund_requests SET status = 'processing', updated_at = NOW() - INTERVAL '10 minutes'
+        WHERE id = $1`,
+      [requestId]
+    );
+  }
+
+  function methodsOf(fn) {
+    return fn.mock.calls.map(([, o]) => new URLSearchParams(o.body).get('method'));
+  }
+
+  it('渠道无退款记录 → 释放回 pending 并重试成功，且只真退一次', async () => {
+    const { orderId, orderNo } = await seedOrder();
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
+    const requestId = submitted.body.request.id;
+    await makeStuck(requestId);
+
+    const fn = stubRoutedGateway({
+      refundQuery: { code: '10000', msg: 'Success', trade_no: 'T1', out_trade_no: orderNo },
+      refund: { code: '10000', msg: 'Success', refund_fee: '9.90' },
+    });
+
+    const result = await approveRefundRequest({ requestId, actorUserId: OTHER_USER_ID });
+
+    expect(result.order).toMatchObject({ orderNo, status: 'refunded' });
+    expect((await readOrder(orderId)).status).toBe('refunded');
+    expect((await readRequest(orderId)).status).toBe('approved');
+    // 查单一次 + 真退款一次
+    expect(methodsOf(fn).filter((m) => m === 'alipay.trade.fastpay.refund.query')).toHaveLength(1);
+    expect(methodsOf(fn).filter((m) => m === 'alipay.trade.refund')).toHaveLength(1);
+  });
+
+  it('渠道已退款 → 仍然收口成 approved（渠道幂等，不会退第二次钱）', async () => {
+    const { orderId, orderNo } = await seedOrder();
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
+    const requestId = submitted.body.request.id;
+    await makeStuck(requestId);
+
+    stubRoutedGateway({
+      refundQuery: {
+        code: '10000',
+        msg: 'Success',
+        refund_status: 'REFUND_SUCCESS',
+        refund_amount: '9.90',
+        out_trade_no: orderNo,
+      },
+      // fund_change='N' 表示「此前该请求已成功退款」——必须当成功，不能当失败
+      refund: { code: '10000', msg: 'Success', refund_fee: '9.90', fund_change: 'N' },
+    });
+
+    const result = await approveRefundRequest({ requestId, actorUserId: OTHER_USER_ID });
+
+    expect(result.order).toMatchObject({ orderNo, status: 'refunded' });
+    expect((await readOrder(orderId)).status).toBe('refunded');
+    expect((await readRequest(orderId)).status).toBe('approved');
+  });
+
+  it('还在处理中（updated_at 很新）→ 409 REFUND_REQUEST_PROCESSING，不查渠道也不退款', async () => {
+    const { orderNo } = await seedOrder();
+    const submitted = await request(app).post('/api/payments/refund-request').set(auth).send({ orderNo });
+    const requestId = submitted.body.request.id;
+    await pool.query(`UPDATE refund_requests SET status = 'processing', updated_at = NOW() WHERE id = $1`, [
+      requestId,
+    ]);
+
+    const fn = stubGatewayResponse({ code: '10000', refund_fee: '9.90' });
+    await expect(approveRefundRequest({ requestId, actorUserId: OTHER_USER_ID })).rejects.toMatchObject({
+      code: 'REFUND_REQUEST_PROCESSING',
+    });
+    expect(fn).not.toHaveBeenCalled();
   });
 });

@@ -38,6 +38,7 @@ import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { roundToCent } from './proration.js';
 import { RefundError, refundPaidOrder, locateOrder } from './refund.js';
+import { queryRefund } from '../utils/alipay.js';
 import {
   SELF_REFUND_ORDER_COLUMNS,
   REFUND_REASON_CODES,
@@ -74,9 +75,11 @@ const REQUEST_COLUMNS = `id, user_id, order_id, order_no, amount, currency, stat
  * 重算 users 上的冗余订阅状态（配额判定读这里）。
  *
  * 为什么单独一个函数：申请收回权益、驳回还原权益、审核通过打款三条路径都会改变
- * 「这个用户还剩哪些生效订阅」，而 refundPaidOrder 是无条件把 users 写成 free 的 ——
- * 用户如果在审核期间又买了新套餐，直接沿用会让 TA 付了钱却掉回免费版。
- * 所以凡是动过订阅的路径，收尾都以「当前生效订阅」为唯一真相重算一次。
+ * 「这个用户还剩哪些生效订阅」，凡走过其中一条都要按「当前生效订阅」重算 users。
+ *
+ * 注：2026-10-03 审计 M3 之后，`refundPaidOrder` 自身也按同一口径算 users
+ * （不再无条件写 free），所以这里不再是"纠正它的错误"，而是保证申请/驳回这两条
+ * 不经过 refundPaidOrder 的路径同样收敛 —— 两处口径必须保持一致。
  *
  * @param {{query: Function}} client 事务内客户端（与调用方同事务，避免读到中间态）
  * @param {string} userId
@@ -345,6 +348,95 @@ export async function listRefundRequestsForAdmin({ status = 'pending', page = 1,
 }
 
 /**
+ * 收口一条卡在 `processing` 的退款申请（2026-10-03 审计 H3）。
+ *
+ * 触发场景：CAS 抢成 processing 之后、本地落库之前进程崩溃/被重启。此时
+ *   ① 钱可能已在渠道侧退成功，也可能根本没退；
+ *   ② 申请单的 CAS 要求 `status='pending'`，`refundPaidOrder` 的复核又要求订单仍是 paid
+ *      —— 两条路都堵死，管理台只能看着这一行，永远无法收口。
+ *
+ * 处置顺序（迁移 074 的明确要求）：**先查渠道定真实状态**，再把它释放回 pending
+ * 并重走一次正常审核流程。两种情形都能收敛：
+ *   · 渠道已退款 → `refundPaidOrder` 会再次调 `alipay.trade.refund`，而
+ *     `out_request_no` 固定是订单号，**渠道侧幂等**，不会重复退款；随后正常把本地
+ *     订单落成 refunded、收回权益。
+ *   · 渠道未退款 → 就是一次普通重试。
+ * 并发安全：订单行锁 + `status='paid'` 复核保证只有一次能真正落本地状态。
+ *
+ * 短时间内重复点击（例如原调用其实还在飞）**不释放**，避免与在途请求抢跑；
+ * 此时返回 409 + retryAfterSeconds，让管理员稍后再点。
+ *
+ * @returns {Promise<{ok:true, request:object, order:object}>} 与 approveRefundRequest 同形
+ */
+async function reconcileStuckProcessing({ row, actorUserId, ip, userAgent }) {
+  const STUCK_AFTER_MS = 120 * 1000;
+  const ageMs = Date.now() - new Date(row.updated_at).getTime();
+  if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < STUCK_AFTER_MS) {
+    throw new RefundError(
+      409,
+      'REFUND_REQUEST_PROCESSING',
+      'Refund request is still being processed by another attempt, please retry shortly',
+      {
+        status: 'processing',
+        orderNo: row.order_no,
+        retryAfterSeconds: Math.ceil((STUCK_AFTER_MS - ageMs) / 1000),
+      }
+    );
+  }
+
+  // 先查渠道。查失败不阻断 —— 真正的安全来自渠道幂等 + 订单行锁复核，
+  // 这次查询的作用是留痕并在管理台说清「钱到底退没退」。
+  let channelNote = '渠道查询失败，按未退款重试';
+  try {
+    const q = await queryRefund({ outTradeNo: row.order_no, outRequestNo: row.order_no });
+    channelNote = q.refunded
+      ? `渠道已退款（refund_status=${q.refundStatus}，金额 ${q.refundAmount ?? '未知'}）`
+      : `渠道无退款记录（refund_status=${q.refundStatus ?? '空'}）`;
+  } catch (err) {
+    logger.error('[refundRequest] reconcile: channel query failed', {
+      requestId: row.id,
+      orderNo: row.order_no,
+      error: err.message,
+    });
+  }
+
+  const released = await pool.query(
+    `UPDATE refund_requests
+        SET status = 'pending', updated_at = NOW(),
+            review_note = COALESCE(review_note, '') || $2
+      WHERE id = $1 AND status = 'processing'
+      RETURNING id`,
+    [row.id, `\n[自动对账] ${channelNote}；已释放以重试`]
+  );
+  if (released.rows.length === 0) {
+    // 期间被别人收口了
+    throw new RefundError(409, 'REFUND_REQUEST_NOT_PENDING', 'Refund request already handled', {
+      orderNo: row.order_no,
+    });
+  }
+
+  logger.warn('[refundRequest] released stuck processing request for retry', {
+    requestId: row.id,
+    orderNo: row.order_no,
+    channelNote,
+  });
+
+  await logAuditEvent({
+    userId: row.user_id ?? null,
+    action: AUDIT_ACTIONS.REFUND_REQUEST,
+    resourceType: 'refund_request',
+    resourceId: String(row.id),
+    details: { orderNo: row.order_no, stage: 'reconcile_stuck_processing', channelNote },
+    status: 'success',
+    ipAddress: ip,
+    userAgent,
+  }).catch((e) => logger.error('[refundRequest] reconcile audit failed', { error: e.message }));
+
+  // 重走正常流程（此时 CAS 能抢到；reconciled=true 防止无限递归）
+  return approveRefundRequest({ requestId: row.id, actorUserId, ip, userAgent, reconciled: true });
+}
+
+/**
  * 审核通过：这一刻才真打款。
  *
  * 认领（CAS）→ refundPaidOrder → 落 approved。渠道失败则把 processing 退回
@@ -352,7 +444,13 @@ export async function listRefundRequestsForAdmin({ status = 'pending', page = 1,
  *
  * @returns {Promise<{ok:true, request:object, order:object}>}
  */
-export async function approveRefundRequest({ requestId, actorUserId, ip, userAgent } = {}) {
+export async function approveRefundRequest({
+  requestId,
+  actorUserId,
+  ip,
+  userAgent,
+  reconciled = false,
+} = {}) {
   const id = String(requestId ?? '').trim();
   if (!id) throw new RefundError(400, 'REFUND_REQUEST_ID_REQUIRED', 'Missing refund request id');
 
@@ -364,15 +462,28 @@ export async function approveRefundRequest({ requestId, actorUserId, ip, userAge
   );
   if (claimed.rows.length === 0) {
     const existing = await pool.query(
-      `SELECT ${REQUEST_COLUMNS}, order_no FROM refund_requests WHERE id = $1`,
+      `SELECT ${REQUEST_COLUMNS}, order_no, updated_at FROM refund_requests WHERE id = $1`,
       [id]
     );
     if (existing.rows.length === 0) {
       throw new RefundError(404, 'REFUND_REQUEST_NOT_FOUND', 'Refund request not found');
     }
+    const row = existing.rows[0];
+
+    // H3（2026-10-03 审计）：卡在 processing 的单子不能只报 409。
+    //
+    // 认领（CAS）之后、本地落库之前进程崩溃/重启，这一行会**永久停在 processing**：
+    // 钱可能已退也可能没退；而 `refundPaidOrder` 的复核要求订单仍是 paid、
+    // 申请单的 CAS 又要求 status='pending' —— 两条路都被堵死，管理台只能看着它，
+    // 没有任何手段能收口。迁移 074 的注释早已写明「必须先去支付宝查单，不能盲重试」，
+    // 但此前全仓只有 alipay.trade.refund（发起）而没有补充查询实现。
+    if (row.status === 'processing' && !reconciled) {
+      return await reconcileStuckProcessing({ row, actorUserId, ip, userAgent });
+    }
+
     throw new RefundError(409, 'REFUND_REQUEST_NOT_PENDING', 'Refund request already handled', {
-      status: existing.rows[0].status,
-      orderNo: existing.rows[0].order_no,
+      status: row.status,
+      orderNo: row.order_no,
     });
   }
   const req0 = claimed.rows[0];

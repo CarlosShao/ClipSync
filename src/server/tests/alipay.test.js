@@ -740,3 +740,109 @@ describe('支付宝工具 - 凭据自检 checkAlipayCredentials（H1）', () => 
     expect(() => mod.checkAlipayCredentials()).not.toThrow();
   });
 });
+
+/**
+ * H3（2026-10-03 审计）：退款查单。
+ *
+ * 迁移 074 的注释要求「停在 processing 的退款行必须先去支付宝查单，不能盲重试」，
+ * 但此前全仓只有 `alipay.trade.refund`（发起）而没有它的查询接口 ——
+ * 那一行一旦卡住，就没有任何手段能确认钱到底退没退。
+ *
+ * 查询键必须与发起侧**同源**：refundPaidOrder 固定用订单号做 out_request_no，
+ * 所以这里也用同一对 (out_trade_no, out_request_no) 反查。
+ */
+describe('支付宝工具 - 退款查单 queryRefund（H3）', () => {
+  const REFUND_QUERY_KEY = 'alipay_trade_fastpay_refund_query_response';
+
+  function stubGateway(payload) {
+    const valueText = JSON.stringify(payload);
+    const body = `{"${REFUND_QUERY_KEY}":${valueText},"sign":"${signWith(valueText)}"}`;
+    const fn = vi.fn(async () => ({ text: async () => body }));
+    vi.stubGlobal('fetch', fn);
+    return fn;
+  }
+
+  function configuredEnv() {
+    process.env.ALIPAY_APP_ID = '2021000000000000';
+    process.env.ALIPAY_PRIVATE_KEY = privBody;
+    process.env.ALIPAY_PUBLIC_KEY = PUB;
+  }
+
+  it('method 与 biz_content 口径正确；out_request_no 缺省用订单号（与发起侧同源）', async () => {
+    configuredEnv();
+    const fn = stubGateway({ code: '10000', msg: 'Success', refund_status: 'REFUND_SUCCESS' });
+    const mod = await loadModule();
+
+    await mod.queryRefund({ outTradeNo: 'ORD123' });
+
+    const form = new URLSearchParams(fn.mock.calls[0][1].body);
+    expect(form.get('method')).toBe('alipay.trade.fastpay.refund.query');
+    expect(JSON.parse(form.get('biz_content'))).toEqual({
+      out_trade_no: 'ORD123',
+      out_request_no: 'ORD123',
+    });
+  });
+
+  it('refund_status=REFUND_SUCCESS → refunded=true，并回传金额/交易号', async () => {
+    configuredEnv();
+    stubGateway({
+      code: '10000',
+      msg: 'Success',
+      trade_no: '2026100322001456789',
+      out_trade_no: 'ORD123',
+      out_request_no: 'ORD123',
+      refund_status: 'REFUND_SUCCESS',
+      refund_amount: '19.90',
+    });
+    const mod = await loadModule();
+
+    const r = await mod.queryRefund({ outTradeNo: 'ORD123' });
+    expect(r.refunded).toBe(true);
+    expect(r.refundStatus).toBe('REFUND_SUCCESS');
+    expect(r.refundAmount).toBe('19.90');
+    expect(r.tradeNo).toBe('2026100322001456789');
+  });
+
+  it('没有退款记录（无 refund_status）→ refunded=false，绝不能当成"已退款"', async () => {
+    configuredEnv();
+    stubGateway({ code: '10000', msg: 'Success', trade_no: 'T1', out_trade_no: 'ORD123' });
+    const mod = await loadModule();
+
+    const r = await mod.queryRefund({ outTradeNo: 'ORD123' });
+    expect(r.refunded).toBe(false);
+    expect(r.refundStatus).toBeNull();
+  });
+
+  it('可显式传 out_request_no（为将来的部分退款留扩展位）', async () => {
+    configuredEnv();
+    const fn = stubGateway({ code: '10000', refund_status: 'REFUND_SUCCESS' });
+    const mod = await loadModule();
+
+    await mod.queryRefund({ outTradeNo: 'ORD123', outRequestNo: 'ORD123-2' });
+    const biz = JSON.parse(new URLSearchParams(fn.mock.calls[0][1].body).get('biz_content'));
+    expect(biz.out_request_no).toBe('ORD123-2');
+  });
+
+  it('缺订单号时不发请求', async () => {
+    configuredEnv();
+    const fn = stubGateway({ code: '10000' });
+    const mod = await loadModule();
+
+    await expect(mod.queryRefund({})).rejects.toThrow(/outTradeNo/);
+    await expect(mod.queryRefund()).rejects.toThrow(/outTradeNo/);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('响应未签名 → 抛错（不能凭未验签报文断定退款结果）', async () => {
+    configuredEnv();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        text: async () => JSON.stringify({ [REFUND_QUERY_KEY]: { code: '10000', refund_status: 'REFUND_SUCCESS' } }),
+      }))
+    );
+    const mod = await loadModule();
+
+    await expect(mod.queryRefund({ outTradeNo: 'ORD123' })).rejects.toThrow(/no sign/);
+  });
+});
