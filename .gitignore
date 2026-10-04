@@ -178,3 +178,6 @@ nginx/conf.d/clipsync.conf.prod-local
 .env.production
 nginx/certbot/
 backups/
+
+# 仓库根的支付宝授权函草稿（业务文档，不入库；见 v1 审计 P3「仓库卫生」）
+支付宝授权函-*.docx
