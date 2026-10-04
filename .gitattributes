@@ -1,0 +1,180 @@
+# ClipSync 行尾 / 二进制策略（审计 Q5）
+#
+# 背景：本仓库 core.autocrlf=true 且此前**没有** .gitattributes ⇒ Windows 上检出的是 CRLF，
+#   而 .prettierrc（endOfLine: "lf"）与 .editorconfig（end_of_line = lf）都要求 LF，
+#   于是 `prettier --check` 在 Windows 上抖出约 5.6 万条行尾告警，把真正的信号淹没。
+#   把策略写进版本库之后，"什么算文本、文本用什么行尾"就不再取决于每个人本机的
+#   core.autocrlf 设置，也不再产生"本地改一个逗号、diff 里整个文件都变了"的假改动。
+#
+# ⚠️ 本文件只**声明策略**，不改写任何存量文件。
+#   存量文件的一次性重新规范化（`git add --renormalize .` + 独占一次提交）是**另行排期**
+#   的动作，本次刻意不做 —— 那次 renormalize 会把数万个文件的行尾写进索引，
+#   必须独占提交，否则任何一条真实改动的 diff 都会被行尾噪音淹掉。
+#
+# 语法提示（实测踩过一次，别再踩）：gitattributes 的**一行只能写一个 pattern**，
+#   也不能用花括号展开 —— `*.{ts,tsx} text eol=lf` 会被 git 2.54 当成"模式 *.{"，
+#   于是整行不生效（用 `git check-attr text eol -- src/foo.tsx` 验过：返回 text: auto）。
+#   多写几个后缀只能一行一个；要确认某条真的生效，就用 git check-attr 查，别靠直觉。
+
+# ---------------------------------------------------------------------------
+# 默认：由 Git 自动判别二进制；所有文本一律 LF（含 Windows 检出）
+# ---------------------------------------------------------------------------
+* text=auto eol=lf
+
+# ---------------------------------------------------------------------------
+# 文本 / 源码：显式 `text`（而不是让 text=auto 去猜）。
+# 理由：auto 的判别是"开头有没有 NUL 字节"，含 NUL 的 .js/.sql 会被当成二进制，
+# 于是 eol 规则不生效（"有的文件被转换、有的没转换"这类怪事的来源）。
+# ---------------------------------------------------------------------------
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.vue text eol=lf
+*.json text eol=lf
+*.json5 text eol=lf
+*.jsonc text eol=lf
+*.map text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.less text eol=lf
+*.html text eol=lf
+*.htm text eol=lf
+*.xml text eol=lf
+*.svg text eol=lf
+*.md text eol=lf
+*.markdown text eol=lf
+*.txt text eol=lf
+*.rst text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.cfg text eol=lf
+*.conf text eol=lf
+*.properties text eol=lf
+*.example text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.go text eol=lf
+*.rs text eol=lf
+*.java text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.gradle text eol=lf
+*.swift text eol=lf
+*.dart text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.cc text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.m text eol=lf
+*.mm text eol=lf
+*.cs text eol=lf
+*.proto text eol=lf
+*.cmake text eol=lf
+*.sql text eol=lf
+*.graphql text eol=lf
+*.bru text eol=lf
+*.plist text eol=lf
+*.pbxproj text eol=lf
+*.xcconfig text eol=lf
+*.xcscheme text eol=lf
+*.xcworkspacedata text eol=lf
+*.storyboard text eol=lf
+*.xib text eol=lf
+*.entitlements text eol=lf
+*.manifest text eol=lf
+*.arb text eol=lf
+*.lock text eol=lf
+*.rc text eol=lf
+*.pro text eol=lf
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+.dockerignore text eol=lf
+Makefile text eol=lf
+.editorconfig text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.prettierrc text eol=lf
+.prettierignore text eol=lf
+
+# ---------------------------------------------------------------------------
+# Windows 专有：只有 cmd.exe 的批处理必须是 CRLF（LF 会被 cmd 的某些解析路径读错）。
+# 注：*.ps1 刻意**不**在这条里 —— Windows PowerShell 与 PowerShell 7 都能吃 LF，
+# 且 .editorconfig 明确写的是 end_of_line = lf，保持全仓一致。
+# ---------------------------------------------------------------------------
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ---------------------------------------------------------------------------
+# 二进制：`binary` 是 `-text -diff` 的宏 —— 不做行尾转换，也不尝试 diff/合并。
+# 图片/文档/压缩包/可执行/字体/媒体，以及备份产物（*.dump 是 pg_dump -Fc 的二进制）
+# 都在这里，避免 Git 把它们当文本而"顺手"改了行尾、把文件改坏。
+# ---------------------------------------------------------------------------
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.bmp binary
+*.tiff binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.doc binary
+*.docx binary
+*.xls binary
+*.xlsx binary
+*.ppt binary
+*.pptx binary
+*.odt binary
+*.ods binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.bz2 binary
+*.xz binary
+*.zst binary
+*.7z binary
+*.rar binary
+*.tar binary
+*.jar binary
+*.war binary
+*.apk binary
+*.aab binary
+*.ipa binary
+*.dmg binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.node binary
+*.wasm binary
+*.bin binary
+*.dump binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.mp3 binary
+*.wav binary
+*.ogg binary
+*.mp4 binary
+*.mov binary
+*.webm binary
+*.avi binary
+*.keystore binary
+*.jks binary
+*.p12 binary
+*.pfx binary
+*.der binary
