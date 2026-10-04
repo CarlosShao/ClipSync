@@ -191,66 +191,25 @@ export function createIdempotencyMiddleware(options = {}) {
 }
 
 /**
- * Webhook 专用幂等性中间件
+ * ⚠️ `webhookIdempotencyMiddleware` 已于 2026-10-03 审计 M1 删除。
  *
- * Webhook 通常使用 `transaction_id` 或 `event_id` 作为幂等性键。
+ * 它的设计在本项目里不成立，故不再提供：
+ *   1. **对支付宝是 no-op**：只钩 `res.json`，而支付宝回调 handler 用
+ *      `res.send('success')` 回纯文本 → 缓存从未写入。
+ *   2. **命中缓存即跳过验签**：它必须挂在 handler 之前才能"省掉一次处理"，
+ *      于是缓存命中会直接短路返回 200，验签与 app_id 校验都不执行。
+ *   3. **不校验状态码**：Stripe 分支的 503/500 也会被缓存 24h，
+ *      后续重试全部命中同一个错误响应，事件再也处理不了。
+ *   4. **跨渠道 key 撞车**：支付宝取 `trade_no`、Stripe 取 `id`、通用取
+ *      `x-request-id`，共用一个命名空间。
+ *   5. **回放格式错**：用 `res.json(...)` 回放，支付宝收到带引号的 `"success"` 判失败。
+ *
+ * 正确的幂等裁判是履约层 `services/orderFulfillment.js#markOrderPaid`
+ * （订单行锁 + 状态判定），它对重复投递本身就安全，无需传输层再兜一层。
+ *
+ * 若将来确实需要传输层去重，前提是**放在验签之后**，并做到：
+ * key 带渠道前缀、只缓存 2xx、按渠道各自的应答格式回放（支付宝必须纯文本）。
  */
-export function webhookIdempotencyMiddleware() {
-  return async (req, res, next) => {
-    try {
-      // 从请求体中提取唯一标识
-      const eventId =
-        req.body?.transactionId ||   // 微信支付
-        req.body?.trade_no ||       // 支付宝
-        req.body?.id ||              // Stripe
-        req.headers['x-request-id']; // 通用
-
-      if (!eventId) {
-        logger.warn('Webhook Idempotency: No event ID found, skipping');
-        return next();
-      }
-
-      const key = `webhook-${eventId}`;
-
-      // 检查是否已处理过
-      const cached = await loadProcessed(key);
-      if (cached) {
-        if (Date.now() - cached.timestamp <= IDEMPOTENCY_TTL) {
-          logger.info('Webhook Idempotency: Event already processed', { eventId, key });
-          return res.status(200).json(cached.response.body);
-        } else {
-          await removeProcessed(key);
-        }
-      }
-
-      // 拦截响应，缓存结果
-      const originalJson = res.json;
-      res.json = function(body) {
-        // 缓存响应
-        const record = {
-          response: {
-            status: res.statusCode,
-            body: body,
-          },
-          timestamp: Date.now(),
-        };
-        saveProcessed(key, record).catch((err) =>
-          logger.error('Webhook Idempotency: Failed to cache event', err)
-        );
-
-        logger.info('Webhook Idempotency: Caching event', { eventId });
-
-        // 调用原始的 json 方法
-        return originalJson.call(this, body);
-      };
-
-      next();
-    } catch (err) {
-      logger.error('Webhook Idempotency middleware error:', err);
-      next();
-    }
-  };
-}
 
 /**
  * 手动标记请求为已处理（用于复杂场景）
@@ -278,7 +237,6 @@ export async function isProcessed(req) {
 
 export default {
   createIdempotencyMiddleware,
-  webhookIdempotencyMiddleware,
   markAsProcessed,
   isProcessed,
 };

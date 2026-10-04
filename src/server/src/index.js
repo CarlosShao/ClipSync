@@ -688,15 +688,16 @@ if (!isClusteredPrimary) {
     // ============================================
     try {
       const alipayCheck = checkAlipayCredentials();
+      // 测试进程本就不配支付凭据，报 ERROR 会训练人忽略红灯（判据仪器问题），
+      // 故测试环境降为 warn；生产/开发仍按 error 处理。
+      const logProblem = process.env.NODE_ENV === 'test' ? logger.warn.bind(logger) : logger.error.bind(logger);
       if (alipayCheck.ok) {
         logger.info('[alipay] 凭据自检通过（APP_ID / 应用私钥 / 支付宝公钥均可用）');
       } else {
         for (const problem of alipayCheck.problems) {
-          logger.error(`[alipay] 凭据自检未通过：${problem}`);
+          logProblem(`[alipay] 凭据自检未通过：${problem}`);
         }
-        logger.error(
-          '[alipay] 结论：create-order 将拒绝支付宝渠道（绝不收自己无法验签回调的钱）'
-        );
+        logProblem('[alipay] 结论：create-order 将拒绝支付宝渠道（绝不收自己无法验签回调的钱）');
       }
     } catch (err) {
       logger.error('[alipay] 凭据自检自身异常（不影响启动）', { error: err.message });

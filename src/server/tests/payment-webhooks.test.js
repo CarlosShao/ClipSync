@@ -118,3 +118,58 @@ describe('支付安全 - 生产环境不得白送订阅', () => {
     expect(res.status).not.toBe(200);
   });
 });
+
+/**
+ * M1（2026-10-03 审计）：`webhookIdempotencyMiddleware` 已从回调路由摘除。
+ *
+ * 它有三个真实危害，两条用例分别钉住其中两条：
+ *   ① 只钩 `res.json`，会把 Stripe 分支的失败响应也缓存 24h →
+ *      后续重试全部命中同一个错误响应，事件再也处理不了；
+ *   ② 缓存命中时直接短路，**跳过验签**；且 key 无渠道前缀，
+ *      任意人可经 Stripe 端点写入 key 来干扰支付宝回调。
+ *
+ * 修后真正承担幂等的是履约层 `markOrderPaid`（订单行锁 + 状态判定），
+ * 它对重复投递本身安全，因此不需要（也不应该有）传输层的缓存短路。
+ */
+describe('M1：回调不得被传输层缓存短路（幂等由履约层保证）', () => {
+  it('同一 Stripe 事件重复投递：状态必须一致，绝不能第二次被缓存回放成 200', async () => {
+    const body = { id: 'evt_m1_no_cache_regression', type: 'checkout.session.completed' };
+
+    const first = await request(app)
+      .post('/api/webhooks/stripe')
+      .set('stripe-signature', 'forged')
+      .send(body);
+    const second = await request(app)
+      .post('/api/webhooks/stripe')
+      .set('stripe-signature', 'forged')
+      .send(body);
+
+    // 旧中间件下：首次失败被缓存 → 第二次短路成 200。这里必须两次一致且都不是 200。
+    expect(second.status).toBe(first.status);
+    expect(second.status).not.toBe(200);
+  });
+
+  it('不能经 Stripe 端点写入缓存来短路支付宝回调（跨渠道 key 撞车）', async () => {
+    const sharedId = 'M1_SHARED_KEY_REGRESSION';
+
+    // 先让 Stripe 分支收到一个同 id 的请求（旧实现会把它写进 webhook-<id> 缓存）
+    await request(app)
+      .post('/api/webhooks/stripe')
+      .set('stripe-signature', 'forged')
+      .send({ id: sharedId, type: 'checkout.session.completed' });
+
+    // 再用同一个值当 trade_no 打支付宝：仍必须走验签并被拒
+    const res = await request(app)
+      .post('/api/webhooks/alipay')
+      .type('form')
+      .send({
+        out_trade_no: 'ORD_M1_SHARED',
+        trade_no: sharedId,
+        trade_status: 'TRADE_SUCCESS',
+        sign: 'forged',
+      });
+
+    expect([401, 503]).toContain(res.status);
+    if (res.status === 401) expect(String(res.text)).toBe('failure');
+  });
+});

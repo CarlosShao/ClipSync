@@ -55,31 +55,28 @@ describe('Subscription API', () => {
     });
   });
 
-  describe('POST /api/subscriptions/subscribe', () => {
-    it.skip('should create subscription order', async () => {
-      // 订阅订单创建需要支付集成，测试环境不可用，跳过
-      const plansRes = await request(app)
-        .get('/api/subscriptions/plans')
-        .set(auth);
+  describe('POST /api/subscriptions/subscribe（2026-10-03 停用，审计 M4）', () => {
+    it('返回 410 ENDPOINT_RETIRED，并指向 create-order', async () => {
+      // 原用例是 it.skip 且断言旧行为（200 + order + paymentParams）——
+      // 那个行为早已不存在，且该端点会绕过 create-order 的全部闸门建出付不掉的订单。
+      const res = await request(app)
+        .post('/api/subscriptions/subscribe')
+        .set(auth)
+        .send({ planId: '00000000-0000-0000-0000-000000000000' });
 
-      if (plansRes.body.plans && plansRes.body.plans.length > 0) {
-        const planId = plansRes.body.plans[0].id;
+      expect(res.status).toBe(410);
+      expect(res.body.code).toBe('ENDPOINT_RETIRED');
+      expect(res.body.useInstead).toBe('/api/payments/create-order');
+    });
 
-        const res = await request(app)
-          .post('/api/subscriptions/subscribe')
-          .set(auth)
-          .send({
-            planId,
-            paymentMethod: 'wechat',
-          });
-
-        expect(res.status).toBe(200);
-        expect(res.body).toHaveProperty('order');
-        expect(res.body).toHaveProperty('paymentParams');
-      } else {
-        // 没有可用套餐时测试通过（数据问题）
-        expect(true).toBe(true);
-      }
+    it('不再往 payment_orders 写任何订单（停用不能只停在返回码上）', async () => {
+      const before = await pool.query('SELECT COUNT(*)::int AS n FROM payment_orders');
+      await request(app)
+        .post('/api/subscriptions/subscribe')
+        .set(auth)
+        .send({ planId: '00000000-0000-0000-0000-000000000000' });
+      const after = await pool.query('SELECT COUNT(*)::int AS n FROM payment_orders');
+      expect(after.rows[0].n).toBe(before.rows[0].n);
     });
   });
 });

@@ -92,27 +92,32 @@ app.post('/api/payments/stripe/webhook', stripeWebhookMiddleware, (req, res) => 
 
 ### 2. 幂等性保证
 
-为了防止 Webhook 重复处理，ClipSync 提供了幂等性保证中间件。
+**幂等由「履约层」负责，不在传输层做缓存短路。**
 
-**原理**: 每个 Webhook 请求包含一个唯一的幂等性键（Idempotency Key），服务器会记录已处理的键，重复请求将直接返回之前的结果。
+支付渠道会重复投递同一通知（支付宝按 4m / 10m / 10m / 1h / 2h / 6h / 15h 重试，最长 24h）。
+ClipSync 的去重落点是 `src/server/src/services/orderFulfillment.js#markOrderPaid`：
 
-**配置示例**:
-```javascript
-import { webhookIdempotencyMiddleware } from './middleware/idempotency.js';
+1. 对订单行 `SELECT ... FOR UPDATE`（行锁）
+2. 判定当前状态：已是 `paid` / `refunded` 等终态 → 直接返回 `already_paid`，不重复发货
+3. 只有真正从未支付过的订单才会开通订阅
 
-app.post('/api/payments/wechat/webhook',
-  wechatWebhookMiddleware,
-  webhookIdempotencyMiddleware(),
-  (req, res) => {
-    // 处理 Webhook
-  }
-);
-```
+因此**重复投递是安全的**，无需传输层再去一层缓存。
 
-**幂等性键提取**:
-- 微信支付: 从请求头 `x-wxp-event-id` 提取
-- 支付宝: 从请求体 `notify_id` 提取
-- Stripe: 从请求头 `stripe-idempotency-key` 提取
+> ⚠️ **不要**恢复 `webhookIdempotencyMiddleware`（已于 2026-10-03 审计 M1 删除）。
+> 它在本项目里无法正确工作，原因是设计层面的：
+>
+> 1. 它只钩 `res.json`，而支付宝回调 handler 用 `res.send('success')` 回**纯文本**
+>    → 缓存从未写入，对该渠道完全是 no-op。
+> 2. 它**必须挂在 handler 之前**才能"省掉一次处理"，于是缓存命中会直接 200 短路
+>    —— **跳过渠道验签与 `app_id` 校验**。
+> 3. 不校验状态码：失败响应（503/500）也会被缓存 24h，渠道后续重试全部命中同一个
+>    错误响应，事件再也无法被成功处理。
+> 4. key 无渠道前缀（支付宝取 `trade_no`、Stripe 取 `id`、通用取 `x-request-id`），
+>    任意人可经未配置的 Stripe 端点写入 key 来干扰支付宝回调。
+> 5. 命中缓存时用 `res.json(...)` 回放，支付宝收到带引号的 `"success"` 会判定失败。
+>
+> 若将来确实需要传输层去重，前提是**放在验签之后**，并满足：key 带渠道前缀、
+> 只缓存 2xx、按渠道各自的应答格式回放（支付宝必须纯文本）。
 
 ### 3. 自动验证
 

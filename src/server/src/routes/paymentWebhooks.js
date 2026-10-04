@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { logger } from '../utils/logger.js';
-import { webhookIdempotencyMiddleware } from '../middleware/idempotency.js';
 import { createStripeSignatureVerifier, verifyAlipayNotify } from '../middleware/webhook-signature.js';
 import { markOrderPaid } from '../services/orderFulfillment.js';
 import { isAlipayNotifyConfigured } from '../utils/alipay.js';
@@ -23,7 +22,25 @@ import { isAlipayNotifyConfigured } from '../utils/alipay.js';
  * 即「支付回调完全不可达」，且因为没法触发，问题一直没被发现。
  *
  * 安全上不靠鉴权，靠**渠道签名验签**（见 webhook-signature.js）+
- * **幂等**（同一通知重复投递不会重复开通订阅）。
+ * **幂等**。
+ *
+ * ── 2026-10-03 审计 M1：本文件不再挂 `webhookIdempotencyMiddleware` ──
+ *
+ * 该中间件对支付宝是 **no-op**：它只钩 `res.json`，而本 handler 用
+ * `res.send('success')` 回纯文本，所以缓存从未写入过。更糟的是它挂在 handler
+ * **之前**，命中缓存就直接短路 —— 也就是**跳过验签**。另外三点：
+ *   ① 不校验状态码，会把 Stripe 分支的 503/500 缓存 24h，Stripe 的后续重试
+ *      全部命中同一个错误响应，事件再也不会被成功处理；
+ *   ② 同一命名空间跨渠道复用（支付宝取 trade_no、Stripe 取 id、通用取
+ *      x-request-id），任意人可经未配置的 Stripe 端点写入 key 干扰支付宝回调；
+ *   ③ 回放用 `res.json(...)`，支付宝收到的是带引号的 `"success"`，判定失败。
+ * 这四个问题里 ①③ 是设计层面的（它必须在验签之前才能"省掉一次验签"），
+ * 所以**修不如删**：真正且正确的幂等裁判是履约层的 `markOrderPaid`
+ * （订单行锁 + 状态判定，见 services/orderFulfillment.js），它对重复投递本身安全。
+ *
+ * ⚠️ 中间件的**幂等语义本身是对的**（回调无用户上下文，需全局命名空间），
+ * 前提是把它放在**验签之后**。若将来确实需要传输层去重，请按此前提重写，
+ * 不要直接恢复下面这个实现。
  */
 
 const router = Router();
@@ -36,7 +53,7 @@ const router = Router();
  * 否则支付宝会按 25m/2h/... 的策略持续重试，最长 24h。
  * 返回 `failure` 或非 200 会触发重试。
  */
-router.post('/alipay', webhookIdempotencyMiddleware(), async (req, res) => {
+router.post('/alipay', async (req, res) => {
   const params = req.body || {};
   const { out_trade_no: outTradeNo, trade_no: tradeNo, trade_status: tradeStatus, app_id: appId } = params;
 
@@ -101,7 +118,7 @@ router.post('/alipay', webhookIdempotencyMiddleware(), async (req, res) => {
  * POST /api/webhooks/stripe
  * Stripe 事件回调（JSON，用 stripe-signature 头验签）
  */
-router.post('/stripe', webhookIdempotencyMiddleware(), async (req, res) => {
+router.post('/stripe', async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 

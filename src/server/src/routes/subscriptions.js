@@ -139,137 +139,34 @@ router.get('/current', authenticateToken, async (req, res) => {
 });
 
 /**
- * POST /api/subscriptions/subscribe
- * 创建/升级订阅
+ * POST /api/subscriptions/subscribe —— 已停用（2026-10-03 审计 M4）
+ *
+ * ⚠️ 这条端点此前仍在「收钱链路」上，但它**绕过 create-order 的全部闸门**：
+ *   · 不查 enable_subscription 开关（本文件此前完全没有 isFlagEnabled 引用）
+ *   · 不校验渠道凭据是否配置
+ *   · 不做档位判定与升级差价折抵（create-order 会拦的降档/同套餐，这里不拦）
+ *   · 不检查 price > 0
+ * 而且它只返回 orderNo + amount、**不给收银台 URL**，create-order 也不接受已存在的
+ * 订单号 —— 所以它建出来的订单**永远付不掉**：只会污染订单表/审计/看板，
+ * 24h 后被 orderCloseSweep 关掉。
+ *
+ * 现在没有任何客户端调用它（桌面端走 /api/payments/create-order；移动端与管理台均无调用），
+ * 故直接停用。下单请一律走 POST /api/payments/create-order（返回 cashierUrl）。
+ *
+ * 为什么是「停用」而不是「继续修补」：这条端点历史上被修过两次安全洞
+ * （直接 INSERT paid 订单白送会员、给新用户白送 7 天试用），根因都是它同时承担
+ * 「下单」与「开卡」两种语义。语义拆分后（/start-trial 专门发放权益）保留一个
+ * 无人调用、又绕过全部闸门的第三通道，只会再次成为漏洞温床。
  */
-router.post('/subscribe', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { planId, billingCycle = 'monthly' } = req.body;
-    
-    if (!planId) {
-      return res.status(400).json({ error: 'Missing planId parameter' });
-    }
-    
-    // 验证套餐是否存在
-    const planResult = await pool.query('SELECT * FROM subscription_plans WHERE id = $1 AND is_active = true', [planId]);
-    if (planResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Plan not found' });
-    }
-    
-    const plan = planResult.rows[0];
-    const price = billingCycle === 'yearly' ? (plan.price_yearly || plan.price_monthly * 10) : plan.price_monthly;
-    
-    // 检查是否已有活跃订阅
-    const existingSubscription = await pool.query(
-      'SELECT * FROM user_subscriptions WHERE user_id = $1 AND status IN ($2, $3) ORDER BY created_at DESC LIMIT 1',
-      [userId, 'active', 'trial']
-    );
-    
-    if (existingSubscription.rows.length > 0) {
-      // 已有订阅，升级/降级
-      const current = existingSubscription.rows[0];
-
-      if (current.plan_id === planId) {
-        return res.status(400).json({ error: 'You are already on this plan' });
-      }
-
-      // 创建**待支付**订单，并让调用方去走真实支付渠道。
-      //
-      // ⚠️ 此前的实现是一条严重的免费开卡漏洞（2026-09-16 修复）：
-      //   它直接 INSERT 一条 payment_method='mock'、status='paid' 的订单，
-      //   紧接着把新订阅置为 'active' —— **用户一分钱没付就拿到了付费套餐**。
-      //   而该端点只要求登录（无支付校验），任何登录用户 POST 一次即可升级。
-      //   前端虽已改成"渠道接入中"占位不再调用，但**后端接口仍是敞开的**，
-      //   直接 curl 即可白拿会员。
-      //
-      // 现在：只建 pending 订单，订阅状态不动；由 /api/payments/create-order
-      // 发起支付，支付成功后经支付宝回调 → orderFulfillment 统一开通。
-      const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
-      const orderResult = await pool.query(`
-        INSERT INTO payment_orders (user_id, subscription_id, order_no, amount, currency, payment_method, status, metadata)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, order_no
-      `, [
-        userId,
-        current.id,          // 支付成功后由履约逻辑把这条订阅置为 active
-        orderNo,
-        price,
-        'CNY',               // subscription_plans 无 currency 列，统一 CNY
-        'alipay',            // 真实渠道；不再是 mock
-        'pending',
-        JSON.stringify({ planId, billingCycle, action: 'upgrade', fromPlanId: current.plan_id }),
-      ]);
-
-      logger.info(`Upgrade order created for user ${userId} to plan ${plan.name}`, { orderNo });
-
-      await logAuditEvent({
-        userId,
-        action: AUDIT_ACTIONS.PAYMENT_CREATE,
-        resourceType: 'payment_order',
-        resourceId: orderResult.rows[0].id,
-        details: { orderNo, planId, planName: plan.name, billingCycle, price, action: 'upgrade' },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      });
-
-      // 明确告知「需要支付」，绝不返回成功升级
-      return res.status(202).json({
-        message: 'Order created, payment required',
-        paymentRequired: true,
-        subscriptionId: current.id,
-        orderNo,
-        amount: price,
-        currency: 'CNY',
-      });
-    } else {
-      // 新订阅：一律先建待支付订单。
-      //
-      // 原实现对「从未订阅过」的用户直接写 status='trial' 白送 7 天试用
-      // （同样不校验任何支付）。7 天试用是产品决策，但**不应由这个端点悄悄发放** ——
-      // 它既无频次限制也无风控，可被反复注册新号套取。
-      // 这里改为统一走支付；试用能力将来应作为独立、可审计的发放接口实现。
-      const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
-      const orderResult = await pool.query(`
-        INSERT INTO payment_orders (user_id, order_no, amount, currency, payment_method, status, metadata)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id, order_no
-      `, [
-        userId,
-        orderNo,
-        price,
-        'CNY',
-        'alipay',
-        'pending',
-        JSON.stringify({ planId, billingCycle, action: 'new' }),
-      ]);
-
-      logger.info(`New subscription order created for user ${userId}, plan ${plan.name}`, { orderNo });
-
-      await logAuditEvent({
-        userId,
-        action: AUDIT_ACTIONS.PAYMENT_CREATE,
-        resourceType: 'payment_order',
-        resourceId: orderResult.rows[0].id,
-        details: { orderNo, planId, planName: plan.name, billingCycle, price, action: 'new' },
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent'),
-      });
-
-      return res.status(202).json({
-        message: 'Order created, payment required',
-        paymentRequired: true,
-        orderNo,
-        amount: price,
-        currency: 'CNY',
-        // 新订阅尚无 user_subscriptions 记录，订阅将在支付成功后创建
-        subscriptionId: null,
-      });
-    }
-  } catch (err) {
-    logger.error('Subscribe error:', err);
-    res.status(500).json({ error: 'Subscription failed' });
-  }
+router.post('/subscribe', authenticateToken, (req, res) => {
+  logger.warn('[subscriptions] /subscribe 已停用，调用方应改用 /api/payments/create-order', {
+    userId: req.user?.userId,
+  });
+  return res.status(410).json({
+    error: 'This endpoint has been retired; use POST /api/payments/create-order',
+    code: 'ENDPOINT_RETIRED',
+    useInstead: '/api/payments/create-order',
+  });
 });
 
 /**
