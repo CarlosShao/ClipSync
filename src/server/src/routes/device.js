@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { isValidDevicePublicKey } from '../crypto/keyExchange.js';
 import pool from '../db/pool.js';
-import { broadcastToUser, sendNotification } from '../ws/server.js';
+import { broadcastToUser, sendNotification, forceDisconnectDevice } from '../ws/server.js';
 import { isValidUUID, isValidDeviceType, isValidPlatform, sanitizeString, validateDeviceName } from '../validation/validator.js';
 import { apiLimiter } from '../middleware/rateLimiter.js';
 import { getRedisClient } from '../utils/redis-client.js';
@@ -328,6 +328,11 @@ router.delete('/:deviceId', apiLimiter, async (req, res) => {
       type: 'device_removed',
       deviceId: result.rows[0].id,
     });
+
+    // 断开被删设备自身的 WS 连接：否则它仍留在 connections 表里、继续实时接收该用户
+    // 全部剪贴板广播（广播循环不查 devices 表）→ 已解绑设备仍在偷听。
+    // 2026-10-04 审计 S1-4。连接表由 close 处理器统一摘除。
+    forceDisconnectDevice(userId, deviceId, 'device_unbound');
 
     res.json({ message: 'Device deleted' });
   } catch (err) {

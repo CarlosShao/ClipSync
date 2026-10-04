@@ -377,29 +377,43 @@ export function setupWebSocket(server) {
       clearTimeout(unregisteredTimeout);
 
       if (deviceId) {
-        // Remove from connection-limit tracker (H6 修复)
-        removeWsConnection(userId, deviceId);
-
-        // Remove from connections
+        // ⚠️ 只有「映射里挂的仍是本连接（或本连接从未登记）」时才做清理。
+        //
+        // 重连场景：新连接注册时会把 deviceId 指向新 ws，并以 4000 关闭旧 ws；
+        // 旧 ws 的 close 事件**随后**才触发。若此处无条件清理，删掉的其实是**新连接**的映射、
+        // 并把设备标成离线 → 设备"显示在线却永久收不到任何推送"（2026-10-04 审计 S1-1）。
         const userDevices = connections.get(userId);
-        if (userDevices) {
-          userDevices.delete(deviceId);
-          if (userDevices.size === 0) {
-            connections.delete(userId);
-          }
-        }
+        const current = userDevices ? userDevices.get(deviceId) : undefined;
+        const superseded = current !== undefined && current !== ws;
 
-        // Update device offline status
-        try {
-          await pool.query(
-            'UPDATE devices SET is_online = FALSE WHERE id = $1',
-            [deviceId]
+        if (superseded) {
+          logger.info(
+            `Device ${deviceId} disconnected (superseded by a newer connection; mapping kept)`
           );
-        } catch (err) {
-          logger.error('Failed to update device offline status:', { error: err.message });
-        }
+        } else {
+          // Remove from connection-limit tracker (H6 修复)
+          removeWsConnection(userId, deviceId);
 
-        logger.info(`Device ${deviceId} disconnected`);
+          // Remove from connections
+          if (userDevices) {
+            userDevices.delete(deviceId);
+            if (userDevices.size === 0) {
+              connections.delete(userId);
+            }
+          }
+
+          // Update device offline status
+          try {
+            await pool.query(
+              'UPDATE devices SET is_online = FALSE WHERE id = $1',
+              [deviceId]
+            );
+          } catch (err) {
+            logger.error('Failed to update device offline status:', { error: err.message });
+          }
+
+          logger.info(`Device ${deviceId} disconnected`);
+        }
       }
     });
 
