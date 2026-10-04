@@ -97,14 +97,19 @@ async function ensureTestUser() {
 
 // 幂等准备：测试用户 + 活跃订阅
 //
-// ⚠️ 2026-09-16 行为变更：/subscriptions/subscribe 原先会**不收款直接开通**付费套餐
-// （免费开卡漏洞，见 subscriptions.js 注释），现已改为只创建 pending 订单、
-// 返回 202 paymentRequired。因此这里不能再靠它"造"出一条活跃订阅。
+// ⚠️ 2026-10-03 审计 M4：/subscriptions/subscribe 已**停用**，恒返回 410 ENDPOINT_RETIRED
+// （它绕过 create-order 的全部闸门，且建出的订单拿不到收银台 URL、永远付不掉）。
+// 本脚本此前靠它建单并断言 202，M4 之后 setup 必失败。
 //
-// 现在分两步：
-//   1. 走 /subscriptions/subscribe 建单（验证新行为：必须 202 且 paymentRequired）
-//   2. 用 SQL 直接把该订阅置为 active —— 这是**测试夹具**，不是业务路径，
-//      仅为了让后续依赖「活跃订阅」的用例可跑（履约逻辑本身由订单/支付用例覆盖）
+// 现在的做法：
+//   1. 仍调一次该端点，但改成**回归断言**（必须 410）—— 这条逃生口是本轮修复的重点，
+//      留一个探针比删掉它更能防回退；
+//   2. 它当年返回的 orderNo 只被塞进 detail 打印（下面的订阅夹具全靠 SQL 直插，
+//      没有任何地方消费它），所以这里不再需要建单返回的任何字段；
+//   3. 改用 POST /payments/create-order 造单在这里**不可行**：它要么走 alipay
+//      （dev 未配置支付宝凭据 → 503 ALIPAY_NOT_CONFIGURED），要么走 mock 渠道
+//      （要求已有 subscriptionId，而本函数存在的意义正是还没有订阅）——
+//      真正需要订单号的 orders 阶段在拿到 subId 之后用 mock 渠道建单（见 phaseOrders）。
 async function ensureSub() {
   const { userId } = await ensureTestUser();
   const uToken = await getUserToken(TEST_PHONE);
@@ -114,14 +119,13 @@ async function ensureSub() {
     const rsub = await req('POST', '/subscriptions/subscribe', { token: uToken, body: { planId: proPlanId, billingCycle: 'monthly' } });
     check(
       'setup',
-      'subscribe 不再白送套餐（202 paymentRequired）',
-      rsub.status === 202 && rsub.json?.paymentRequired === true,
+      '/subscriptions/subscribe 已停用（410 ENDPOINT_RETIRED，下单请走 /payments/create-order）',
+      rsub.status === 410 && rsub.json?.code === 'ENDPOINT_RETIRED',
       `status=${rsub.status} body=${JSON.stringify(rsub.json)?.slice(0, 200)}`,
     );
 
-    // 夹具：按返回的 orderNo + planId 补齐一条活跃订阅
-    const orderNo = rsub.json?.orderNo;
-    check('setup', 'subscribe 返回 orderNo', !!orderNo, `orderNo=${orderNo}`);
+    // 夹具：直接补一条活跃订阅 —— 这是**测试夹具**，不是业务路径，
+    // 仅为了让后续依赖「活跃订阅」的用例可跑（履约逻辑本身由订单/支付用例覆盖）
     psql(`INSERT INTO user_subscriptions (user_id, plan_id, status, start_date, end_date, current_period_start, current_period_end, billing_cycle)
           VALUES ('${userId}', '${proPlanId}', 'active', NOW(), NOW() + INTERVAL '1 month', NOW(), NOW() + INTERVAL '1 month', 'monthly')`);
     psql(`UPDATE users SET subscription_status='pro', current_subscription_id=(SELECT id FROM user_subscriptions WHERE user_id='${userId}' ORDER BY created_at DESC LIMIT 1) WHERE id='${userId}'`);
@@ -315,7 +319,7 @@ async function phaseOrders() {
   const P = 'orders';
   const { userId, uToken, subId } = await ensureSub();
 
-  // 首笔已支付订单（subscribe 流程生成）或 mock create-order 造一笔
+  // 已有已支付订单，否则用 mock create-order 造一笔（subscribe 时代的历史单也算）
   let firstOrderNo = psql(`SELECT order_no FROM payment_orders WHERE user_id='${userId}' AND status='paid' ORDER BY created_at ASC LIMIT 1`);
   if (!firstOrderNo) {
     const rco = await req('POST', '/payments/create-order', { token: uToken, body: { subscriptionId: subId, paymentMethod: 'mock' } });

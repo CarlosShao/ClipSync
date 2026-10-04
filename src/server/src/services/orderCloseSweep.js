@@ -88,6 +88,29 @@ export async function runOrderCloseSweep() {
               '(notify/polling will fulfil it). Needs reconciliation.',
             { orderNo: order.order_no, amount: order.amount }
           );
+
+          // ⚠️ 必须在**数据上**留痕，不能只打日志（2026-10-03 管理台复查发现的遗留）：
+          // 否则管理台无从发现这类单 —— 更糟的是它们会被「待支付订单超 24 小时」那条待办
+          // 捞进去、标题写"待支付"，运营看到会当成"用户忘了付"，而真相是**钱已经收了**。
+          // 打上标记后 overview 的待办可以据此单列一类高优先级「异常到账」。
+          await pool
+            .query(
+              `UPDATE payment_orders
+                  SET metadata = COALESCE(metadata, '{}'::jsonb)
+                                 || jsonb_build_object(
+                                      'channel_reports_paid', true,
+                                      'channel_paid_detected_at', NOW()::text
+                                    ),
+                      updated_at = NOW()
+                WHERE id = $1 AND status = 'pending'`,
+              [order.id]
+            )
+            .catch((err) =>
+              logger.error('[order-sweep] failed to mark channel_reports_paid', {
+                orderNo: order.order_no,
+                error: err.message,
+              })
+            );
           continue;
         }
 

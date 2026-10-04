@@ -79,6 +79,17 @@ router.post('/:id/approve', requirePerm('admin.orders.refund'), async (req, res)
       if (err.code === 'REFUND_REQUEST_NOT_PENDING') {
         return res.status(409).json({ code: 40903, message: '该申请已处理，不能重复操作', ...err.extra });
       }
+      if (err.code === 'REFUND_REQUEST_PROCESSING') {
+        // H3 的冷却分支：单子还卡在 processing 且距上次认领不足 2 分钟，服务端拒绝抢跑。
+        // 必须显式给码，否则落到 refundErrorToAdmin 的默认分支 → HTTP 409 却带 code=5000，
+        // 前端会把「稍后再点」误读成「退款执行失败」。retryAfterSeconds 供倒计时提示。
+        return res.status(409).json({
+          code: 40904,
+          message: '该申请正在处理中，请稍后重试',
+          refundCode: err.code,
+          ...err.extra,
+        });
+      }
       if (err.code === 'REFUND_REQUEST_ID_REQUIRED') {
         return res.status(400).json({ code: 4000, message: '申请单 id 不能为空' });
       }

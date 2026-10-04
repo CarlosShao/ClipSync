@@ -51,7 +51,9 @@ const reviewStatusTone: Record<RefundReviewStatus, StatusTone> = {
   pending: 'amber',
   approved: 'green',
   rejected: 'red',
-  // 服务端在途态：已 CAS 认领、正在调支付宝，结果未知（停在这一行要先去渠道查单，不能盲重试）
+  // 服务端在途态：已 CAS 认领、正在调支付宝，结果未知。
+  // 卡住（认领后崩溃/重启）时只能靠「再点一次 approve」收口 —— 服务端会先查单再决定重试，
+  // 故这一行**不是**「已处理、勿动」，而是需要运营介入的待办态
   processing: 'blue',
 };
 
@@ -209,6 +211,9 @@ export default function RefundReviewPage() {
     settingsMutation.mutate(settingsDraft);
   };
 
+  /** 弹窗目标是否卡住的 processing 单：文案/按钮/风险提示都要换口径（不是"再退一次"） */
+  const isReconciling = approveTarget?.status === 'processing';
+
   const columns: ColumnsType<RefundReview> = [
     {
       title: '申请时间',
@@ -306,12 +311,22 @@ export default function RefundReviewPage() {
         ),
     },
     {
-      title: '驳回理由',
+      title: '审核备注',
       dataIndex: 'reviewNote',
+      width: 180,
       ellipsis: { showTitle: false },
       render: (value: string | null) =>
         value ? (
-          <Tooltip title={value} placement="topLeft">
+          // 同一个字段承担两种语义，标题只能取中立名：驳回时是给申请人的理由；
+          // 以 [自动对账] 开头的是 H3 收口时服务端写的渠道查单结论（不是人写的）
+          <Tooltip
+            title={
+              value.includes('[自动对账]')
+                ? `${value}（服务端查单留痕，非人工填写）`
+                : `${value}（驳回理由，已反馈给申请人）`
+            }
+            placement="topLeft"
+          >
             <span>{value}</span>
           </Tooltip>
         ) : (
@@ -321,7 +336,7 @@ export default function RefundReviewPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 150,
+      width: 180,
       fixed: 'right',
       render: (_: string, record) =>
         record.status === 'pending' ? (
@@ -352,10 +367,30 @@ export default function RefundReviewPage() {
               </Button>
             </span>
           </Tooltip>
+        ) : record.status === 'processing' ? (
+          /*
+           * H3 逃生口：卡在 processing 的申请单两条常规路径都被堵死（服务端的 CAS 要求
+           * status='pending'，订单侧复核要求订单仍 paid），唯一收口手段就是**再调一次 approve**：
+           * 距上次认领满 2 分钟 → 服务端先向支付宝查单、把结论写进审核备注并释放回 pending
+           * 重走审核；不足 2 分钟 → 409 并告知还差几秒。
+           * 因此这一行必须有按钮，否则后端给的能力在管理台上完全不可达。
+           */
+          <Tooltip
+            title={
+              canReview
+                ? '服务端先向支付宝查单：查到已退款就收口，确认未退款才真正重试打款（out_request_no 即订单号，渠道幂等，不会退第二次）'
+                : '缺少权限 admin.orders.refund'
+            }
+          >
+            <span>
+              <Button size="small" disabled={!canReview} onClick={() => openApprove(record)}>
+                对账并重试
+              </Button>
+              <span style={{ ...subStyle, display: 'block' }}>卡住时先查单再重试</span>
+            </span>
+          </Tooltip>
         ) : (
-          <span style={subStyle}>
-            {record.status === 'processing' ? '打款中，勿重复操作' : '已处理'}
-          </span>
+          <span style={subStyle}>已处理</span>
         ),
     },
   ];
@@ -443,13 +478,13 @@ export default function RefundReviewPage() {
           }))}
         />
 
-        <Table<RefundReview> size="middle" columns={columns} {...tableProps} scroll={{ x: 1480 }} />
+        <Table<RefundReview> size="middle" columns={columns} {...tableProps} scroll={{ x: 1700 }} />
       </Card>
 
       <Modal
         open={Boolean(approveTarget)}
-        title="通过退款申请"
-        okText="确认调用支付宝退款"
+        title={isReconciling ? '对账并重试打款' : '通过退款申请'}
+        okText={isReconciling ? '对账并重试' : '确认调用支付宝退款'}
         cancelText="取消"
         okButtonProps={{ danger: true, loading: approveMutation.isPending }}
         onOk={confirmApprove}
@@ -471,15 +506,25 @@ export default function RefundReviewPage() {
                 {approveTarget.windowDaysAtRequest} 天；付款于 {fmtTime(approveTarget.paidAt)}
               </span>
             </p>
-            <Alert
-              type="error"
-              showIcon
-              message={`将立即调用支付宝原路退款 ${fmtAmount(
-                approveTarget.amount,
-                approveTarget.currency
-              )}，不可撤销`}
-              description="钱从商户账户实时划出，订单随即转为「已退款」并写入审计日志。用户权益在申请提交时已收回，通过后不再恢复。渠道失败时资金不变动，可原样重试。"
-            />
+            {isReconciling ? (
+              // 卡住的 processing 单：说清「先查单、再决定是否打款」，避免运营以为会退第二次钱
+              <Alert
+                type="warning"
+                showIcon
+                message="将先向支付宝查询这笔退款，再决定是否重试打款"
+                description="服务端查到渠道已退款就按成功收口（退款请求号固定为订单号，渠道幂等，不会重复退款）；确认未退款才真正发起打款。查单结论会写进「审核备注」。若距上次点击不足 2 分钟，服务端会拒绝对账并返回还需等待的秒数。"
+              />
+            ) : (
+              <Alert
+                type="error"
+                showIcon
+                message={`将立即调用支付宝原路退款 ${fmtAmount(
+                  approveTarget.amount,
+                  approveTarget.currency
+                )}，不可撤销`}
+                description="钱从商户账户实时划出，订单随即转为「已退款」并写入审计日志。用户权益在申请提交时已收回，通过后不再恢复。渠道失败时资金不变动，可原样重试。"
+              />
+            )}
             {failureHint ? (
               <Alert style={{ marginTop: 12 }} type="warning" showIcon message={failureHint} />
             ) : null}

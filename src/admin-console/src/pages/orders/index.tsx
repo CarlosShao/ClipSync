@@ -2,7 +2,7 @@ import { App as AntdApp, Button, Card, Input, Select, Table, Tabs, Tooltip } fro
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { OrderDetailModal } from '@/components/OrderDetailModal';
 import { PageHeader } from '@/components/PageHeader';
 import { RefundModal } from '@/components/RefundModal';
@@ -102,6 +102,15 @@ export default function OrdersPage() {
     defaultFilters: DEFAULT_FILTERS,
     defaultPageSize: 10,
   });
+
+  /**
+   * 搜索框回填 URL 里的 q：看板待办用 /orders?q=<orderNo> 跳进来定位某一张单，
+   * 若不回填就会出现「框里是空的、列表却被过滤」——运营会以为搜索坏了。
+   * 只在 URL 的 q 变化时同步，用户正在输入（draftQ 变、q 未变）时不会被打断。
+   */
+  useEffect(() => {
+    setDraftQ(filters.q ?? '');
+  }, [filters.q]);
 
   // 各状态 Tab 计数：同一列表接口 pageSize=1 取 total（与列表同筛选条件）
   const countQueries = useQueries({
@@ -247,8 +256,10 @@ export default function OrdersPage() {
             </Tooltip>
           ) : null}
           {/* AF-15：人工关单口径取消——已支付订单不允许人工关单，
-              超时未支付订单由服务端定时任务自动关闭（src/server/src/services/orderCloseSweep.js），
-              状态列展示「已关闭」，订单详情 metadata.auto_closed 可溯源 */}
+              超时未支付订单由服务端定时任务自动关闭（src/server/src/services/orderCloseSweep.js）。
+              状态列统一显示「已关闭」，但**关单来源不同**：详情弹窗按服务端派生的
+              autoClosed / closedByChannel / channelReportsPaid 分流展示（超时未付 / 渠道关单 /
+              异常到账），列表这里不额外加标签，避免与状态标签重复。 */}
         </span>
       ),
     },

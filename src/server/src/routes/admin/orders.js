@@ -67,6 +67,12 @@ const ORDER_SELECT = `
     po.paid_at,
     ${CHANNEL_CASE_SQL} AS channel,
     po.metadata->>'refund_amount' AS refund_amount,
+    -- 关单/异常到账留痕（M6 / H2）：只取这三个**派生值**下发给管理台。
+    -- metadata 里还存着回调报文原文（closed_by_channel 那次的 raw payload），整包下发等于
+    -- 把渠道原始报文透给前端，故一律走 ->> 取标量，不下发 metadata 本身。
+    po.metadata->>'auto_closed' AS auto_closed,
+    (po.metadata->>'closed_by_channel') = 'true' AS closed_by_channel,
+    (po.metadata->>'channel_reports_paid') = 'true' AS channel_reports_paid,
     u.nickname AS user_nickname,
     u.phone AS user_phone,
     sp.display_name AS plan_display_name,
@@ -115,6 +121,12 @@ function mapOrderRow(row) {
     // 已退款金额：来自 metadata.refund_amount；未落值（refunding 伪状态）为 null
     refundAmount: row.refund_amount != null ? Number(row.refund_amount) : null,
     status: row.status,
+    // 关闭溯源：'timeout_unpaid' = orderCloseSweep 超时关单；closed_by_channel = 渠道
+    // （TRADE_CLOSED 通知）关单。两者都为假时管理台不得再说成「超时未支付」。
+    autoClosed: row.auto_closed != null ? String(row.auto_closed) : null,
+    closedByChannel: row.closed_by_channel === true,
+    // 异常到账：渠道报告已付款、本地订单却仍 pending（orderCloseSweep 查单发现，未关单）
+    channelReportsPaid: row.channel_reports_paid === true,
     createdAt: toIso(row.created_at),
     paidAt: toIso(row.paid_at),
   };

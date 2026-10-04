@@ -144,6 +144,16 @@ export interface Order {
   /** 已退款金额（元） */
   refundAmount: number | null;
   status: OrderStatus;
+  /**
+   * 关单溯源（服务端从 metadata 派生的只读标量，**不下发 metadata 原文**）：
+   * 'timeout_unpaid' = orderCloseSweep 超时未支付自动关单；null = 非自动关单。
+   * 缺失时展示层不得默认成「超时未支付」——那会把渠道关单说成用户没付钱。
+   */
+  autoClosed?: string | null;
+  /** true = 渠道侧关单（支付宝 TRADE_CLOSED 通知，M6 起写入 metadata.closed_by_channel） */
+  closedByChannel?: boolean;
+  /** true = 渠道报告已付款、本地订单仍 pending（orderCloseSweep 查单发现，属异常到账） */
+  channelReportsPaid?: boolean;
   createdAt: string;
   paidAt: string | null;
 }

@@ -99,6 +99,10 @@ function makeOrderRow(overrides = {}) {
     paid_at: new Date('2026-09-05T12:42:00Z'),
     channel: 'wechat',
     refund_amount: null,
+    // 关单/异常到账派生列：metadata 里没有对应键时，`(metadata->>'x') = 'true'` 取到 NULL
+    auto_closed: null,
+    closed_by_channel: null,
+    channel_reports_paid: null,
     user_nickname: '林小明',
     user_phone: '13812342765',
     plan_display_name: '专业版',
@@ -141,12 +145,52 @@ describe('GET /api/admin/orders —— 订单分页列表', () => {
       amount: 99,
       refundAmount: null,
       status: 'paid',
+      // 关单溯源/异常到账：派生标量，缺 metadata 时为 null/false（不是语义上的"超时未付"）
+      autoClosed: null,
+      closedByChannel: false,
+      channelReportsPaid: false,
     });
 
     // 分页参数：LIMIT/OFFSET 追加在筛选参数之后（page=2 → offset=10）
     const [lastSql, lastParams] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
     expect(lastSql).toContain('ORDER BY po.created_at DESC');
     expect(lastParams.slice(-2)).toEqual([10, 10]);
+  });
+
+  it('关单溯源与异常到账：三个派生标量随行下发，且绝不下发 metadata 整包', async () => {
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.orders.view' }], rowCount: 1 };
+      if (sql.includes('COUNT(*)')) return { rows: [{ total: 3 }], rowCount: 1 };
+      if (sql.includes('FROM payment_orders po')) {
+        return {
+          rows: [
+            // 超时未付自动关单（orderCloseSweep 写 metadata.auto_closed='timeout_unpaid'）
+            makeOrderRow({ order_no: 'ORD-AUTO-CLOSED', status: 'cancelled', auto_closed: 'timeout_unpaid' }),
+            // 渠道关单（M6：TRADE_CLOSED 通知写 metadata.closed_by_channel=true）
+            makeOrderRow({ order_no: 'ORD-CHANNEL-CLOSED', status: 'cancelled', closed_by_channel: true }),
+            // 异常到账：渠道已付款但本地仍 pending（orderCloseSweep 未关单，只打标记）
+            makeOrderRow({ order_no: 'ORD-CHANNEL-PAID', status: 'pending', channel_reports_paid: true }),
+          ],
+          rowCount: 3,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await request(buildApp()).get('/api/admin/orders');
+
+    expect(res.status).toBe(200);
+    const list = res.body.data.list;
+    expect(list[0]).toMatchObject({ autoClosed: 'timeout_unpaid', closedByChannel: false, channelReportsPaid: false });
+    expect(list[1]).toMatchObject({ autoClosed: null, closedByChannel: true, channelReportsPaid: false });
+    expect(list[2]).toMatchObject({ status: 'pending', autoClosed: null, closedByChannel: false, channelReportsPaid: true });
+
+    const [listSql] = pool.query.mock.calls[pool.query.mock.calls.length - 1];
+    expect(listSql).toContain("po.metadata->>'auto_closed' AS auto_closed");
+    expect(listSql).toContain("(po.metadata->>'closed_by_channel') = 'true' AS closed_by_channel");
+    expect(listSql).toContain("(po.metadata->>'channel_reports_paid') = 'true' AS channel_reports_paid");
+    // metadata 里含回调报文原文，只允许取标量，整包下发等于把渠道原始报文透给前端
+    expect(listSql).not.toMatch(/po\.metadata\s*(,|AS|\n)/);
   });
 
   it('status=refunding 伪状态：过滤口径为 refunded 且 metadata 无 refund_amount', async () => {

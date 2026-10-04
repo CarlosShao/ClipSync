@@ -86,7 +86,8 @@ const CHANNEL_ROWS = [
 
 /**
  * 按 overview.js 各子查询的特征片段分发 mock 行；
- * overrides 按 { users, revenue, mrr, devices, paid, daily, plans, channels } 覆盖。
+ * overrides 按 { users, revenue, mrr, devices, paid, daily, plans, channels,
+ *                waitlist, refunding, channelPaid, stalePending } 覆盖。
  */
 function setupOverviewMocks(overrides = {}) {
   const rows = {
@@ -98,6 +99,12 @@ function setupOverviewMocks(overrides = {}) {
     daily: makeDailyRows(),
     plans: PLAN_ROWS,
     channels: CHANNEL_ROWS,
+    // 四类待办默认空 —— 新增分支不得命中上面的既有特征串，否则既有用例的
+    // pendingItems === [] 断言会跟着变
+    waitlist: [],
+    refunding: [],
+    channelPaid: [],
+    stalePending: [],
     ...overrides,
   };
   const wrap = (row) => ({ rows: Array.isArray(row) ? row : [row], rowCount: Array.isArray(row) ? row.length : 1 });
@@ -110,6 +117,13 @@ function setupOverviewMocks(overrides = {}) {
     if (sql.includes('generate_series')) return wrap(rows.daily);
     if (sql.includes("ELSE 'free'")) return wrap(rows.plans);
     if (sql.includes('AS cnt')) return wrap(rows.channels);
+    if (sql.includes("registration_status = 'pending'")) return wrap(rows.waitlist);
+    if (sql.includes("metadata->>'refund_amount' IS NULL")) return wrap(rows.refunding);
+    // 9.3 / 9.4 是两条不同 SQL：前者用 = 'true'，后者用 COALESCE(...) <> 'true'
+    if (sql.includes("metadata->>'channel_reports_paid' = 'true'")) return wrap(rows.channelPaid);
+    if (sql.includes("COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'")) {
+      return wrap(rows.stalePending);
+    }
     return { rows: [], rowCount: 0 };
   });
 }
@@ -258,6 +272,34 @@ describe('GET /api/admin/overview —— 看板聚合', () => {
       { channel: 'alipay', label: '支付宝', percent: 0 },
       { channel: 'stripe', label: 'Stripe', percent: 0 },
     ]);
+  });
+
+  it('待办跳转带订单号：7 天窗口外的目标单也能被定位（异常到账/退款处理中/超 24h 待支付）', async () => {
+    setupOverviewMocks({
+      waitlist: [{ id: 'u-1', label: '135****0772', created_at: new Date('2026-09-30T01:02:00Z') }],
+      refunding: [{ order_no: 'ORD-REFUNDING', amount: 9.9, updated_at: new Date('2026-09-30T01:02:00Z') }],
+      channelPaid: [{ order_no: 'ORD-CHANNEL-PAID', amount: 99, updated_at: new Date('2026-10-01T03:04:00Z') }],
+      stalePending: [{ order_no: 'ORD-STALE', amount: 19.9, created_at: new Date('2026-09-01T00:00:00Z') }],
+    });
+
+    const res = await request(buildApp()).get('/api/admin/overview');
+    const items = res.body.data.pendingItems;
+    const byTitle = (title) => items.find((i) => i.title === title);
+
+    // 订单页默认只看近 7 天：待办若不带上单号，超窗口的单点进去根本看不到
+    expect(byTitle('异常到账：渠道已付款但订单未履约').actionTo).toBe(
+      '/orders?status=pending&q=ORD-CHANNEL-PAID'
+    );
+    expect(byTitle('退款处理中').actionTo).toBe('/orders?status=refunding&q=ORD-REFUNDING');
+    expect(byTitle('待支付订单超 24 小时').actionTo).toBe('/orders?status=pending&q=ORD-STALE');
+    // 用户页没有时间窗口，保持原样不带 q
+    expect(byTitle('用户等待审核').actionTo).toBe('/users?status=waitlist');
+
+    // 异常到账必须从「待支付超 24 小时」里排除，否则同一单以误导性标题重复出现
+    const [staleSql] = pool.query.mock.calls.find(([s]) =>
+      s.includes("COALESCE(metadata->>'channel_reports_paid'")
+    );
+    expect(staleSql).toContain("<> 'true'");
   });
 
   it('权限：requireRole(50) 门槛 —— admin 放行，普通 user 返回 403 { code: 4030 }', async () => {

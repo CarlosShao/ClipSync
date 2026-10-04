@@ -32,7 +32,10 @@ export interface RefundReview {
   reviewedAt: string | null;
   /** 用户在客户端填的申请理由（可空），审核判断的第一手信息 */
   userReason: string | null;
-  /** 审核备注：驳回时为「不通过的理由」，会反馈给申请人 */
+  /**
+   * 审核备注：驳回时 = 给申请人的驳回理由；以 `[自动对账]` 开头的是**服务端查单留痕**
+   * （H3 收口卡死的 processing 单时写入渠道查询结果，不是人写的驳回理由）。
+   */
   reviewNote: string | null;
   reviewedByName: string | null;
   orderNo: string;
@@ -142,6 +145,13 @@ const FAILURE_HINTS: Record<string, string> = {
   ALREADY_REFUNDED: '该订单已完成退款，无需再次操作。',
   REFUND_CHANNEL_FAILED:
     '支付宝退款渠道调用失败，资金未发生变动，可稍后原样重试；连续失败请去支付宝商户后台核对该笔退款。',
+  // 2026-10-03 审计 H3 新增：卡在 processing 的申请单。
+  // 服务端行为：提交不足 2 分钟 → 409 这个码；满 2 分钟 → 自动查渠道并释放重试（不会走到这里）。
+  REFUND_REQUEST_PROCESSING:
+    '这笔申请正在处理中（可能上一次点击的渠道调用还没结束）。请等约 2 分钟后重试；' +
+    '若一直卡住，服务端会在下次点击时自动去支付宝查单并把结果写进「审核备注」。',
+  REFUND_REQUEST_NOT_PENDING:
+    '这笔申请已被处理过（可能已通过、已驳回，或正在处理中）。列表已刷新，请核对最新状态。',
 };
 
 /**
@@ -160,9 +170,30 @@ function extractFailureCode(err: unknown): string | null {
   return null;
 }
 
+/**
+ * 读「还要等多久」：H3 冷却分支（REFUND_REQUEST_PROCESSING）在响应体里带
+ * retryAfterSeconds（距可重试还差几秒）。拿不到/非法就返回 null，由调用方回落到通用文案。
+ */
+function extractRetryAfterSeconds(err: unknown): number | null {
+  const body = (err as { response?: { data?: unknown } } | null)?.response?.data;
+  if (!body || typeof body !== 'object') return null;
+  const value = (body as Record<string, unknown>).retryAfterSeconds;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.ceil(value) : null;
+}
+
 /** 审核失败的行内提示文案（未知码回落到服务端 message，再回落到通用文案） */
 export function refundReviewFailureHint(err: unknown): string {
   const code = extractFailureCode(err);
+  // 冷却分支单独拼：服务端知道确切剩余秒数，让管理员知道「稍后」是多久
+  if (code === 'REFUND_REQUEST_PROCESSING') {
+    const seconds = extractRetryAfterSeconds(err);
+    if (seconds !== null) {
+      return (
+        `这笔申请正在处理中（可能上一次点击的渠道调用还没结束）。` +
+        `请等待约 ${seconds} 秒后再点「对账并重试」。`
+      );
+    }
+  }
   const hint = code ? FAILURE_HINTS[code] : undefined;
   if (hint) return hint;
   const message = (err as { response?: { data?: { message?: unknown } } } | null)?.response?.data

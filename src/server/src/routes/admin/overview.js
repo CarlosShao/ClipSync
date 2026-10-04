@@ -230,16 +230,44 @@ router.get('/', async (req, res) => {
         target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
         occurredAt: formatMinute(row.updated_at),
         actionLabel: '查看订单',
-        actionTo: '/orders?status=refunding',
+        // 带单号定位：订单页默认 7 天窗口 + 分页，只给 status 会让运营翻不到目标单
+        actionTo: `/orders?status=refunding&q=${encodeURIComponent(row.order_no)}`,
       });
     }
 
-    // 9.3 待支付订单超 24 小时（占压订单，需人工确认是否关闭）
+    // 9.3 异常到账：本地仍 pending、但**渠道侧报告已付款**（orderCloseSweep 扫出来的）。
+    // ⚠️ 这一类必须排在「待支付超 24 小时」之前、且从那条里排除掉：
+    // 它的真实含义是「钱已经收了、需要立刻核对或退款」，标成"待支付"会让运营当成
+    // "用户忘了付"而放过 —— 这是最容易变成客诉+对账不平的一类单。
+    const { rows: channelPaidRows } = await pool.query(`
+      SELECT order_no, amount::float8 AS amount, updated_at
+      FROM payment_orders
+      WHERE status = 'pending'
+        AND metadata->>'channel_reports_paid' = 'true'
+      ORDER BY updated_at DESC
+      LIMIT 5`);
+    for (const row of channelPaidRows) {
+      pendingItems.push({
+        id: `channel-paid-${row.order_no}`,
+        title: '异常到账：渠道已付款但订单未履约',
+        type: 'reconcile',
+        target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
+        occurredAt: formatMinute(row.updated_at),
+        actionLabel: '核对订单',
+        // 带上订单号：订单页默认只看近 7 天，这类单往往更老，
+        // 只给 status 会把运营送到一个**看不到目标单**的列表里（待办等于失效）。
+        actionTo: `/orders?status=pending&q=${encodeURIComponent(row.order_no)}`,
+      });
+    }
+
+    // 9.4 待支付订单超 24 小时（占压订单，需人工确认是否关闭）
+    //     排除了上面那类"渠道其实已收款"的单，避免同一单以误导性标题重复出现。
     const { rows: stalePendingRows } = await pool.query(`
       SELECT order_no, amount::float8 AS amount, created_at
       FROM payment_orders
       WHERE status = 'pending'
         AND created_at < NOW() - INTERVAL '24 hours'
+        AND COALESCE(metadata->>'channel_reports_paid', 'false') <> 'true'
       ORDER BY created_at DESC
       LIMIT 5`);
     for (const row of stalePendingRows) {
@@ -250,7 +278,8 @@ router.get('/', async (req, res) => {
         target: `${row.order_no} · ¥${Number(row.amount).toFixed(2)}`,
         occurredAt: formatMinute(row.created_at),
         actionLabel: '查看订单',
-        actionTo: '/orders?status=pending',
+        // 同 9.3：超 24h 的单很可能已超出订单页的默认 7 天窗口，必须靠单号定位
+        actionTo: `/orders?status=pending&q=${encodeURIComponent(row.order_no)}`,
       });
     }
 

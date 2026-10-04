@@ -193,6 +193,10 @@ describe('orderCloseSweep · 超时关单（审计 H2 重写后的不变量）',
     const after = await readOrder(order.order_no);
     expect(after.status).toBe('pending'); // 留给回调/轮询兜底去履约
     expect(after.metadata.auto_closed).toBeUndefined();
+    // 必须在**数据上**留痕：管理台「异常到账」待办与订单核对都靠这两个标记，
+    // 只打 CRITICAL 日志的话运营根本发现不了这类单。
+    expect(after.metadata.channel_reports_paid).toBe(true);
+    expect(after.metadata.channel_paid_detected_at).toBeTruthy();
   });
 
   it('★查单失败（非 TRADE_NOT_EXIST）→ 本轮跳过，订单保持 pending（绝不冒险关单）', async () => {
