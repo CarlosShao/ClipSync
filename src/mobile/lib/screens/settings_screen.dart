@@ -1,5 +1,6 @@
 import "dart:io";
 
+import "package:flutter/foundation.dart";
 import "package:flutter/material.dart";
 import "package:go_router/go_router.dart";
 import "package:provider/provider.dart";
@@ -456,6 +457,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// C6：昵称编辑对话框——已迁移至个人资料页 ProfileScreen（_NicknameEditDialog
   /// 自持 TextEditingController，修复取消时 dispose 过早导致的框架断言崩溃）。
   Widget _buildServerUrlSetting() {
+    // release：后端地址固定为 api.clipchain.top，不提供运行时修改入口
+    // （与桌面端 GeneralSettings 的 isDev 闸同口径）。debug 保持可改，便于联调。
+    if (kReleaseMode) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     return ListTile(
       title: Text(l10n.serverUrl),

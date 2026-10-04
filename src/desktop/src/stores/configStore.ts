@@ -9,7 +9,11 @@ import { setUserScope } from '@/utils/userScope'
 const isDev = import.meta.env.DEV
 // A1：服务器地址默认值。只在"拿不到配置"时生效，绝不覆盖用户已保存的值
 // （空字符串是合法的"未连接"态）。
-const DEFAULT_SERVER_URL = 'http://localhost:3001'
+// E2（2026-10-04 审计）：release 构建默认指向生产，否则装完即连 localhost 连不上。
+// ⚠️ dev 必须仍与 Rust 的 dev 默认值（http://localhost:3001）一致——下方 load() 把
+// "等于该默认值"当作未设置并回落走 Vite 代理；若这里在 dev 用生产地址，会把用户
+// 显式保存的生产地址误判成默认值而清掉（破坏本地联调）。
+const DEFAULT_SERVER_URL = isDev ? 'http://localhost:3001' : 'https://api.clipchain.top'
 
 export const useConfigStore = defineStore('config', () => {
   // 同步从 localStorage 恢复 token，避免 HomeView onMounted 先于 App onMounted 导致 api() 无 token → 401

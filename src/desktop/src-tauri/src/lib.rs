@@ -112,10 +112,25 @@ pub struct AppConfig {
     pub toggle_ai_panel_shortcut: Option<String>,
 }
 
+/// 内置后端地址（release 默认值）。
+///
+/// ⚠️ 与 `src/shared/domains.js`（`ROOT_DOMAIN` / `DOMAINS.api`）保持一致 —— Rust 无法 import
+/// 该文件，故此处保留字面量。
+///
+/// dev（debug_assertions）保留 localhost，release 指向生产 `api.clipchain.top`：
+/// release 用户装完即连生产；dev 仍走本地后端，且允许在设置里改地址联调（2026-10-04 审计 E2）。
+fn default_server_url() -> String {
+    if cfg!(debug_assertions) {
+        "http://localhost:3001".to_string()
+    } else {
+        "https://api.clipchain.top".to_string()
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            server_url: "http://localhost:3001".to_string(),
+            server_url: default_server_url(),
             token: None,
             device_id: None,
             user_id: None,
@@ -162,7 +177,14 @@ fn update_config(app: tauri::AppHandle, state: tauri::State<AppState>, config: A
     // 清除登录态请走专用命令 clear_auth（前端 logout 调用）。
     {
         let mut cfg = state.config.lock().unwrap();
-        cfg.server_url = config.server_url;
+        // E2（2026-10-04 审计）：release 构建**禁止运行时修改后端地址**——否则本机任意进程
+        // 可经 IPC 把客户端指向伪造/明文服务器。仅当现值非法（非 https）时自愈回内置默认。
+        // dev 构建保持原行为（可改），便于"本地界面 + 生产后端"联调。
+        if cfg!(debug_assertions) {
+            cfg.server_url = config.server_url;
+        } else if !cfg.server_url.trim().starts_with("https://") {
+            cfg.server_url = default_server_url();
+        }
         cfg.quick_paste_shortcut = config.quick_paste_shortcut;
         cfg.toggle_window_shortcut = config.toggle_window_shortcut;
         cfg.toggle_ai_panel_shortcut = config.toggle_ai_panel_shortcut;
