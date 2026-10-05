@@ -13,6 +13,7 @@
 //     → POST   /api/admin/users/:id/rebind        换绑手机号/邮箱（三列一致，2026-10-05）
 //     → POST   /api/admin/users/:id/trial         人工开通/重置试用（刻意绕过终身一次闸，2026-10-05）
 //     → PATCH  /api/admin/users/:id/profile       违规昵称/头像处置（并清 Redis 用户缓存，2026-10-05）
+//     → POST   /api/admin/users/:id/limits        单用户配额覆盖（迁移 084，2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
@@ -23,6 +24,7 @@
 //   - POST /reset-password      → requirePerm('admin.users.manage')（高危：直接换掉登录凭据）
 //   - POST /rebind              → requirePerm('admin.users.manage')（高危：换掉登录标识）
 //   - POST /trial               → requirePerm('admin.subscriptions.grant')（人工给出订阅权益，同类同权）
+//   - POST /limits              → requirePerm('admin.users.manage')（改单个用户的配额，等同放宽风控阈值）
 //   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
@@ -65,6 +67,7 @@ const USER_SELECT = `
     u.phone,
     u.email,
     u.nickname,
+    u.limit_overrides,
     u.is_active,
     u.registration_status,
     u.subscription_status,
@@ -256,6 +259,9 @@ function mapUserRow(row) {
       ? { lastActiveDesc: `${relativeTimeDesc(row.last_active_at)}${platform ? ` · ${platform} 客户端` : ''}` }
       : {}),
     riskFlag,
+    // 2026-10-05：单用户配额覆盖（084）。null = 没有覆盖，全部沿用套餐值。
+    // 下发它是为了让「配额覆盖」弹窗能显示当前值，而不是让运营盲改。
+    limitOverrides: row.limit_overrides || null,
   };
 }
 
@@ -1152,6 +1158,184 @@ router.post('/:id/trial', requirePerm('admin.subscriptions.grant'), async (req, 
   } catch (err) {
     logger.error('[admin/users] grant trial failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '开通试用失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/limits  body { reason, overrides } | { reason, clear: true }
+ * 单用户配额覆盖（2026-10-05 新增，迁移 084）。
+ *
+ * 为什么之前只能改库：配额**只有一个来源** —— `subscription_plans`（由
+ * `utils/planLimits.js` 解析），而改套餐行 `PATCH /admin/plans/:id` 会同时影响
+ * 该套餐下的**所有人**。于是"单独给这一个用户提配额"（客诉补偿、大客户、内部测试）
+ * 除了改库没有别的办法。改库在这里还多一层问题：只改了数据没改口径，
+ * 而配额是每次上传都实时算的，改库后必须重启/清缓存才生效，且完全没有审计。
+ *
+ * 口径：
+ *   - `overrides` 是**稀疏补丁**，只允许 4 个键（与 subscription_plans 列同单位）：
+ *       max_file_size_mb / max_storage_mb / max_files_per_clip / file_retention_days
+ *     值为**非负数字**表示覆盖；值为 **null 表示该项不限**（与套餐行 NULL=不限一致）；
+ *     未知键一律 400（不静默存垃圾 —— 存进去也不会生效，只会让人误以为设上了）。
+ *   - `clear: true` → 清空覆盖（回到纯套餐值）。与 overrides 互斥。
+ *   - 上下界（防止把配额写成天文数字）：单文件 ≤10GB、容量 ≤1TB、单次文件数 ≤10000、
+ *     保留天数 ≤3650。
+ *   - **admin 不受覆盖影响**：`is_admin` 在 planLimits 里本来就直接返回"不限"，
+ *     覆盖不会把不受限的人变成受限（这条有测试钉住）。
+ *   - 原因必填；审计记改动前后；通知用户（配额变化用户可见 —— 额度变大他不会问，
+ *     变小了一定会问）；权限 `admin.users.manage`，并已进高危限流名单。
+ */
+const LIMIT_OVERRIDE_KEYS = {
+  max_file_size_mb: { max: 10240, integer: false, label: '单文件上限(MB)' },
+  max_storage_mb: { max: 1048576, integer: false, label: '容量上限(MB)' },
+  max_files_per_clip: { max: 10000, integer: true, label: '单次文件数' },
+  file_retention_days: { max: 3650, integer: true, label: '文件保留天数' },
+};
+
+router.post('/:id/limits', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '调整配额必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const clear = body.clear === true;
+    const hasOverrides = body.overrides !== undefined && body.overrides !== null;
+    if (clear && hasOverrides) {
+      return res.status(400).json({ code: 4000, message: 'clear 与 overrides 只能给一个' });
+    }
+    if (!clear && !hasOverrides) {
+      return res.status(400).json({
+        code: 4000,
+        message: '请给 overrides（设置覆盖）或 clear:true（清除覆盖）',
+      });
+    }
+
+    let nextOverrides = null; // null = 清除
+    if (!clear) {
+      const raw = body.overrides;
+      if (typeof raw !== 'object' || Array.isArray(raw)) {
+        return res.status(400).json({ code: 4000, message: 'overrides 必须是对象' });
+      }
+      const keys = Object.keys(raw);
+      if (keys.length === 0) {
+        return res.status(400).json({
+          code: 4000,
+          message: 'overrides 不能是空对象（要清除覆盖请用 clear:true）',
+        });
+      }
+      const unknown = keys.filter((k) => !Object.prototype.hasOwnProperty.call(LIMIT_OVERRIDE_KEYS, k));
+      if (unknown.length > 0) {
+        return res.status(400).json({
+          code: 4000,
+          message: `不支持的配额键：${unknown.join(', ')}（仅支持 ${Object.keys(LIMIT_OVERRIDE_KEYS).join(' / ')}）`,
+        });
+      }
+      const cleaned = {};
+      for (const key of keys) {
+        const rule = LIMIT_OVERRIDE_KEYS[key];
+        const value = raw[key];
+        if (value === null) {
+          cleaned[key] = null; // 该项不限
+          continue;
+        }
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+          return res.status(400).json({
+            code: 4000,
+            message: `${rule.label} 必须是非负数字或 null（null = 不限）`,
+          });
+        }
+        if (rule.integer && !Number.isInteger(num)) {
+          return res.status(400).json({ code: 4000, message: `${rule.label} 必须是整数` });
+        }
+        if (num > rule.max) {
+          return res.status(400).json({ code: 4000, message: `${rule.label} 不能超过 ${rule.max}` });
+        }
+        cleaned[key] = num;
+      }
+      nextOverrides = cleaned;
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    const before = user.limit_overrides || null;
+    const updated = (
+      await pool.query(
+        `UPDATE users SET limit_overrides = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [user.id, nextOverrides]
+      )
+    ).rows[0];
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.limits_override',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        reason,
+        cleared: nextOverrides === null,
+        before,
+        after: nextOverrides,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    try {
+      await sendNotification(user.id, {
+        notificationType: 'subscription_notice',
+        title: nextOverrides === null ? '你的存储配额已恢复为套餐标准' : '你的存储配额已调整',
+        body:
+          nextOverrides === null
+            ? '管理员已取消为你单独设置的配额，后续按当前套餐标准执行。'
+            : '管理员已为你单独调整了上传/存储配额，具体额度以客户端「订阅与用量」显示为准。',
+        data: { overrides: nextOverrides },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/users] limits override notify failed (ignored)', {
+        targetUserId: user.id,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/users] limits override updated', {
+      targetUserId: user.id,
+      cleared: nextOverrides === null,
+      operator: req.user?.userId,
+    });
+
+    const refreshed = await fetchUserById(user.id);
+    return res.json({
+      code: 0,
+      data: mapUserRow(refreshed || { ...user, ...updated }),
+      message:
+        nextOverrides === null
+          ? '已清除配额覆盖，该用户回到套餐标准'
+          : `已设置配额覆盖：${Object.entries(nextOverrides)
+              .map(([k, v]) => `${k}=${v === null ? '不限' : v}`)
+              .join(', ')}`,
+    });
+  } catch (err) {
+    logger.error('[admin/users] limits override failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '配额覆盖设置失败' });
   }
 });
 

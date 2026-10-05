@@ -89,6 +89,8 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：资料处置会改动**用户可见内容**（昵称/头像），与 notify 同为对外可见，
   // 限流是为了给"拿它批量刷用户资料"设上限。
   /^\/users\/[^/]+\/profile$/,
+  // 2026-10-05 新增：配额覆盖等于**单个放宽风控阈值**（存储/文件大小），必须限流。
+  /^\/users\/[^/]+\/limits$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

@@ -15,6 +15,7 @@ import {
   rebindUserIdentity,
   resetUserPassword,
   resetUserTwoFactor,
+  setUserLimits,
   updateUserStatus,
 } from '@/api/users';
 import { grantSubscription } from '@/api/subscriptions';
@@ -25,13 +26,14 @@ import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { RebindModal } from '@/components/RebindModal';
 import { ResetPasswordModal } from '@/components/ResetPasswordModal';
 import { TrialModal } from '@/components/TrialModal';
+import { UserLimitsModal } from '@/components/UserLimitsModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone } from '@/components/StatusTag/mappers';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
 import { fmtDate, fmtMoney, fmtTime } from '@/utils/format';
-import type { AdminSubscription } from '@/api/types';
+import type { AdminSubscription, LimitOverrides } from '@/api/types';
 import styles from './UserDrawer.module.css';
 
 interface UserDrawerProps {
@@ -97,6 +99,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [trialOpen, setTrialOpen] = useState(false);
   // 2026-10-05：违规昵称/头像处置
   const [moderateOpen, setModerateOpen] = useState(false);
+  // 2026-10-05：单用户配额覆盖（迁移 084）
+  const [limitsOpen, setLimitsOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -267,6 +271,24 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
         variables.clearAvatar ? '头像已清空，资料其余部分未改动' : '资料已处置'
       );
       setModerateOpen(false);
+    },
+  });
+
+  /** 2026-10-05：单用户配额覆盖（不影响同套餐其他人；服务端立即生效，无需重启） */
+  const limitsMutation = useMutation({
+    mutationFn: (
+      payload: { id: string; reason: string } & (
+        | { overrides: LimitOverrides }
+        | { clear: true }
+      )
+    ) =>
+      'clear' in payload
+        ? setUserLimits(payload.id, { reason: payload.reason, clear: true })
+        : setUserLimits(payload.id, { reason: payload.reason, overrides: payload.overrides }),
+    onSuccess: (_updated, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void message.success('clear' in variables ? '已清除配额覆盖' : '已设置配额覆盖');
+      setLimitsOpen(false);
     },
   });
 
@@ -496,6 +518,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* 2026-10-05：单用户配额覆盖（改套餐行会波及同套餐所有人，这是单人的口子） */}
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button disabled={!canManage} onClick={() => setLimitsOpen(true)}>
+                配额覆盖
+              </Button>
+            </span>
+          </Tooltip>
           {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
           <Tooltip title={canManage ? '' : '缺少权限'}>
             <span>
@@ -700,6 +730,21 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           confirmLoading={moderateMutation.isPending}
           onCancel={() => setModerateOpen(false)}
           onConfirm={(payload) => moderateMutation.mutateAsync({ id: user.id, ...payload })}
+        />
+
+        <UserLimitsModal
+          open={limitsOpen}
+          userLabel={user.nickname || user.phone || ''}
+          current={user.limitOverrides}
+          confirmLoading={limitsMutation.isPending}
+          onCancel={() => setLimitsOpen(false)}
+          onConfirm={(payload) =>
+            limitsMutation.mutateAsync(
+              'clear' in payload
+                ? { id: user.id, reason: payload.reason, clear: true }
+                : { id: user.id, reason: payload.reason, overrides: payload.overrides }
+            )
+          }
         />
       </>
     );

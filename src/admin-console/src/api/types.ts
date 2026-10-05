@@ -80,6 +80,19 @@ export interface AdminUser {
   lastActiveAt?: string | null;
   lastActiveDesc?: string;
   riskFlag?: string | null;
+  /**
+   * 2026-10-05（迁移 084）：单用户配额覆盖。`null` = 没有覆盖、全部沿用套餐值。
+   * 键值 `null` 表示该项**不限**。见 POST /api/admin/users/:id/limits。
+   */
+  limitOverrides?: LimitOverrides | null;
+}
+
+/** 单用户配额覆盖（稀疏补丁）：键缺失 = 沿用套餐；值为 null = 该项不限 */
+export interface LimitOverrides {
+  max_file_size_mb?: number | null;
+  max_storage_mb?: number | null;
+  max_files_per_clip?: number | null;
+  file_retention_days?: number | null;
 }
 
 export interface Device {

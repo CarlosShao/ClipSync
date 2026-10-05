@@ -3,6 +3,7 @@ import type {
   AdminUser,
   NotifyUserPayload,
   PageData,
+  LimitOverrides,
   UpdateUserStatusPayload,
   UserDetail,
   UserListParams,
@@ -61,6 +62,25 @@ export function moderateUserProfile(
   payload: { nickname?: string; avatarUrl?: string; clearAvatar?: boolean; reason: string }
 ): Promise<AdminUser> {
   return apiPatch<AdminUser>(`/admin/users/${id}/profile`, payload);
+}
+
+/**
+ * 2026-10-05 补（迁移 084）：单用户配额覆盖。
+ *
+ * 配额的唯一来源是 `subscription_plans`，而 `PATCH /admin/plans/:id` 改的是套餐行 ——
+ * 会同时影响该套餐下**所有人**。想单独给一个人提配额（客诉补偿/大客户/内部测试），
+ * 此前只能改库（无审计，且只改数据没改口径）。
+ *
+ * 两种用法（互斥）：
+ *  - `overrides`：稀疏补丁，键值 `null` 表示**该项不限**，键缺失表示沿用套餐；
+ *  - `clear: true`：清掉覆盖，回到纯套餐值。
+ * 权限 `admin.users.manage`；原因必填；审计 `admin.user.limits_override`。
+ */
+export function setUserLimits(
+  id: string,
+  payload: { reason: string; overrides?: LimitOverrides } | { reason: string; clear: true }
+): Promise<AdminUser> {
+  return apiPost<AdminUser>(`/admin/users/${id}/limits`, payload);
 }
 
 /**

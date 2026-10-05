@@ -34,6 +34,7 @@ const FALLBACK_LIMITS = {
   maxPerClipBytes: 20 * MB, // 单次总大小上限 = 同单文件上限
   maxStorageBytes: 200 * MB,
   fileRetentionDays: 3,
+  overrideApplied: false,
 };
 
 // 套餐升级路径：Free→Pro、Pro→Enterprise、Enterprise→null（未知套餐名保守推荐 Pro）
@@ -52,7 +53,17 @@ const QUOTA_ERROR_MESSAGES = {
 // 缓存失败状态也带 TTL，避免每次上传都多打一次 information_schema。
 // ─────────────────────────────────────────────────────────────────────────────
 const PLAN_COLUMN_TTL_MS = 60 * 1000;
-let planColumnCache = { checkedAt: 0, hasMaxFilesPerClip: false, hasFileRetentionDays: false };
+const planColumnCache = {
+  checkedAt: 0,
+  hasMaxFilesPerClip: false,
+  hasFileRetentionDays: false,
+  // 084 单用户配额覆盖列（users.limit_overrides）。
+  // 同样必须先探测：迁移在服务启动时执行，"新二进制 + 旧库"的窗口真实存在，
+  // 而直接 SELECT 一个不存在的列会让整条配额查询抛错 —— 本模块的兜底是
+  // FALLBACK_LIMITS（Free 级别），那等于把**全体用户静默降级**。
+  // 宁可退化成"没有覆盖"，也不能让查询炸。
+  hasLimitOverrides: false,
+};
 
 async function getPlanExtraColumns() {
   const now = Date.now();
@@ -61,26 +72,61 @@ async function getPlanExtraColumns() {
   }
   try {
     const res = await pool.query(
-      `SELECT column_name
+      `SELECT table_name, column_name
          FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name = 'subscription_plans'
-          AND column_name IN ('max_files_per_clip', 'file_retention_days')`
+          AND (
+            (table_name = 'subscription_plans'
+              AND column_name IN ('max_files_per_clip', 'file_retention_days'))
+            OR (table_name = 'users' AND column_name = 'limit_overrides')
+          )`
     );
-    const names = new Set(res.rows.map((r) => r.column_name));
-    planColumnCache = {
-      checkedAt: now,
-      hasMaxFilesPerClip: names.has('max_files_per_clip'),
-      hasFileRetentionDays: names.has('file_retention_days'),
-    };
+    const names = new Set(res.rows.map((r) => `${r.table_name}.${r.column_name}`));
+    planColumnCache.checkedAt = now;
+    planColumnCache.hasMaxFilesPerClip = names.has('subscription_plans.max_files_per_clip');
+    planColumnCache.hasFileRetentionDays = names.has('subscription_plans.file_retention_days');
+    planColumnCache.hasLimitOverrides = names.has('users.limit_overrides');
   } catch (err) {
     // 查询失败：保守视为缺列（SELECT 用 NULL 占位），不缓存"成功"状态语义
-    logger.warn('[planLimits] Failed to inspect subscription_plans columns, assuming legacy schema', {
+    logger.warn('[planLimits] Failed to inspect plan/user columns, assuming legacy schema', {
       error: err.message,
     });
-    planColumnCache = { checkedAt: now, hasMaxFilesPerClip: false, hasFileRetentionDays: false };
+    planColumnCache.checkedAt = now;
+    planColumnCache.hasMaxFilesPerClip = false;
+    planColumnCache.hasFileRetentionDays = false;
+    planColumnCache.hasLimitOverrides = false;
   }
   return planColumnCache;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 单用户配额覆盖（迁移 084，users.limit_overrides JSONB）
+//
+// 语义（与迁移注释一致）：
+//   键不存在 ⇒ 沿用套餐值（**存量用户全部走这条，行为零变化**）
+//   键存在且为数字 ⇒ 覆盖（单位与 subscription_plans 对应列一致：MB / 个数 / 天）
+//   键存在且为 null ⇒ 该项**不限**（与套餐行 NULL = 不限的既有语义一致）
+//
+// 脏数据（非数字、负数、NaN）一律**忽略**该键（回落到套餐值）——
+// 覆盖值写错不该让某个用户的配额变成 NaN 然后把所有上传判成超额。
+// ─────────────────────────────────────────────────────────────────────────────
+const OVERRIDE_KEYS = [
+  'max_file_size_mb',
+  'max_storage_mb',
+  'max_files_per_clip',
+  'file_retention_days',
+];
+
+/** @returns {number|null|undefined} undefined = 没覆盖；null = 覆盖为不限；number = 覆盖值 */
+export function resolveOverrideValue(rawOverrides, key) {
+  if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) {
+    return undefined;
+  }
+  if (!Object.prototype.hasOwnProperty.call(rawOverrides, key)) return undefined;
+  const value = rawOverrides[key];
+  if (value === null) return null;
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 ? num : undefined;
 }
 
 /**
@@ -96,7 +142,8 @@ async function getPlanExtraColumns() {
  */
 export async function getPlanLimits(userId) {
   try {
-    const { hasMaxFilesPerClip, hasFileRetentionDays } = await getPlanExtraColumns();
+    const { hasMaxFilesPerClip, hasFileRetentionDays, hasLimitOverrides } =
+      await getPlanExtraColumns();
 
     // 新列可能不存在（迁移未执行）：存在则读值，缺列用 NULL::integer 占位
     const maxFilesSel = hasMaxFilesPerClip
@@ -105,10 +152,13 @@ export async function getPlanLimits(userId) {
     const retentionSel = hasFileRetentionDays
       ? 'COALESCE(sp.file_retention_days, sp_free.file_retention_days) AS file_retention_days'
       : 'NULL::integer AS file_retention_days';
+    // 084：单用户配额覆盖列；缺列时用 NULL::jsonb 占位（等价于"没有覆盖"）
+    const overrideSel = hasLimitOverrides ? 'u.limit_overrides' : 'NULL::jsonb AS limit_overrides';
 
     const res = await pool.query(
       `SELECT
          u.is_admin,
+         ${overrideSel},
          us.plan_id,
          COALESCE(sp.name, sp_free.name) AS plan_name,
          COALESCE(sp.max_file_size_mb, sp_free.max_file_size_mb) AS max_file_size_mb,
@@ -146,11 +196,41 @@ export async function getPlanLimits(userId) {
         maxPerClipBytes: null,
         maxStorageBytes: null,
         fileRetentionDays: null,
+        // admin 天然不受限，覆盖对它没有意义（也不会让人从"不受限"变回受限）
+        overrideApplied: false,
       };
     }
 
-    const maxFileSizeMb = row.max_file_size_mb != null ? Number(row.max_file_size_mb) : null;
-    const maxStorageMb = row.max_storage_mb != null ? Number(row.max_storage_mb) : null;
+    // 单用户配额覆盖（084）：在套餐值之上叠加稀疏补丁。
+    // 注意顺序 —— **覆盖优先于套餐**，这正是这个功能的意义；
+    // 而 admin 的"不受限"在最前面已经 return 掉了，覆盖不会把人变回受限。
+    const overrides = row.limit_overrides;
+    const applyOverride = (key, planValue) => {
+      const ov = resolveOverrideValue(overrides, key);
+      if (ov === undefined) return planValue; // 没覆盖 ⇒ 套餐值
+      return ov; // null = 不限；数字 = 覆盖值
+    };
+    const overrideApplied = OVERRIDE_KEYS.some(
+      (key) => resolveOverrideValue(overrides, key) !== undefined
+    );
+
+    const maxFileSizeMb = applyOverride(
+      'max_file_size_mb',
+      row.max_file_size_mb != null ? Number(row.max_file_size_mb) : null
+    );
+    const maxStorageMb = applyOverride(
+      'max_storage_mb',
+      row.max_storage_mb != null ? Number(row.max_storage_mb) : null
+    );
+    const maxFilesPerClip = applyOverride(
+      'max_files_per_clip',
+      row.max_files_per_clip != null ? Number(row.max_files_per_clip) : null
+    );
+    const fileRetentionDays = applyOverride(
+      'file_retention_days',
+      row.file_retention_days != null ? Number(row.file_retention_days) : null
+    );
+
     const maxFileSizeBytes = maxFileSizeMb != null ? maxFileSizeMb * MB : null;
 
     return {
@@ -158,10 +238,12 @@ export async function getPlanLimits(userId) {
       planId: row.plan_id || null,
       isUnlimited: false,
       maxFileSizeBytes,
-      maxFilesPerClip: row.max_files_per_clip != null ? Number(row.max_files_per_clip) : null,
+      maxFilesPerClip,
       maxPerClipBytes: maxFileSizeBytes, // 单次多文件总大小上限 = 同单文件上限
       maxStorageBytes: maxStorageMb != null ? maxStorageMb * MB : null,
-      fileRetentionDays: row.file_retention_days != null ? Number(row.file_retention_days) : null,
+      fileRetentionDays,
+      // 是否真的叠加了覆盖（供管理台/排查用；取值口径与上面逐项判定一致）
+      overrideApplied,
     };
   } catch (err) {
     // 主查询失败（DB 不可达等）：降级兜底限值，保证上传入口不 500（与旧行为一致）

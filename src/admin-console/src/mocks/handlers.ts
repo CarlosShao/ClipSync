@@ -549,6 +549,82 @@ const usersHandlers = [
     );
   }),
 
+  /**
+   * 2026-10-05 补：单用户配额覆盖（迁移 084）。
+   * mock 只写内存 + 审计；配额如何叠加到套餐值由真实后端 planLimits 决定，mock 不模拟。
+   */
+  http.post('/api/admin/users/:id/limits', async ({ request, params }) => {
+    await delay(250);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as {
+      reason?: string;
+      overrides?: Record<string, unknown>;
+      clear?: boolean;
+    };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '调整配额必须填写原因（写入审计日志）');
+    const clear = body.clear === true;
+    const hasOverrides = body.overrides !== undefined && body.overrides !== null;
+    if (clear && hasOverrides) return fail(400, 4000, 'clear 与 overrides 只能给一个');
+    if (!clear && !hasOverrides) {
+      return fail(400, 4000, '请给 overrides（设置覆盖）或 clear:true（清除覆盖）');
+    }
+    const RULES: Record<string, { max: number; integer: boolean }> = {
+      max_file_size_mb: { max: 10240, integer: false },
+      max_storage_mb: { max: 1048576, integer: false },
+      max_files_per_clip: { max: 10000, integer: true },
+      file_retention_days: { max: 3650, integer: true },
+    };
+    let next: Record<string, number | null> | null = null;
+    if (!clear) {
+      const raw = body.overrides as Record<string, unknown>;
+      if (typeof raw !== 'object' || Array.isArray(raw)) {
+        return fail(400, 4000, 'overrides 必须是对象');
+      }
+      const keys = Object.keys(raw);
+      if (keys.length === 0) return fail(400, 4000, 'overrides 不能是空对象（要清除覆盖请用 clear:true）');
+      const unknown = keys.filter((k) => !Object.prototype.hasOwnProperty.call(RULES, k));
+      if (unknown.length > 0) {
+        return fail(400, 4000, `不支持的配额键：${unknown.join(', ')}`);
+      }
+      next = {};
+      for (const key of keys) {
+        const value = raw[key];
+        if (value === null) {
+          next[key] = null;
+          continue;
+        }
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+          return fail(400, 4000, `${key} 必须是非负数字或 null（null = 不限）`);
+        }
+        if (RULES[key]!.integer && !Number.isInteger(num)) {
+          return fail(400, 4000, `${key} 必须是整数`);
+        }
+        if (num > RULES[key]!.max) return fail(400, 4000, `${key} 不能超过 ${RULES[key]!.max}`);
+        next[key] = num;
+      }
+    }
+    const before = user.limitOverrides ?? null;
+    user.limitOverrides = next;
+    pushAudit(
+      'admin.user.limits_override',
+      'user',
+      id,
+      `target=${user.nickname}, cleared=${next === null}, before=${JSON.stringify(before)}, after=${JSON.stringify(next)}, reason="${reason}"`,
+    );
+    return ok(
+      user,
+      next === null
+        ? '已清除配额覆盖，该用户回到套餐标准'
+        : `已设置配额覆盖：${Object.entries(next)
+            .map(([k, v]) => `${k}=${v === null ? '不限' : v}`)
+            .join(', ')}`,
+    );
+  }),
+
   /** 2026-10-05 补：重置两步验证（对齐后端 users.js 的 /:id/reset-2fa：清空四列即完成） */
   http.post('/api/admin/users/:id/reset-2fa', async ({ params }) => {
     await delay(250);

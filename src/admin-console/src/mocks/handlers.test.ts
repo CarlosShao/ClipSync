@@ -1049,6 +1049,53 @@ describe('PATCH /api/admin/users/:id/profile（违规昵称/头像处置）', ()
   });
 });
 
+describe('POST /api/admin/users/:id/limits（单用户配额覆盖）', () => {
+  test('设置覆盖：写内存 + 审计记改动前后；null 表示该项不限', async () => {
+    const user = mockUsers[0]!;
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<{ limitOverrides: Record<string, number | null> }>(
+        `/api/admin/users/${user.id}/limits`,
+        { reason: '客诉补偿', overrides: { max_storage_mb: 51200, file_retention_days: null } },
+      ),
+    );
+
+    expect(data.limitOverrides).toEqual({ max_storage_mb: 51200, file_retention_days: null });
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.limits_override');
+    expect(mockAuditLogs[0]?.details).toContain('客诉补偿');
+  });
+
+  test('★未知键 → 400；clear:true → 清空；clear 与 overrides 互斥', async () => {
+    const id = mockUsers[0]!.id;
+    const bad = await post(`/api/admin/users/${id}/limits`, {
+      reason: 'x',
+      overrides: { max_devices: 99 },
+    });
+    expect(bad.status).toBe(400);
+    expect(expectFail(bad).message).toContain('max_devices');
+
+    expect(
+      (
+        await post(`/api/admin/users/${id}/limits`, {
+          reason: 'x',
+          clear: true,
+          overrides: { max_storage_mb: 1 },
+        })
+      ).status,
+    ).toBe(400);
+
+    const cleared = expectOk(
+      await post<{ limitOverrides: unknown }>(`/api/admin/users/${id}/limits`, {
+        reason: '补偿结束',
+        clear: true,
+      }),
+    );
+    expect(cleared.data.limitOverrides).toBeNull();
+  });
+});
+
 describe('POST /api/admin/users/:id/reset-password（代重置密码）', () => {
   test('返回一次性临时密码 + 写审计（且审计里不含密码）', async () => {
     const user = mockUsers[0]!;
