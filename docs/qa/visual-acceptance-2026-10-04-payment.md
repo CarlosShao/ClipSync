@@ -86,7 +86,20 @@
 ### A7. 订阅管理 / 套餐与价格
 - **入口**：侧栏「业务运营」→ 订阅管理 `/subscriptions`；「配置」→ 套餐与价格 `/plans`
 - **期望**：订阅表可看状态并有「赠期」弹窗；套餐页可改价格/配额/features（**注意**：改 features/限额会**即时影响已购用户**，改价只影响新单）
-- **锚点**：`pages/subscriptions/index.tsx:61-80`、`pages/plans/index.tsx:23-32`
+- **2026-10-05 新增**：操作列多了一个 **「收回」**（红字，已终止的行不显示）→ 弹窗选生效方式（立即收回 / 期末收回）+ 原因必填。
+  - **反例验证（保护闸）**：对一张**有真实已付订单**的订阅点「收回」→ 必须被拒（提示走「退款审核」），且**订阅行与用户档位都不得变化**
+  - 反例验证（正常）：对**赠期出来**的订阅点「立即收回」→ 订阅终止、用户回落免费版、收到一条站内通知
+- **锚点**：`pages/subscriptions/index.tsx`、`pages/subscriptions/RevokeSubscriptionModal.tsx`、服务端 `routes/admin/subscriptions.js` 的 `/:id/revoke`
+
+### A8. 运营能力（2026-10-05 新增）
+- **入口**：侧栏「用户管理」→ 点开某用户详情抽屉 → 「管理操作」区
+- **期望**：
+  - **「发站内通知」**按钮（权限键 `admin.announce.send`，与 users.manage 分开）→ 弹窗选类型 + 标题 + 内容
+  - 发送后应看到**如实的触达提示**：对方在线 → 「N 台在线设备已实时收到」；不在线 → 「对方当前不在线，下次打开客户端即可在通知中心看到」（**不得谎报已送达**）
+  - 对方客户端**不需要升级**：通知落在已有「通知中心」（四个类型分别映射到 更新/订阅/设备/安全 分类）
+- **同区已有的其它动作**：赠期 1 个月 / 强制下线 / 停用·启用 / 删除账户 / 导出数据
+- **锚点**：`components/UserDrawer/index.tsx`、`components/NotifyUserModal/index.tsx`、服务端 `routes/admin/users.js` 的 `/:id/notify`
+- **系统盘点**：管理台还缺哪些「不改库就做不了」的动作，见 [`docs/audit/admin-console-db-only-gaps-2026-10-05.md`](../audit/admin-console-db-only-gaps-2026-10-05.md)
 
 ---
 

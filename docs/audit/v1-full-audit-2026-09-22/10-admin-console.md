@@ -75,6 +75,8 @@ export function mockInterceptsApi(): boolean {
 | 13 | `PATCH /admin/plans/:id` 白名单 11 字段 | `plans.js:114-127` `FIELD_VALIDATORS` 同 11 键 | ✅ | 逐键核对无差 |
 | 14 | 时间字段格式 | 两种混用 | ❌ **S2-1** | 见下节 |
 | 15 | 其余 54 个端点（users/devices/orders/roles/policies/releases/sessions/ai-providers/email-channels/ops ×7/overview/audit/announcements/permissions/whoami） | — | ✅ | URL、方法、参数名、响应壳 `{code,data,message}` 逐一对齐，未发现差异 |
+| 16 | `POST /admin/subscriptions/:id/revoke` `{reason,mode}`（**2026-10-05 新增**） | `subscriptions.js` 的 `/:id/revoke`：`mode` 缺省 `immediate`；有真实已付订单 ⇒ 409 `HAS_PAID_ORDER` | ✅ | 保护闸是该端点的核心设计（用户花钱买到的权益不能在管理台撤销，只能走退款）；权限刻意复用 `admin.subscriptions.grant`，避免为语义细分动 043 权限目录的迁移 |
+| 17 | `POST /admin/users/:id/notify` `{title,body,notificationType?}`（**2026-10-05 新增**） | `users.js` 的 `/:id/notify`：类型走服务端白名单（4 类），返回 `onlineDevices` | ✅ | 权限刻意用 `admin.announce.send`（对外触达类）而非 `users.manage`；刻意**不**读 `notification_preferences`（用户关掉产品推送不该屏蔽客服私信）。清单与前后端对齐见 `docs/audit/admin-console-db-only-gaps-2026-10-05.md` |
 
 ### 时间戳格式（S2-1 的证据表）
 
