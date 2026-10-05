@@ -10,6 +10,8 @@
 // 上游链（index.js 顶层已装配）：authenticateToken → requireRole(50) → superAdminAudit
 // 本文件额外细粒度权限：
 //   - POST /orders/:orderNo/refund  → requirePerm('admin.orders.refund')（高危，仅退款权限）
+//   - POST /orders/:orderNo/fulfill → requirePerm('admin.orders.refund')（2026-10-05：人工补履约，
+//                                      高危；**先向支付宝核实到账**再履约，详见该路由注释）
 //   - GET  /reconciliation          → requirePerm('admin.orders.reconcile')（对账查看）
 //   - GET  /orders, /orders/:orderNo → requirePerm('admin.orders.view')（RB-06）
 //
@@ -33,6 +35,8 @@ import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { refundPaidOrder, RefundError } from '../../services/refund.js';
+import { markOrderPaid } from '../../services/orderFulfillment.js';
+import { queryTrade } from '../../utils/alipay.js';
 import { roundToCent } from '../../services/proration.js';
 
 const router = Router();
@@ -405,6 +409,202 @@ router.post('/:orderNo/refund', requirePerm('admin.orders.refund'), async (req, 
   } catch (err) {
     logger.error('[admin/orders] refund failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '退款执行失败' });
+  }
+});
+
+// ───────────────────────── 人工补履约 ─────────────────────────
+
+/**
+ * POST /api/admin/orders/:orderNo/fulfill  body { reason }
+ * 人工补履约（2026-10-05 新增）—— 渠道回调丢失时「钱到了、货没到」的唯一人工出口。
+ *
+ * 为什么之前只能改库：履约函数 `markOrderPaid` 只有两个调用来源 —— 渠道回调
+ *（paymentWebhooks.js）与**用户自己**查单兜底（payments.js，且限定 `user_id = 自己`）。
+ * admin 侧零落点，于是「用户付了钱、回调没到、他也不再去点开客户端」这种情况只能干等，
+ * 或者改库复刻整段事务（订阅 + 发票 + users 快照，漏一步就不一致）。
+ *
+ * ⚠️ 本端点最重要的设计：**必须先向渠道核实到账，再履约**。
+ *   - `queryTrade(orderNo)` 取渠道 `trade_status`；不是 TRADE_SUCCESS / TRADE_FINISHED 一律拒
+ *     —— 绝不允许「管理员点一下就把货开了」（那就是凭空发货）；
+ *   - 把渠道回的 `total_amount` 作为 `expectedAmount` 交给 markOrderPaid，
+ *     **金额闸照旧生效**（不符会拒并落 `metadata.amount_mismatch`，进看板第 6 类待办）；
+ *   - 渠道没回金额 → 也拒（fail-closed：无从核对就不发）；
+ *   - 渠道调用失败（未配置/网络）→ 503（核实不了就不动）。
+ *
+ * 其余口径**不另立一套**，与 markOrderPaid 保持一致：
+ *   - 已履约（paid）→ 409；
+ *   - cancelled / failed → 409，**不**补履约（服务里就写着「已取消/失败的订单不接受支付，
+ *     需人工介入退款」）—— 这种残留单应当走退款把钱退回去，而不是把货给出去；
+ *   - refunded → 409（钱已退回，再发货等于白送）；
+ *   - 非支付宝渠道（mock / 历史单）→ 409（无法向渠道核实，禁止履约）。
+ *
+ * 权限复用 admin.orders.refund：同属「资金级订单写操作」，能决定这笔钱去向的人本就该能
+ * 决定发不发货；也避免为细分语义去动 043 权限目录的迁移（生产落后分支很远，不值得冒险）。
+ */
+router.post('/:orderNo/fulfill', requirePerm('admin.orders.refund'), async (req, res) => {
+  try {
+    const { orderNo } = req.params;
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+
+    if (!orderNo || typeof orderNo !== 'string') {
+      return res.status(400).json({ code: 4000, message: '订单号不合法' });
+    }
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '补履约原因必填（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const { rows } = await pool.query(`${ORDER_SELECT} WHERE po.order_no = $1`, [orderNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '订单不存在' });
+    }
+    const found = rows[0];
+
+    if (found.status === 'paid') {
+      return res
+        .status(409)
+        .json({ code: 40904, reason: 'ALREADY_PAID', message: '该订单已履约，无需补履约' });
+    }
+    if (found.status === 'refunded') {
+      return res.status(409).json({
+        code: 40904,
+        reason: 'ALREADY_REFUNDED',
+        message: '该订单已退款，不能再补履约（钱已退回，再发货等于白送）',
+      });
+    }
+    if (found.status === 'cancelled' || found.status === 'failed') {
+      return res.status(409).json({
+        code: 40904,
+        reason: 'ORDER_NOT_PAYABLE',
+        message: `该订单已${found.status === 'cancelled' ? '关闭' : '失败'}：按既有口径不接受补履约，若渠道确有到账请用「退款」把钱原路退回`,
+      });
+    }
+    if (found.channel !== 'alipay') {
+      return res.status(409).json({
+        code: 40904,
+        reason: 'CHANNEL_UNVERIFIABLE',
+        message: `该订单渠道为 ${found.channel}，无法向渠道核实到账，禁止补履约`,
+      });
+    }
+
+    // ★先向渠道核实 —— 不是"管理员说有就有"
+    let trade;
+    try {
+      trade = await queryTrade(orderNo);
+    } catch (err) {
+      logger.error('[admin/orders] fulfill: channel query failed', { orderNo, error: err.message });
+      return res.status(503).json({
+        code: 5030,
+        reason: 'CHANNEL_QUERY_FAILED',
+        message: '无法向支付宝核实该订单（未配置或网络异常），已拒绝履约',
+      });
+    }
+
+    const tradeStatus = trade.tradeStatus || null;
+    if (!trade.paid) {
+      return res.status(409).json({
+        code: 40904,
+        reason: 'CHANNEL_NOT_PAID',
+        channelTradeStatus: tradeStatus,
+        message: `支付宝返回该订单未支付（trade_status=${tradeStatus ?? '未知'}），拒绝履约`,
+      });
+    }
+    const channelAmount =
+      trade.raw && trade.raw.total_amount != null ? String(trade.raw.total_amount) : '';
+    if (!channelAmount) {
+      return res.status(409).json({
+        code: 40904,
+        reason: 'CHANNEL_AMOUNT_MISSING',
+        message: '支付宝未回传订单金额，无从核对，已拒绝履约（fail-closed）',
+      });
+    }
+
+    const result = await markOrderPaid({
+      orderNo,
+      transactionId: trade.tradeNo || null,
+      channel: 'alipay',
+      expectedAmount: channelAmount,
+      rawPayload: {
+        source: 'admin_manual_fulfill',
+        tradeStatus,
+        tradeNo: trade.tradeNo || null,
+        operator: req.user?.userId ?? null,
+      },
+    });
+
+    if (!result.ok) {
+      // 如实回传失败原因，不吞：金额不符/状态竞态都是要人工看的
+      const failureMap = {
+        order_cancelled: [409, 40904, '该订单已关闭，不接受补履约（请走退款）'],
+        order_failed: [409, 40904, '该订单为失败态，不接受补履约'],
+        amount_mismatch: [
+          409,
+          40905,
+          `渠道金额(${channelAmount})与订单金额不一致，已拒绝履约并留痕，请人工核账`,
+        ],
+        order_not_found: [404, 40404, '订单不存在'],
+      };
+      const [status, code, message] = failureMap[result.reason] || [
+        409,
+        40904,
+        `补履约被拒绝（${result.reason}）`,
+      ];
+      return res.status(status).json({ code, reason: result.reason, message });
+    }
+
+    // 并发竞态：我们读到的是 pending，但 markOrderPaid 执行时已被渠道回调履约完成。
+    // 目标状态**已达成**，所以按成功回（与 webhook 把 already_paid 当 success 同一口径）；
+    // 但文案必须说清"这不是本次操作做的"，并且**不写** manual_fulfill 审计 ——
+    // 否则审计里会出现一条"管理员补了履约"，而实际上货是回调开的。
+    if (result.reason === 'already_paid') {
+      const { rows: racedRows } = await pool.query(`${ORDER_SELECT} WHERE po.order_no = $1`, [
+        orderNo,
+      ]);
+      return res.json({
+        code: 0,
+        data: racedRows[0] ? mapOrderRow(racedRows[0]) : null,
+        message: '该订单已在本次操作期间由渠道回调完成履约，无需重复操作',
+      });
+    }
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.order.manual_fulfill',
+      resourceType: 'payment_order',
+      resourceId: String(result.order?.id ?? found.id),
+      details: {
+        orderNo,
+        targetUserId: found.user_id,
+        amount: found.amount,
+        // 留痕：这次履约是**凭渠道核实结果**做的，把核实到的东西一并记下
+        channelTradeStatus: tradeStatus,
+        channelAmount,
+        transactionId: trade.tradeNo || null,
+        reason,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/orders] manual fulfill executed', {
+      orderNo,
+      tradeStatus,
+      channelAmount,
+      operator: req.user?.userId,
+    });
+
+    const { rows: afterRows } = await pool.query(`${ORDER_SELECT} WHERE po.order_no = $1`, [orderNo]);
+    return res.json({
+      code: 0,
+      data: afterRows[0] ? mapOrderRow(afterRows[0]) : null,
+      message: `已按渠道核实结果补履约（支付宝 ${tradeStatus}，金额 ${channelAmount}）`,
+    });
+  } catch (err) {
+    logger.error('[admin/orders] fulfill failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '补履约失败' });
   }
 });
 

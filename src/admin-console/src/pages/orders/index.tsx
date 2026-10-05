@@ -4,12 +4,13 @@ import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { OrderDetailModal } from '@/components/OrderDetailModal';
+import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { PageHeader } from '@/components/PageHeader';
 import { RefundModal } from '@/components/RefundModal';
 import { ReconciliationModal } from '@/components/ReconciliationModal';
 import { StatusTag } from '@/components/StatusTag';
 import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers';
-import { fetchAllOrders, getOrders, isOrderRefundable, refundOrder } from '@/api/orders';
+import { fetchAllOrders, fulfillOrder, getOrders, isOrderRefundable, refundOrder } from '@/api/orders';
 import { buildOrdersCsv, buildOrdersCsvFilename, downloadTextFile } from './ordersCsv';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
@@ -94,6 +95,8 @@ export default function OrdersPage() {
   const [draftQ, setDraftQ] = useState<string>('');
   const [detailNo, setDetailNo] = useState<string | null>(null);
   const [refundTarget, setRefundTarget] = useState<Order | null>(null);
+  // 2026-10-05：人工补履约（回调丢失时"钱到了货没到"的唯一出口）
+  const [fulfillTarget, setFulfillTarget] = useState<Order | null>(null);
   const [reconcileOpen, setReconcileOpen] = useState(false);
 
   const { tableProps, filters, setFilters } = useTableQuery<Order, OrderFilters>({
@@ -163,6 +166,25 @@ export default function OrdersPage() {
 
   // RB-07：退款为高危操作（admin.orders.refund superAdminOnly），按钮按权限裁剪
   const canRefund = hasPerm('admin.orders.refund');
+
+  /**
+   * 2026-10-05：人工补履约。失效面与退款相同 —— 履约会开订阅、落发票、改 users 快照，
+   * 所以订单/订阅/用户/看板/审计都要跟着刷。
+   */
+  const fulfillMutation = useMutation({
+    mutationFn: (payload: { orderNo: string; reason: string }) =>
+      fulfillOrder(payload.orderNo, { reason: payload.reason }),
+    onSuccess: (_order, variables) => {
+      invalidateRefundScope();
+      void message.success(`已按渠道核实结果补履约：${variables.orderNo}`);
+      setFulfillTarget(null);
+    },
+    onError: () => {
+      // 被渠道闸拒（未支付/金额不符/已关闭）时订单可能已被服务端改动（如落 amount_mismatch），
+      // 同样要重新拉取，让运营看到真实状态再决定下一步（弹窗保持打开）
+      invalidateRefundScope();
+    },
+  });
 
   // AF-14：导出当前筛选下的全部订单（pageSize=200 分页拉取，上限 1 万条）
   const [exporting, setExporting] = useState(false);
@@ -240,6 +262,12 @@ export default function OrdersPage() {
         // 异常到账（渠道已收款、本地未履约）：与常规已支付单走同一端点，但口径完全不同，
         // 提示必须分开写，否则运营会以为是「用户申请退款」那套流程
         const abnormalPaid = refundable && record.status !== 'paid';
+        /**
+         * 2026-10-05：人工补履约只对**待支付**的支付宝单出现 —— 那正是"回调丢了"的现场。
+         * 给按钮 ≠ 能给货：服务端会先 `alipay.trade.query` 核实到账，未支付一律拒。
+         * 已关闭/失败的残留单**刻意不在这里**（既有口径：那种单走退款把钱退回去）。
+         */
+        const fulfillable = record.status === 'pending' && record.channel === 'alipay';
         return (
           <span onClick={(e) => e.stopPropagation()}>
             <Button size="small" onClick={() => setDetailNo(record.orderNo)}>
@@ -264,6 +292,26 @@ export default function OrdersPage() {
                     onClick={() => setRefundTarget(record)}
                   >
                     {abnormalPaid ? '异常退款' : '退款'}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : null}
+            {fulfillable ? (
+              <Tooltip
+                title={
+                  !canRefund
+                    ? '缺少权限'
+                    : '回调丢失时用：先向支付宝核实到账，核实通过才开通权益（未支付会被拒）'
+                }
+              >
+                <span>
+                  <Button
+                    size="small"
+                    style={{ marginLeft: 6 }}
+                    disabled={!canRefund}
+                    onClick={() => setFulfillTarget(record)}
+                  >
+                    补履约
                   </Button>
                 </span>
               </Tooltip>
@@ -377,6 +425,25 @@ export default function OrdersPage() {
       />
 
       <ReconciliationModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
+
+      {/* 人工补履约：原因必填；真正的闸在服务端（先向支付宝核实到账），这里只负责说清规则 */}
+      <ConfirmReasonModal
+        open={Boolean(fulfillTarget)}
+        title="人工补履约"
+        description={
+          <>
+            即将为订单 <b>{fulfillTarget?.orderNo}</b>（{fmtMoney(fulfillTarget?.amount ?? 0)}）
+            补开权益。服务端会<b>先向支付宝核实这笔是否真的到账</b>：未支付、金额不符、
+            或订单已关闭/失败都会被拒 —— 本操作不能凭空发货，也不会改变「已关闭单走退款」的既有口径。
+          </>
+        }
+        confirmText="核实并补履约"
+        confirmLoading={fulfillMutation.isPending}
+        onCancel={() => setFulfillTarget(null)}
+        onConfirm={(reason) =>
+          fulfillMutation.mutateAsync({ orderNo: fulfillTarget?.orderNo ?? '', reason })
+        }
+      />
     </>
   );
 }

@@ -81,6 +81,8 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：换绑登录标识是**账号接管链路的第一环**
   //（换到自己控制的手机号 → 再走忘记密码），必须限流。
   /^\/users\/[^/]+\/rebind$/,
+  // 2026-10-05 新增：人工补履约 = 凭渠道核实结果开通权益，与退款同属资金级写操作。
+  /^\/orders\/[^/]+\/fulfill$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

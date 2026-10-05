@@ -1028,3 +1028,35 @@ describe('POST /api/admin/users/:id/rebind（换绑登录标识）', () => {
     ).toBe(404);
   });
 });
+
+describe('POST /api/admin/orders/:orderNo/fulfill（人工补履约）', () => {
+  const paidOrder = mockOrders.find((o) => o.status === 'paid')!;
+  const pendingOrder = mockOrders.find((o) => o.status === 'pending');
+
+  test('★mock 里永不真的履约：待支付单返回 409「渠道未确认到账」（不能凭空开权益）', async () => {
+    if (!pendingOrder) throw new Error('mock 数据缺少 pending 订单，无法验证该路径');
+    const auditBefore = mockAuditLogs.length;
+
+    const resp = await post(`/api/admin/orders/${pendingOrder.orderNo}/fulfill`, {
+      reason: '用户说付了',
+    });
+
+    expect(resp.status).toBe(409);
+    const err = expectFail(resp);
+    expect(err.message).toContain('未支付');
+    // 没有任何审计 —— 因为什么都没做
+    expect(mockAuditLogs.length).toBe(auditBefore);
+  });
+
+  test('已支付单 → 409 已履约；缺原因 → 400；订单不存在 → 404', async () => {
+    expect(
+      (await post(`/api/admin/orders/${paidOrder.orderNo}/fulfill`, { reason: 'x' })).status,
+    ).toBe(409);
+    if (pendingOrder) {
+      expect(
+        (await post(`/api/admin/orders/${pendingOrder.orderNo}/fulfill`, {})).status,
+      ).toBe(400);
+    }
+    expect((await post('/api/admin/orders/ORD_nope/fulfill', { reason: 'x' })).status).toBe(404);
+  });
+});

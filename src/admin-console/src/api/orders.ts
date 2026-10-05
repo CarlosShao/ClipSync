@@ -32,6 +32,21 @@ export function refundOrder(orderNo: string, payload: RefundPayload): Promise<Or
 }
 
 /**
+ * 2026-10-05 新增：人工补履约（渠道回调丢失时「钱到了、货没到」的唯一人工出口）。
+ *
+ * **服务端会先向支付宝核实到账**（`alipay.trade.query`）：
+ *   - 未支付 → 409（拒绝凭空发货）
+ *   - 核实调用失败 → 503
+ *   - 渠道没回金额 → 409（fail-closed）
+ *   - 渠道金额与订单金额不符 → 409（并落 metadata.amount_mismatch 进看板待办）
+ * 权限：`admin.orders.refund`（与退款同属资金级写操作）；原因必填写审计 admin.order.manual_fulfill。
+ * 因此前端**给按钮不等于能给货**：真正的闸在渠道那一次查询上。
+ */
+export function fulfillOrder(orderNo: string, payload: { reason: string }): Promise<Order> {
+  return apiPost<Order>(`/admin/orders/${orderNo}/fulfill`, payload);
+}
+
+/**
  * 对账报告（按渠道汇总笔数 / 成交额 / 退款额）。
  * 服务端口径：本站 payment_orders 近 30 天 paid/refunded 订单聚合，
  * generatedAt = 请求时刻（不是渠道日终对账文件）。

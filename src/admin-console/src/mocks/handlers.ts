@@ -593,6 +593,34 @@ const ordersHandlers = [
     };
     return ok(report);
   }),
+
+  /**
+   * 2026-10-05 补：人工补履约。
+   *
+   * ⚠️ mock 里**没有渠道**，所以一律按「渠道未确认到账」处理 ⇒ 返回 409，永不真的履约。
+   * 这是**刻意的保守方向**：mock 绝不能凭空开权益（那正是这个端点在真实环境要防的事）。
+   * 因此本机 mock 模式只能验证"拒绝路径 + 文案"，**成功路径必须在真实后端验**
+   *（需要一笔支付宝确实到账、但回调没到的单）。
+   */
+  http.post('/api/admin/orders/:orderNo/fulfill', async ({ request, params }) => {
+    await delay(300);
+    const orderNo = params['orderNo'] as string;
+    const order = mockOrders.find((o) => o.orderNo === orderNo);
+    if (!order) return fail(404, 40404, '订单不存在');
+    const body = (await request.json()) as { reason?: string };
+    if (!body.reason?.trim()) return fail(400, 4000, '补履约原因必填（写入审计日志）');
+    if (order.status === 'paid') {
+      return fail(409, 40904, '该订单已履约，无需补履约');
+    }
+    if (order.status === 'cancelled' || order.status === 'failed') {
+      return fail(409, 40904, '该订单已关闭：按既有口径不接受补履约，请用「退款」把钱原路退回');
+    }
+    return fail(
+      409,
+      40904,
+      '支付宝返回该订单未支付（trade_status=WAIT_BUYER_PAY），拒绝履约（mock 环境没有真实渠道，故一律视为未到账）',
+    );
+  }),
 ];
 
 // ───────────────────────── 审计 ─────────────────────────
