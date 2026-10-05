@@ -24,6 +24,7 @@ import {
   patchFlag,
   sendAnnouncement,
   testSms,
+  withdrawAnnouncement,
 } from '@/api/configs';
 // AN-16：邮件通道管理（多 SMTP 账号 + 按用途路由 + failover，替代原「邮件 (SMTP)」参数卡）
 import {
@@ -268,6 +269,22 @@ export default function SettingsPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.announcements() });
       void message.success('公告已下发');
       announceForm.resetFields();
+    },
+  });
+
+  /**
+   * 2026-10-05：撤回公告（软撤回，迁移 085）。
+   * 撤回后客户端不再拉取到它，但送达/已读/点击统计都保留（服务端刻意不硬删）。
+   */
+  const [withdrawTarget, setWithdrawTarget] = useState<Announcement | null>(null);
+  const withdrawMutation = useMutation({
+    mutationFn: (payload: { id: string; reason: string }) =>
+      withdrawAnnouncement(payload.id, { reason: payload.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.announcements() });
+      void queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      void message.success('公告已撤回：客户端不再展示，历史与送达/已读统计保留');
+      setWithdrawTarget(null);
     },
   });
 
@@ -799,6 +816,25 @@ export default function SettingsPage() {
                 {(item.reachedCount ?? 0).toLocaleString('zh-CN')} · 已读{' '}
                 {(item.readCount ?? 0).toLocaleString('zh-CN')} · 点击{' '}
                 {(item.clickedCount ?? 0).toLocaleString('zh-CN')}
+                {/* 2026-10-05：已撤回标记 + 撤回入口（软撤回：统计保留，只让客户端不再看到） */}
+                {item.withdrawnAt ? (
+                  <span style={{ marginLeft: 8, color: 'var(--text-3)' }}>
+                    已撤回（{item.withdrawnAt.slice(5, 16)}）
+                  </span>
+                ) : (
+                  <Tooltip title={canSendAnnouncement ? '撤回后客户端不再展示（发送/已读统计保留）' : '缺少权限'}>
+                    <Button
+                      size="small"
+                      danger
+                      type="link"
+                      style={{ marginLeft: 8, padding: 0 }}
+                      disabled={!canSendAnnouncement}
+                      onClick={() => setWithdrawTarget(item)}
+                    >
+                      撤回
+                    </Button>
+                  </Tooltip>
+                )}
               </div>
             ))}
             {(announcements ?? []).length === 0 ? (
@@ -1199,6 +1235,30 @@ export default function SettingsPage() {
         onConfirm={(reason) => {
           if (deleteChannelTarget) {
             deleteChannelMutation.mutate({ channel: deleteChannelTarget, reason });
+          }
+        }}
+      />
+
+      {/* 2026-10-05：撤回公告（软撤回 —— 客户端不再展示，送达/已读/点击统计保留） */}
+      <ConfirmReasonModal
+        open={withdrawTarget !== null}
+        title={`撤回公告：「${withdrawTarget?.title ?? ''}」`}
+        description={
+          <>
+            撤回后客户端<b>不再拉取到这条公告</b>；但服务端刻意<b>不硬删</b> ——
+            送达 {(withdrawTarget?.deliveredCount ?? 0).toLocaleString('zh-CN')} · 触达{' '}
+            {(withdrawTarget?.reachedCount ?? 0).toLocaleString('zh-CN')} · 已读{' '}
+            {(withdrawTarget?.readCount ?? 0).toLocaleString('zh-CN')} 这些统计会保留，历史里也会标记为已撤回。
+            已经看过它的用户不会收到"已撤回"通知（要说明情况请再发一条公告）。
+          </>
+        }
+        reasonLabel="撤回原因（必填，写入审计日志）"
+        confirmText="确认撤回"
+        confirmLoading={withdrawMutation.isPending}
+        onCancel={() => setWithdrawTarget(null)}
+        onConfirm={(reason) => {
+          if (withdrawTarget) {
+            withdrawMutation.mutate({ id: withdrawTarget.id, reason });
           }
         }}
       />

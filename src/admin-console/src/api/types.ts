@@ -335,6 +335,11 @@ export interface Announcement {
   clickedCount?: number;
   /** CO-35：真实已读触达数（admin_announcement_reads 回执聚合） */
   readCount?: number;
+  /**
+   * 2026-10-05（迁移 085）：软撤回时间。null/undefined = 正常；
+   * 非空 = 已撤回（客户端拉取侧已过滤，但送达/已读/点击统计保留）。
+   */
+  withdrawnAt?: string | null;
 }
 
 export interface SendAnnouncementPayload {

@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vite
 import { setupServer } from 'msw/node';
 import { handlers } from '@/mocks/handlers';
 import {
+  mockAnnouncements,
   mockAuditLogs,
   mockOrders,
   mockPlans,
@@ -325,6 +326,36 @@ describe('公告下发', () => {
     });
     expect(resp.status).toBe(400);
     expect(expectFail(resp).code).toBe(40002);
+  });
+
+  test('★撤回公告：写入 withdrawnAt + 审计留下发/点击数据；重复撤回 409', async () => {
+    const item = mockAnnouncements[0]!;
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<Announcement>(`/api/admin/announcements/${item.id}/withdraw`, {
+        reason: '价格写错了',
+      }),
+    );
+
+    expect(data.withdrawnAt).toBeTruthy();
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.announce.withdraw');
+    // 软撤回的意义：统计仍在（硬删会连带删掉它们）
+    expect(mockAuditLogs[0]?.details).toContain('delivered=');
+    expect(mockAuditLogs[0]?.details).toContain('价格写错了');
+
+    const again = await post(`/api/admin/announcements/${item.id}/withdraw`, { reason: 'x' });
+    expect(again.status).toBe(409);
+    expect(expectFail(again).message).toContain('无需重复');
+  });
+
+  test('撤回：缺原因 → 400；公告不存在 → 404', async () => {
+    const item = mockAnnouncements[0]!;
+    expect((await post(`/api/admin/announcements/${item.id}/withdraw`, {})).status).toBe(400);
+    expect(
+      (await post('/api/admin/announcements/ann_nope/withdraw', { reason: 'x' })).status,
+    ).toBe(404);
   });
 });
 

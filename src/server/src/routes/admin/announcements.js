@@ -39,6 +39,8 @@ const router = Router();
 const VALID_AUDIENCES = new Set(['all', 'pro_plus', 'free']);
 const VALID_DISPLAY_MODES = new Set(['once', 'persistent']);
 const HISTORY_LIMIT = 100;
+// 与其它 admin 路由同口径的 UUID 形状校验（撤回路由用）
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // ───────────────────────── 通用片段 ─────────────────────────
 
@@ -65,6 +67,9 @@ function mapAnnouncementRow(row) {
     reachedCount: Number(row.reached_count ?? 0),
     readCount: Number(row.read_count ?? 0),
     clickedCount: Number(row.click_count ?? 0),
+    // 2026-10-05（迁移 085）：软撤回时间。null = 正常；非 null = 已撤回（客户端拉取侧过滤，
+    // 管理台历史里仍可见并打标 —— 撤回后"当初发给了谁、多少人看过"正是最需要的证据）
+    withdrawnAt: row.withdrawn_at ? formatDateTimeMinute(row.withdrawn_at) : null,
   };
 }
 
@@ -215,7 +220,7 @@ router.get('/', requirePerm('admin.announce.view'), async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.content, a.audience, a.display_mode, a.sent_by,
-              a.delivered_count, a.click_count, a.created_at,
+              a.delivered_count, a.click_count, a.created_at, a.withdrawn_at,
               -- AN-05：真实送达 = 057 触达表去重用户数（WS 推送成功 ∪ 上线拉取）
               (SELECT COUNT(*)::int FROM admin_announcement_deliveries d
                 WHERE d.announcement_id = a.id) AS reached_count,
@@ -230,6 +235,108 @@ router.get('/', requirePerm('admin.announce.view'), async (_req, res) => {
   } catch (err) {
     logger.error('[admin/announcements] history failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '获取公告历史失败' });
+  }
+});
+
+// ───────────────────────── 撤回公告 ─────────────────────────
+
+/**
+ * POST /api/admin/announcements/:id/withdraw  body { reason }
+ * 软撤回公告（2026-10-05 新增，迁移 085）。
+ *
+ * 为什么之前只能改库：公告**只能发、不能撤**。发错内容（写错价格、发错受众、
+ * 把内部草稿发出去）时客户端 `GET /api/app/announcements` 仍会一直返回它，
+ * 而表上根本没有表示"撤回"的列 —— 改库连语义都没有。
+ *
+ * 为什么是**软**撤回（加列）而不是 DELETE：
+ *   `admin_announcement_deliveries`（057 触达）与 `admin_announcement_reads`（052 已读）
+ *   都是 `ON DELETE CASCADE` —— 硬删会**连带删掉送达/已读/点击统计**，而那正是
+ *   "这条公告发给了谁、多少人看过"的唯一证据；发错之后恰恰最需要它。
+ *
+ * 口径：
+ *   - 权限沿用 `admin.announce.send`（撤回是下发的逆操作，能发的才该能撤）；
+ *   - 已撤回 → 409（明确告知撤回时间，而不是静默"再撤一次"）；
+ *   - 原因必填；审计 `admin.announce.withdraw` 记标题/受众/下发时受众数/点击数/原因；
+ *   - 客户端拉取侧从此过滤（`routes/app.js` 的 `WHERE withdrawn_at IS NULL`），
+ *     但**已读/送达数据保留**，管理台历史里仍能看到并标记为「已撤回」；
+ *   - **不通知用户**：撤回是把它从"看得见"变成"看不见"，再发一条"某公告已撤回"
+ *     只会扩大影响面（要说明情况应该再发一条正常公告）。
+ */
+router.post('/:id/withdraw', requirePerm('admin.announce.send'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '公告 ID 不合法' });
+    }
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '撤回必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, title, audience, display_mode, delivered_count, click_count, created_at, withdrawn_at
+         FROM admin_announcements WHERE id = $1`,
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '公告不存在' });
+    }
+    const existing = rows[0];
+    if (existing.withdrawn_at) {
+      return res.status(409).json({
+        code: 40906,
+        reason: 'ALREADY_WITHDRAWN',
+        withdrawnAt: formatDateTimeMinute(existing.withdrawn_at),
+        message: `该公告已于 ${formatDateTimeMinute(existing.withdrawn_at)} 撤回，无需重复操作`,
+      });
+    }
+
+    const { rows: updatedRows } = await pool.query(
+      `UPDATE admin_announcements
+          SET withdrawn_at = NOW()
+        WHERE id = $1
+        RETURNING id, title, content, audience, display_mode, sent_by,
+                  delivered_count, click_count, created_at, withdrawn_at`,
+      [id]
+    );
+    const updated = updatedRows[0];
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.announce.withdraw',
+      resourceType: 'announcement',
+      resourceId: String(existing.id),
+      details: {
+        title: existing.title,
+        audience: existing.audience,
+        display: existing.display_mode,
+        // 留痕：撤回时这条公告已经发出去了多少、被点了多少（事后追责/复盘靠它）
+        delivered: Number(existing.delivered_count ?? 0),
+        clicked: Number(existing.click_count ?? 0),
+        reason,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/announcements] withdrawn', {
+      id: existing.id,
+      audience: existing.audience,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: mapAnnouncementRow(updated),
+      message: '公告已撤回：客户端不再展示，历史与送达/已读统计保留',
+    });
+  } catch (err) {
+    logger.error('[admin/announcements] withdraw failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '撤回公告失败' });
   }
 });
 

@@ -163,6 +163,7 @@ async function userIsProPlus(userId) {
  * 受众过滤：all 全部可见；pro_plus 仅 Pro/Enterprise（含未登录=false）；free 仅非 Pro+。
  * 未登录只读 audience='all'；响应不含已读标记——已读状态由客户端本地管理，
  * 回执走 POST /announcements/:id/read（登录后）。最新 20 条。
+ * 2026-10-05（迁移 085）：**已撤回的公告不在结果里**（`withdrawn_at IS NULL`）。
  */
 router.get('/announcements', optionalAuth, async (req, res) => {
   try {
@@ -180,6 +181,9 @@ router.get('/announcements', optionalAuth, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT id, title, content, audience, display_mode, created_at
        FROM admin_announcements
+       -- 2026-10-05（迁移 085）：已撤回的公告不再下发给客户端。
+       -- 只过滤展示，**不动**送达/已读数据（那两张表是"发给了谁、多少人看过"的唯一证据）。
+       WHERE withdrawn_at IS NULL
        ORDER BY created_at DESC
        LIMIT 20`,
     );

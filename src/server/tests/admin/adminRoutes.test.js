@@ -138,6 +138,7 @@ describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/profile')).toBe(true); // 改用户可见内容
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/limits')).toBe(true); // 单用户放宽配额
     expect(hit('/users/merge')).toBe(true); // 退役一个账号 + 跨表搬数据（不可逆）
+    expect(hit('/announcements/a1000000-0000-4000-8000-000000000001/withdraw')).toBe(true); // 对外内容补救
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/force-logout')).toBe(true);
     expect(hit('/devices/a1000000-0000-4000-8000-000000000001/offline')).toBe(true);
     expect(hit('/devices/a1000000-0000-4000-8000-000000000001')).toBe(true); // 解绑（会连带删内容）

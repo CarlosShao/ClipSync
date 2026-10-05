@@ -1142,6 +1142,33 @@ const configHandlers = [
     return ok(created, '公告已下发');
   }),
 
+  /**
+   * 2026-10-05 补：撤回公告（软撤回，迁移 085）。
+   * mock 只把 `withdrawnAt` 写到内存行上（真实后端同理，**绝不 DELETE** ——
+   * 送达/已读两张表是 ON DELETE CASCADE，硬删会连带毁掉统计）。
+   */
+  http.post('/api/admin/announcements/:id/withdraw', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const item = mockAnnouncements.find((a) => a.id === id);
+    if (!item) return fail(404, 40404, '公告不存在');
+    const body = (await request.json()) as { reason?: string };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '撤回必须填写原因（写入审计日志）');
+    if (item.withdrawnAt) {
+      return fail(409, 40906, `该公告已于 ${item.withdrawnAt} 撤回，无需重复操作`);
+    }
+    item.withdrawnAt = dayjs().format('YYYY-MM-DD HH:mm');
+    pushAudit(
+      'admin.announce.withdraw',
+      'announcement',
+      id,
+      `title="${item.title}", audience=${item.audience}, delivered=${item.deliveredCount ?? 0}, clicked=${item.clickedCount ?? 0}, reason="${reason}"`,
+      true,
+    );
+    return ok(item, '公告已撤回：客户端不再展示，历史与送达/已读统计保留');
+  }),
+
   // CO-30：SMTP 测试邮件。未配置 SMTP（smtp_host 为空或 smtp_pass 未配置）→ 409 错误壳 code=4090；
   // 收件人含 "fail" 模拟发送失败（5xx）；成功返回 messageId
   http.post('/api/admin/configs/smtp/test', async ({ request }) => {

@@ -96,6 +96,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/devices\/[^/]+$/,
   // 2026-10-05 新增：合并账号会**退役一个账号**并跨表搬数据，不可逆，必须限流。
   /^\/users\/merge$/,
+  // 2026-10-05 新增：撤回公告是**对外内容的下发逆操作**（发错内容/发错受众时的补救），
+  // 与 send 同属对外触达，必须限流。
+  /^\/announcements\/[^/]+\/withdraw$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&
