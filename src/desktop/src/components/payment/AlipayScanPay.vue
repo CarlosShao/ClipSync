@@ -36,6 +36,11 @@ const props = defineProps<{
   /** 展示用金额与周期文案 */
   amountLabel?: string
   periodLabel?: string
+  /**
+   * 内嵌进单弹窗（左右分栏）时隐藏自带的「关闭」footer —— 外层弹窗已有自己的关闭入口，
+   * 两个关闭按钮并排看着像没做完。缺省 false ⇒ 独立使用时的行为一字不变。
+   */
+  hideFooter?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -259,7 +264,7 @@ const showMask = computed(() => !agreed.value || loading.value || !!errorMsg.val
       </span>
     </label>
 
-    <div class="pay-scan-footer">
+    <div v-if="!hideFooter" class="pay-scan-footer">
       <Button variant="ghost" @click="emit('close')">{{ t('pay_close') }}</Button>
     </div>
   </div>
