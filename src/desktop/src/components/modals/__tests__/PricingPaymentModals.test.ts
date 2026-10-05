@@ -334,3 +334,15 @@ describe('单弹窗结账流 · 渠道与降级', () => {
     expect(document.querySelector('.pay-scan-amount .value')?.textContent).toContain('¥19.90')
   })
 })
+
+describe('单弹窗结账流 · 付款前必须说明的口径', () => {
+  it('「一次性购买一个周期，不会自动扣款」必须出现在结账弹窗里', async () => {
+    // 旧「支付方式」步的摘要里有这句（`cycle_once_note`），2026-10-05 改成单弹窗时我漏掉了。
+    // PlanCards 里的 BillingCycleToggle 也有这句，但那是上一步；付款这一刻才是最该出现的地方。
+    // 本产品**无自动续费**，不能让人在按下支付前以为会被连续扣款。
+    mocks.fetchUpgradeQuote.mockResolvedValue({ ok: true, status: 200, data: { quote: quoteFixture() } })
+    await enterCheckout()
+
+    expect(bodyText()).toContain(t('cycle_once_note'))
+  })
+})

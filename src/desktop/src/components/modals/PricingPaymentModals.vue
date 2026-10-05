@@ -357,6 +357,11 @@ const checkoutTitle = computed(() => {
           <span class="co-plan-cycle">{{ selectedPeriodLabel }}</span>
         </div>
 
+        <!-- 旧「支付方式」步的摘要里有这一句，2026-10-05 改单弹窗时被我漏掉了。
+             它出现在「即将付钱」这一刻最有价值：本产品**无自动续费**，不能让人在付款前
+             以为会被连续扣款（PlanCards 的 BillingCycleToggle 上也有，但那是上一步）。 -->
+        <p class="co-once-note">{{ t('cycle_once_note') }}</p>
+
         <!-- 渠道：目前只接入支付宝。微信是**禁用占位**，不是可点入口 ——
              不放「可点但报错」的假按钮（产品诚信面），也不发任何请求。 -->
         <div class="co-channels">
@@ -497,6 +502,13 @@ const checkoutTitle = computed(() => {
 }
 .co-plan-cycle {
   font-size: 12px;
+  color: var(--text-tertiary);
+}
+/* 「一次性购买、不会自动扣款」——付款前这一刻的定心丸，别再漏掉 */
+.co-once-note {
+  margin: -4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--text-tertiary);
 }
 .co-channels {
