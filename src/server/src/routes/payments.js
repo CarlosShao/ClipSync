@@ -235,11 +235,24 @@ async function resolveOrderPricing({ userId, subscriptionId, planId, billingCycl
     }
 
     const hasPaidOrder = currentSubscription.paid_order_amount != null;
-    paidAmount = hasPaidOrder
+    const rawPaid = hasPaidOrder
       ? currentSubscription.paid_order_amount
       : currentSubscription.billing_cycle === 'yearly'
         ? currentSubscription.plan_price_yearly
         : currentSubscription.plan_price_monthly;
+    /**
+     * ⚠️ 必须显式转 number：Postgres 的 numeric 经 node-postgres 出来是**字符串**
+     *（为防精度丢失默认不转），所以 `paid_order_amount` 是 "0.01" 而不是 0.01。
+     * 不转的话响应里 `paidAmount` 会是字符串，与契约声明的 number 不符 ——
+     * 2026-10-05 在生产容器内实测才发现（单测用 toBeCloseTo 会隐式转数字而漏掉）。
+     * `computeProration` 内部自己有 Number() 兜底，所以**金额计算一直是对的**，
+     * 错的只是回给客户端的这个字段。
+     *
+     * rawPaid 为 null（无已付订单且该档没配价）时保持 null，不能退化成 0 ——
+     * 客户端用 `paidAmount != null` 判断「有没有折抵」，0 会被当成「有」。
+     */
+    const parsedPaid = Number(rawPaid);
+    paidAmount = rawPaid == null || !Number.isFinite(parsedPaid) ? null : parsedPaid;
     creditSource = hasPaidOrder ? 'order' : 'plan';
 
     const base = computeProration({

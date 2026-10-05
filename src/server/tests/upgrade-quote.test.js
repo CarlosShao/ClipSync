@@ -196,6 +196,10 @@ describe('升级试算 · 升档折抵', () => {
     expect(q.originalPrice).toBeCloseTo(plan.Enterprise.monthly, 2);
     // 实付来自该订阅的**已支付订单**，不是套餐标价
     expect(q.paidAmount).toBeCloseTo(paidAmount, 2);
+    // ⚠️ toBeCloseTo 会隐式把字符串转成数字，抓不到「类型错了」。
+    // 2026-10-05 在生产容器内实测发现 paidAmount 回的是字符串 "0.01"（pg 的 numeric
+    // 经 node-postgres 出来就是字符串），所以这里必须显式断言类型。
+    expect(typeof q.paidAmount).toBe('number');
     expect(q.creditSource).toBe('order');
     expect(q.oldSubscriptionId).toBe(subscriptionId);
     expect(q.oldPlanId).toBe(plan.Pro.id);
@@ -249,6 +253,37 @@ describe('升级试算 · 升档折抵', () => {
       2
     );
     expect(q.forfeitAmount).toBeGreaterThan(0);
+  });
+
+  it('★金额字段必须都是 number —— pg 的 numeric 出来是字符串，漏转就会回 "0.01"', async () => {
+    // 现场：2026-10-05 在生产容器内实测，paidAmount 回来是字符串 "0.01"。
+    // 根因是 node-postgres 对 numeric 默认不转 number（防精度丢失），而这一字段
+    // 直接来自 numeric 列。金额计算一直是对的（computeProration 内部有 Number()），
+    // 错的只是回给客户端的类型。
+    await seedActiveSubscription({
+      planId: plan.Pro.id,
+      paidAmount: 0.01,
+      daysRemaining: 15,
+      cycleDays: 30,
+    });
+
+    const res = await quote({ planId: plan.Enterprise.id, billingCycle: 'monthly' });
+    expect(res.status).toBe(200);
+    const q = res.body.quote;
+
+    for (const key of [
+      'originalPrice',
+      'creditAmount',
+      'finalAmount',
+      'paidAmount',
+      'usedAmount',
+      'remainingDays',
+      'cycleDays',
+    ]) {
+      expect(typeof q[key], `${key} 应为 number，实际是 ${JSON.stringify(q[key])}`).toBe('number');
+    }
+    // 类型不对时 typeof 会同时暴露「字符串」与「数字字符串」两种错法
+    expect(q.paidAmount).toBe(0.01);
   });
 
   it('★核心不变量：试算金额逐分等于随后建单的实收金额', async () => {
