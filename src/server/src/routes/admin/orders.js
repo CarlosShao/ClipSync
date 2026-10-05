@@ -12,6 +12,9 @@
 //   - POST /orders/:orderNo/refund  → requirePerm('admin.orders.refund')（高危，仅退款权限）
 //   - POST /orders/:orderNo/fulfill → requirePerm('admin.orders.refund')（2026-10-05：人工补履约，
 //                                      高危；**先向支付宝核实到账**再履约，详见该路由注释）
+//   - GET  /orders/:orderNo/invoice → requirePerm('admin.orders.view')（2026-10-05：查开票信息）
+//   - PATCH /orders/:orderNo/invoice → requirePerm('admin.orders.refund')（2026-10-05：补录抬头/税号。
+//                                      履约链路从不写这两列，而收据文案却让客服来要 —— 此前只能改库）
 //   - GET  /reconciliation          → requirePerm('admin.orders.reconcile')（对账查看）
 //   - GET  /orders, /orders/:orderNo → requirePerm('admin.orders.view')（RB-06）
 //
@@ -38,6 +41,7 @@ import { refundPaidOrder, RefundError } from '../../services/refund.js';
 import { markOrderPaid } from '../../services/orderFulfillment.js';
 import { queryTrade } from '../../utils/alipay.js';
 import { roundToCent } from '../../services/proration.js';
+import { sendNotification } from '../../ws/server.js';
 
 const router = Router();
 
@@ -409,6 +413,224 @@ router.post('/:orderNo/refund', requirePerm('admin.orders.refund'), async (req, 
   } catch (err) {
     logger.error('[admin/orders] refund failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '退款执行失败' });
+  }
+});
+
+// ───────────────────────── 开票信息（补录） ─────────────────────────
+
+/**
+ * 开票信息行查询。
+ *
+ * 为什么要这个端点：`invoices` 有 `title` / `tax_no` 两列，但**履约链路从不写它们**
+ *（`services/orderFulfillment.js` 建票只写 user/subscription/order/invoice_no/amount/
+ * tax_amount/status）。而发票 PDF（`utils/pdf-invoice.js`）在抬头/税号为空时**整行不显** ——
+ * 也就是说：收据上写着「如需增值税发票请联系客服提供开票信息」，客服**没有任何工具**能录入，
+ * 只能改库。合规面上这是"被文案指引却没有落点"的空洞。
+ *
+ * 落点选择：挂在订单下（`/orders/:orderNo/invoice`）而不是新建 admin 发票页 ——
+ * 发票本就是某笔订单的履约产物，客服的工作流是"看着这笔订单补开票信息"，
+ * 而且 `orders.js` 已经有订单定位（ORDER_SELECT）与既有约定。
+ */
+function mapInvoiceRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    invoiceNo: row.invoice_no,
+    title: row.title || null,
+    taxNo: row.tax_no || null,
+    amount: row.amount != null ? Number(row.amount) : null,
+    taxAmount: row.tax_amount != null ? Number(row.tax_amount) : null,
+    status: row.status,
+    issuedAt: row.issued_at ? new Date(row.issued_at).toISOString() : null,
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+  };
+}
+
+const INVOICE_SELECT = `
+  SELECT id, invoice_no, title, tax_no, amount, tax_amount, status, issued_at, created_at
+    FROM invoices
+   WHERE payment_order_id = $1
+   ORDER BY created_at DESC
+   LIMIT 1`;
+
+/**
+ * GET /api/admin/orders/:orderNo/invoice
+ * 查这笔订单的开票信息（含抬头/税号），供补录弹窗回填。
+ * 无发票时返回 `{ hasInvoice: false }`（**200 而非 404**）—— "这笔单还没开票"是正常状态，
+ * 不是错误，前端据此提示"先完成履约"而不是弹一个错误。
+ */
+router.get('/:orderNo/invoice', requirePerm('admin.orders.view'), async (req, res) => {
+  try {
+    const { orderNo } = req.params;
+    if (!orderNo || typeof orderNo !== 'string') {
+      return res.status(400).json({ code: 4000, message: '订单号不合法' });
+    }
+    const { rows } = await pool.query(`${ORDER_SELECT} WHERE po.order_no = $1`, [orderNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '订单不存在' });
+    }
+    const found = rows[0];
+    const { rows: invoiceRows } = await pool.query(INVOICE_SELECT, [found.id]);
+    const invoice = mapInvoiceRow(invoiceRows[0]);
+    return res.json({
+      code: 0,
+      data: { hasInvoice: Boolean(invoice), orderNo, invoice },
+    });
+  } catch (err) {
+    logger.error('[admin/orders] get invoice failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '获取开票信息失败' });
+  }
+});
+
+/**
+ * PATCH /api/admin/orders/:orderNo/invoice  body { title?, taxNo?, reason }
+ * 补录开票信息（抬头 / 税号）—— 2026-10-05 新增。
+ *
+ * 口径：
+ *   - `title` 与 `taxNo` **至少给一项**；给了就校验（抬头 ≤200 且非空；税号 5–50 位字母数字，
+ *     不接受空格/中日韩字符 —— 税号要印在税务凭证上，不能是随手粘的文本）；
+ *   - 发票状态为 `void`（已作废）时拒绝：在作废凭证上改抬头/税号没有意义，也会误导人；
+ *   - 无发票 → 404（先完成履约才有票）；
+ *   - 原因必填；审计 `admin.invoice.update` 记**改动前后**与发票号（税号不是密钥，
+ *     它本来就印在票面上，留痕对事后核对有价值）；
+ *   - 通知用户：他是这条信息的提供方，改完应当知道可以重新下载了；
+ *   - 权限用 `admin.orders.refund`：这是**财务/税务凭证**上的写入，与退款同属资金级
+ *     订单写操作；也避免为细分语义去动 043 权限目录的迁移（生产落后分支很远）。
+ *     已进高危限流名单（名单方法判定已修，见 admin/index.js 的 isAdminStrictWrite）。
+ */
+router.patch('/:orderNo/invoice', requirePerm('admin.orders.refund'), async (req, res) => {
+  try {
+    const { orderNo } = req.params;
+    if (!orderNo || typeof orderNo !== 'string') {
+      return res.status(400).json({ code: 4000, message: '订单号不合法' });
+    }
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '补录开票信息必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const hasTitle = body.title !== undefined && body.title !== null;
+    const hasTaxNo = body.taxNo !== undefined && body.taxNo !== null;
+    if (!hasTitle && !hasTaxNo) {
+      return res.status(400).json({ code: 4000, message: '发票抬头与税号至少提供一项' });
+    }
+
+    let cleanTitle = null; // null = 不改
+    if (hasTitle) {
+      const title = String(body.title).trim();
+      if (!title) {
+        return res.status(400).json({ code: 4000, message: '发票抬头不能为空（不修改请别传该字段）' });
+      }
+      if (title.length > 200) {
+        return res.status(400).json({ code: 4000, message: '发票抬头不能超过 200 字' });
+      }
+      cleanTitle = title;
+    }
+
+    let cleanTaxNo = null;
+    if (hasTaxNo) {
+      const taxNo = String(body.taxNo).trim();
+      if (!/^[A-Za-z0-9]{5,50}$/.test(taxNo)) {
+        return res.status(400).json({
+          code: 4000,
+          message: '纳税人识别号应为 5–50 位字母或数字（不含空格等其它字符）',
+        });
+      }
+      cleanTaxNo = taxNo;
+    }
+
+    const { rows } = await pool.query(`${ORDER_SELECT} WHERE po.order_no = $1`, [orderNo]);
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '订单不存在' });
+    }
+    const found = rows[0];
+
+    const { rows: invoiceRows } = await pool.query(INVOICE_SELECT, [found.id]);
+    if (invoiceRows.length === 0) {
+      return res.status(404).json({
+        code: 40404,
+        message: '该订单还没有发票（履约完成后才会开票），暂时无法补录开票信息',
+      });
+    }
+    const before = invoiceRows[0];
+    if (before.status === 'void') {
+      return res.status(409).json({
+        code: 40906,
+        reason: 'INVOICE_VOID',
+        message: '该发票已作废，不能再修改抬头/税号；请按正常流程重新开票',
+      });
+    }
+
+    const sets = [];
+    const params = [before.id];
+    if (cleanTitle !== null) {
+      params.push(cleanTitle);
+      sets.push(`title = $${params.length}`);
+    }
+    if (cleanTaxNo !== null) {
+      params.push(cleanTaxNo);
+      sets.push(`tax_no = $${params.length}`);
+    }
+
+    const { rows: updatedRows } = await pool.query(
+      `UPDATE invoices SET ${sets.join(', ')}
+        WHERE id = $1
+        RETURNING id, invoice_no, title, tax_no, amount, tax_amount, status, issued_at, created_at`,
+      params
+    );
+    const updated = updatedRows[0];
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.invoice.update',
+      resourceType: 'invoice',
+      resourceId: String(before.id),
+      details: {
+        orderNo,
+        invoiceNo: before.invoice_no,
+        targetUserId: found.user_id,
+        reason,
+        titleFrom: before.title || null,
+        titleTo: cleanTitle,
+        taxNoFrom: before.tax_no || null,
+        taxNoTo: cleanTaxNo,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    try {
+      await sendNotification(found.user_id, {
+        notificationType: 'subscription_notice',
+        title: '你的发票信息已更新',
+        body: `订单 ${orderNo} 的发票抬头/税号已按你提供的信息更新，可到「发票」页重新下载。`,
+        data: { orderNo, invoiceNo: before.invoice_no },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/orders] invoice update notify failed (ignored)', {
+        invoiceId: before.id,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/orders] invoice info updated', {
+      invoiceNo: before.invoice_no,
+      orderNo,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: { orderNo, invoice: mapInvoiceRow(updated) },
+      message: '开票信息已补录，用户重新下载发票即可看到抬头/税号',
+    });
+  } catch (err) {
+    logger.error('[admin/orders] invoice update failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '补录开票信息失败' });
   }
 });
 

@@ -35,7 +35,7 @@ import express from 'express';
 import request from 'supertest';
 import { pool } from '../../src/db/pool.js';
 import { clearPermCache } from '../../src/middleware/adminAuth.js';
-import adminRouter, { ADMIN_STRICT_WRITE_PATTERNS } from '../../src/routes/admin/index.js';
+import adminRouter, { ADMIN_STRICT_WRITE_PATTERNS, isAdminStrictWrite } from '../../src/routes/admin/index.js';
 
 function buildApp() {
   const app = express();
@@ -128,6 +128,7 @@ describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
     expect(hit('/refund-reviews/a1000000-0000-4000-8000-000000000001/reject')).toBe(true); // 驳回改权益
     expect(hit('/refund-reviews/a1000000-0000-4000-8000-000000000001/approve')).toBe(true); // 真打款
     expect(hit('/orders/ORD123/refund')).toBe(true); // 退款
+    expect(hit('/orders/ORD123/invoice')).toBe(true); // 补录开票信息（财务/税务凭证写入）
   });
 
   it('② 对外触达与账号级动作也在名单里', () => {
@@ -149,12 +150,34 @@ describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
     expect(hit('/subscriptions')).toBe(false);
     expect(hit('/users')).toBe(false);
     expect(hit('/audit-logs')).toBe(false);
-    // 注意：/users/:id 那条是为 DELETE 写的，但也匹配 GET/PATCH —— 限流只对 POST/DELETE 生效
-    //（见 index.js 里 req.method 判断），故这里不把它算作误伤。
+    // 注意：/users/:id、/devices/:id 这两条是为 DELETE 写的模式，它们同时也会匹配
+    // 同路径的其它方法；但限流方法判定是 POST/DELETE/**PATCH**（见 isAdminStrictWrite），
+    // 而这两个路径上不存在 PATCH 路由，且 GET 不在方法白名单里 —— 都不会被误伤。
   });
 
   it('④ 模式是"整段匹配"而不是前缀匹配（/users/:id 不该把 /users/:id/export 也吞掉）', () => {
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/export')).toBe(false);
     expect(hit('/subscriptions/a1000000-0000-4000-8000-000000000001/stats')).toBe(false);
+  });
+
+  /**
+   * ★2026-10-05：方法判定此前只认 `POST || DELETE`，于是名单里的 **PATCH 条目形同虚设**
+   * —— `/users/:id/profile`（本轮加的）压根没被限流过。名单是唯一真相源，而"漏掉是静默的"，
+   * 所以把方法判定一并导出并在这里钉两个方向：该限的限、读方法不能限。
+   */
+  it('⑤ 方法判定：PATCH 必须在内（否则名单里的 PATCH 条目等于没写）', () => {
+    expect(isAdminStrictWrite('POST', '/orders/ORD123/refund')).toBe(true);
+    expect(isAdminStrictWrite('DELETE', '/devices/a1000000-0000-4000-8000-000000000001')).toBe(true);
+    expect(isAdminStrictWrite('PATCH', '/users/a1000000-0000-4000-8000-000000000001/profile')).toBe(
+      true
+    );
+    expect(isAdminStrictWrite('PATCH', '/orders/ORD123/invoice')).toBe(true);
+
+    // 读方法一律不限流；未列入名单的写路径也不限流
+    expect(isAdminStrictWrite('GET', '/users/a1000000-0000-4000-8000-000000000001/profile')).toBe(
+      false
+    );
+    expect(isAdminStrictWrite('PATCH', '/configs/maintenance_mode')).toBe(false);
+    expect(isAdminStrictWrite('PUT', '/users/merge')).toBe(false);
   });
 });

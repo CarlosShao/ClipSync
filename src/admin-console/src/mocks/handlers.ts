@@ -892,7 +892,89 @@ const ordersHandlers = [
       '支付宝返回该订单未支付（trade_status=WAIT_BUYER_PAY），拒绝履约（mock 环境没有真实渠道，故一律视为未到账）',
     );
   }),
+
+  /**
+   * 2026-10-05 补：开票信息查询 / 补录。
+   *
+   * mock 里"已支付或已退款的订单"视为有票（真实后端是 invoices 表按 payment_order_id 关联），
+   * 抬头/税号初始为空 —— 正是真实库的样子（履约链路从不写这两列）。
+   * 补录结果记在 `mockInvoiceInfo` 里以便回读；真实后端改完 PDF 会按这两列现渲染。
+   */
+  http.get('/api/admin/orders/:orderNo/invoice', async ({ params }) => {
+    await delay(150);
+    const orderNo = params['orderNo'] as string;
+    const order = mockOrders.find((o) => o.orderNo === orderNo);
+    if (!order) return fail(404, 40404, '订单不存在');
+    const hasInvoice = order.status === 'paid' || order.status === 'refunded';
+    if (!hasInvoice) return ok({ hasInvoice: false, orderNo, invoice: null });
+    const saved = mockInvoiceInfo[orderNo] ?? { title: null, taxNo: null };
+    return ok({
+      hasInvoice: true,
+      orderNo,
+      invoice: {
+        id: `inv_${order.orderNo}`,
+        invoiceNo: `INV-${order.orderNo}`,
+        title: saved.title,
+        taxNo: saved.taxNo,
+        amount: order.amount,
+        taxAmount: 0,
+        status: 'issued',
+        issuedAt: order.paidAt,
+        createdAt: order.createdAt,
+      },
+    });
+  }),
+
+  http.patch('/api/admin/orders/:orderNo/invoice', async ({ request, params }) => {
+    await delay(300);
+    const orderNo = params['orderNo'] as string;
+    const order = mockOrders.find((o) => o.orderNo === orderNo);
+    if (!order) return fail(404, 40404, '订单不存在');
+    const body = (await request.json()) as { title?: string; taxNo?: string; reason?: string };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '补录开票信息必须填写原因（写入审计日志）');
+    const title = body.title?.trim() ?? '';
+    const taxNo = body.taxNo?.trim() ?? '';
+    if (!title && !taxNo) return fail(400, 4000, '发票抬头与税号至少提供一项');
+    if (title.length > 200) return fail(400, 4000, '发票抬头不能超过 200 字');
+    if (taxNo && !/^[A-Za-z0-9]{5,50}$/.test(taxNo)) {
+      return fail(400, 4000, '纳税人识别号应为 5–50 位字母或数字（不含空格等其它字符）');
+    }
+    if (order.status !== 'paid' && order.status !== 'refunded') {
+      return fail(404, 40404, '该订单还没有发票（履约完成后才会开票），暂时无法补录开票信息');
+    }
+    const saved = mockInvoiceInfo[orderNo] ?? { title: null, taxNo: null };
+    if (title) saved.title = title;
+    if (taxNo) saved.taxNo = taxNo;
+    mockInvoiceInfo[orderNo] = saved;
+    pushAudit(
+      'admin.invoice.update',
+      'invoice',
+      `inv_${order.orderNo}`,
+      `invoiceNo="INV-${order.orderNo}", titleTo=${JSON.stringify(saved.title)}, taxNoTo=${JSON.stringify(saved.taxNo)}, reason="${reason}"`,
+    );
+    return ok(
+      {
+        orderNo,
+        invoice: {
+          id: `inv_${order.orderNo}`,
+          invoiceNo: `INV-${order.orderNo}`,
+          title: saved.title,
+          taxNo: saved.taxNo,
+          amount: order.amount,
+          taxAmount: 0,
+          status: 'issued',
+          issuedAt: order.paidAt,
+          createdAt: order.createdAt,
+        },
+      },
+      '开票信息已补录，用户重新下载发票即可看到抬头/税号',
+    );
+  }),
 ];
+
+/** mock 用：补录过的抬头/税号（键 = orderNo），仅用于让 PATCH 能被回读 */
+const mockInvoiceInfo: Record<string, { title: string | null; taxNo: string | null }> = {};
 
 // ───────────────────────── 审计 ─────────────────────────
 

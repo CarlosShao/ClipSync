@@ -4,13 +4,14 @@ import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { OrderDetailModal } from '@/components/OrderDetailModal';
+import { InvoiceInfoModal } from '@/components/InvoiceInfoModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { PageHeader } from '@/components/PageHeader';
 import { RefundModal } from '@/components/RefundModal';
 import { ReconciliationModal } from '@/components/ReconciliationModal';
 import { StatusTag } from '@/components/StatusTag';
 import { channelLabel, orderDisplayStatus } from '@/components/StatusTag/mappers';
-import { fetchAllOrders, fulfillOrder, getOrders, isOrderRefundable, refundOrder } from '@/api/orders';
+import { fetchAllOrders, fulfillOrder, getOrders, isOrderRefundable, refundOrder, updateOrderInvoice } from '@/api/orders';
 import { buildOrdersCsv, buildOrdersCsvFilename, downloadTextFile } from './ordersCsv';
 import { useTableQuery } from '@/hooks/useTableQuery';
 import { queryKeys } from '@/queryKeys';
@@ -97,6 +98,8 @@ export default function OrdersPage() {
   const [refundTarget, setRefundTarget] = useState<Order | null>(null);
   // 2026-10-05：人工补履约（回调丢失时"钱到了货没到"的唯一出口）
   const [fulfillTarget, setFulfillTarget] = useState<Order | null>(null);
+  // 2026-10-05：补录开票信息（抬头/税号；履约链路从不写这两列）
+  const [invoiceTarget, setInvoiceTarget] = useState<Order | null>(null);
   const [reconcileOpen, setReconcileOpen] = useState(false);
 
   const { tableProps, filters, setFilters } = useTableQuery<Order, OrderFilters>({
@@ -161,6 +164,25 @@ export default function OrdersPage() {
       // 渠道退款失败/状态冲突时服务端可能已改动订单（如渠道已退成、本地未落账），
       // 同样要重新拉取，让操作员看到真实状态再决定重试（弹窗保持打开）。
       invalidateRefundScope();
+    },
+  });
+
+  /**
+   * 2026-10-05：补录开票信息（抬头/税号）。
+   * 发票 PDF 按这两列现渲染，改完用户重新下载即可看到 → 失效 ['orders']（详情）+ 审计。
+   */
+  const invoiceMutation = useMutation({
+    mutationFn: (payload: { orderNo: string; title?: string; taxNo?: string; reason: string }) =>
+      updateOrderInvoice(payload.orderNo, {
+        ...(payload.title ? { title: payload.title } : {}),
+        ...(payload.taxNo ? { taxNo: payload.taxNo } : {}),
+        reason: payload.reason,
+      }),
+    onSuccess: (_res, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      void message.success(`已补录 ${variables.orderNo} 的开票信息，用户重新下载发票即可看到`);
+      setInvoiceTarget(null);
     },
   });
 
@@ -409,6 +431,11 @@ export default function OrdersPage() {
           setDetailNo(null);
           setRefundTarget(order);
         }}
+        // 2026-10-05：补录开票信息（同样先收起详情，避免两个弹窗叠着挡住订单上下文）
+        onRequestInvoiceInfo={(order) => {
+          setDetailNo(null);
+          setInvoiceTarget(order);
+        }}
       />
 
       <RefundModal
@@ -425,6 +452,17 @@ export default function OrdersPage() {
       />
 
       <ReconciliationModal open={reconcileOpen} onClose={() => setReconcileOpen(false)} />
+
+      {/* 2026-10-05：补录开票信息（抬头/税号）—— 打开时读该订单的发票并回填 */}
+      <InvoiceInfoModal
+        open={Boolean(invoiceTarget)}
+        order={invoiceTarget}
+        confirmLoading={invoiceMutation.isPending}
+        onCancel={() => setInvoiceTarget(null)}
+        onConfirm={(payload) =>
+          invoiceMutation.mutateAsync({ orderNo: invoiceTarget?.orderNo ?? '', ...payload })
+        }
+      />
 
       {/* 人工补履约：原因必填；真正的闸在服务端（先向支付宝核实到账），这里只负责说清规则 */}
       <ConfirmReasonModal

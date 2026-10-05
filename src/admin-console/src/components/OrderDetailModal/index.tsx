@@ -18,6 +18,11 @@ interface OrderDetailModalProps {
    * 不传则只展示告警不给按钮——详情弹窗自己不发退款请求，避免和列表页各写一套。
    */
   onRequestRefund?: (order: Order) => void;
+  /**
+   * 2026-10-05：补录开票信息（抬头/税号）。同样由宿主页面接管（它持有 InvoiceInfoModal），
+   * 不传则不给按钮。
+   */
+  onRequestInvoiceInfo?: (order: Order) => void;
 }
 
 interface TimelineEntry {
@@ -98,6 +103,7 @@ export function OrderDetailModal({
   orderNo,
   onClose,
   onRequestRefund,
+  onRequestInvoiceInfo,
 }: OrderDetailModalProps) {
   const { data, isLoading } = useQuery({
     // queryKeys 工厂未提供订单详情键，沿用域前缀 ['orders', ...] 以便退款后随前缀一起失效
@@ -109,6 +115,8 @@ export function OrderDetailModal({
   const status = data ? orderDisplayStatus(data) : null;
   // RB-07：退款为高危操作（admin.orders.refund superAdminOnly），入口按权限裁剪（不绕过服务端）
   const canRefund = hasPerm('admin.orders.refund');
+  // 2026-10-05：补开票信息与退款同一权限键（财务/税务凭证上的写入）
+  const canEditInvoice = canRefund;
   // 异常到账单里还可退的那些（cancelled / pending + channelReportsPaid）；
   // 已退款或无该标记时不给入口——服务端同样会以 40005 拒绝，给了按钮只会白填一次原因
   const refundable = data ? isOrderRefundable(data) : false;
@@ -200,6 +208,26 @@ export function OrderDetailModal({
             <dt>支付时间</dt>
             <dd>{fmtTime(data.paidAt)}</dd>
           </dl>
+          {/*
+            2026-10-05：补录开票信息。`invoices.title` / `tax_no` 履约链路从不写，
+            而发票 PDF 在两者为空时整行不显 —— 收据文案却让客服去要开票信息，
+            此前客服只能改库。入口放在订单详情里（发票本就是这笔订单的履约产物）。
+          */}
+          {onRequestInvoiceInfo ? (
+            <div style={{ margin: '12px 0' }}>
+              <Tooltip title={canEditInvoice ? '' : '缺少权限 admin.orders.refund'}>
+                <span>
+                  <Button
+                    size="small"
+                    disabled={!canEditInvoice}
+                    onClick={() => onRequestInvoiceInfo(data)}
+                  >
+                    补开票信息
+                  </Button>
+                </span>
+              </Tooltip>
+            </div>
+          ) : null}
           <div className={styles.sectTitle}>状态时间线</div>
           <Timeline
             items={buildOrderTimeline(data).map((item) => ({

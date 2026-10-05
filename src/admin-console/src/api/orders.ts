@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '@/api/client';
+import { apiGet, apiPatch, apiPost } from '@/api/client';
 import type {
   Order,
   OrderListQuery,
@@ -44,6 +44,49 @@ export function refundOrder(orderNo: string, payload: RefundPayload): Promise<Or
  */
 export function fulfillOrder(orderNo: string, payload: { reason: string }): Promise<Order> {
   return apiPost<Order>(`/admin/orders/${orderNo}/fulfill`, payload);
+}
+
+/**
+ * 2026-10-05 新增：补录开票信息（抬头 / 税号）。
+ *
+ * 为什么需要：`invoices.title` / `tax_no` 两列**履约链路从不写入**，而发票 PDF 在两者为空时
+ * **整行不显** —— 收据文案却写着「如需增值税发票请联系客服提供开票信息」，
+ * 客服此前**没有任何工具**能录入，只能改库（合规面上的空洞）。
+ *
+ * 服务端口径：两项至少给一项；抬头 ≤200 且非空；税号 5–50 位字母数字；
+ * **发票已作废（void）**时拒绝（409 INVOICE_VOID）；无发票 → 404（先完成履约才有票）；
+ * 原因必填；审计 `admin.invoice.update`；改完用户重新下载 PDF 就能看到抬头/税号。
+ */
+export interface OrderInvoice {
+  id: string;
+  invoiceNo: string;
+  title: string | null;
+  taxNo: string | null;
+  amount: number | null;
+  taxAmount: number | null;
+  status: string;
+  issuedAt: string | null;
+  createdAt: string | null;
+}
+
+/** 查这笔订单的开票信息（**无票时 hasInvoice=false 的 200** —— 那是正常状态，不是错误） */
+export function getOrderInvoice(
+  orderNo: string
+): Promise<{ hasInvoice: boolean; orderNo: string; invoice: OrderInvoice | null }> {
+  return apiGet<{ hasInvoice: boolean; orderNo: string; invoice: OrderInvoice | null }>(
+    `/admin/orders/${orderNo}/invoice`
+  );
+}
+
+/** 补录开票信息（权限 admin.orders.refund —— 财务/税务凭证上的写入） */
+export function updateOrderInvoice(
+  orderNo: string,
+  payload: { title?: string; taxNo?: string; reason: string }
+): Promise<{ orderNo: string; invoice: OrderInvoice }> {
+  return apiPatch<{ orderNo: string; invoice: OrderInvoice }>(
+    `/admin/orders/${orderNo}/invoice`,
+    payload
+  );
 }
 
 /**

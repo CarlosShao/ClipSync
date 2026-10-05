@@ -1303,3 +1303,54 @@ describe('POST /api/admin/orders/:orderNo/fulfill（人工补履约）', () => {
     expect((await post('/api/admin/orders/ORD_nope/fulfill', { reason: 'x' })).status).toBe(404);
   });
 });
+
+describe('补录开票信息（GET / PATCH /api/admin/orders/:orderNo/invoice）', () => {
+  const paidOrder = mockOrders.find((o) => o.status === 'paid')!;
+
+  test('★已支付订单有票、抬头/税号初始为空（正是真实库的样子：履约链路不写这两列）', async () => {
+    const { data } = expectOk(
+      await get<{ hasInvoice: boolean; invoice: { invoiceNo: string; title: string | null } | null }>(
+        `/api/admin/orders/${paidOrder.orderNo}/invoice`,
+      ),
+    );
+    expect(data.hasInvoice).toBe(true);
+    expect(data.invoice?.title).toBeNull();
+  });
+
+  test('★补录后能被回读（抬头+税号），并写审计', async () => {
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await patch<{ invoice: { title: string; taxNo: string } }>(
+        `/api/admin/orders/${paidOrder.orderNo}/invoice`,
+        { title: '某某科技有限公司', taxNo: '91310000MA1K3XYZ12', reason: '用户索要发票' },
+      ),
+    );
+    expect(data.invoice.title).toBe('某某科技有限公司');
+    expect(data.invoice.taxNo).toBe('91310000MA1K3XYZ12');
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.invoice.update');
+
+    // 再查一次：值已落库（回读）
+    const again = expectOk(
+      await get<{ invoice: { title: string } }>(`/api/admin/orders/${paidOrder.orderNo}/invoice`),
+    );
+    expect(again.data.invoice.title).toBe('某某科技有限公司');
+  });
+
+  test('校验：两项都不给 → 400；税号非法 → 400；缺原因 → 400；无票订单 → 404', async () => {
+    const noInvoice = mockOrders.find((o) => o.status === 'pending' || o.status === 'cancelled');
+    const o = paidOrder.orderNo;
+    expect((await patch(`/api/admin/orders/${o}/invoice`, { reason: 'x' })).status).toBe(400);
+    expect(
+      (await patch(`/api/admin/orders/${o}/invoice`, { taxNo: '9131 0000', reason: 'x' })).status,
+    ).toBe(400);
+    expect((await patch(`/api/admin/orders/${o}/invoice`, { title: '抬头' })).status).toBe(400);
+    if (noInvoice) {
+      expect(
+        (await patch(`/api/admin/orders/${noInvoice.orderNo}/invoice`, { title: '抬头', reason: 'x' }))
+          .status,
+      ).toBe(404);
+    }
+  });
+});

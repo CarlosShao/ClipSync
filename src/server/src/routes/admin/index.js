@@ -99,10 +99,31 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：撤回公告是**对外内容的下发逆操作**（发错内容/发错受众时的补救），
   // 与 send 同属对外触达，必须限流。
   /^\/announcements\/[^/]+\/withdraw$/,
+  // 2026-10-05 新增：补录开票信息（抬头/税号）是**财务/税务凭证**上的写入，
+  // 且这张票会据此重新生成 PDF 给用户，必须限流。
+  /^\/orders\/[^/]+\/invoice$/,
 ];
+
+/**
+ * 高危写限流适用的方法。
+ *
+ * ⚠️ 2026-10-05 修：此前只判 `POST || DELETE`，于是名单里的 **PATCH 条目形同虚设**
+ * —— `/users/:id/profile`（2026-10-05 加的）压根没被限流过。名单是唯一真相源，
+ * 而"漏掉是静默的"（不报错，只是没那么严），所以这里把方法判定与路径判定一起导出，
+ * 由单测钉住两个方向：命中项要 true，非写方法要 false。
+ */
+export const ADMIN_STRICT_WRITE_METHODS = ['POST', 'DELETE', 'PATCH'];
+
+/** 是否命中高危写限流（名单 + 方法，两个条件都导出以便单测覆盖） */
+export function isAdminStrictWrite(method, path) {
+  return (
+    ADMIN_STRICT_WRITE_METHODS.includes(String(method || '').toUpperCase()) &&
+    ADMIN_STRICT_WRITE_PATTERNS.some((re) => re.test(String(path || '')))
+  );
+}
+
 adminRouter.use((req, res, next) => {
-  if ((req.method === 'POST' || req.method === 'DELETE') &&
-      ADMIN_STRICT_WRITE_PATTERNS.some((re) => re.test(req.path))) {
+  if (isAdminStrictWrite(req.method, req.path)) {
     return adminStrictLimiter(req, res, next);
   }
   next();
