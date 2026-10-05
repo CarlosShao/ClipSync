@@ -134,7 +134,10 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token', 'x-csrf-token-v2', 'Idempotency-Key', 'x-request-id'],
+  // x-ui-locale：桌面端在**每个请求**上都带（不是只 AI 请求，见 desktop/src/api/client.ts:208），
+  // 而它是跨域头 → 漏进 allowedHeaders 会让 preflight 直接失败、连登录都过不去
+  // （dev 走 Vite 代理是同源所以看不出来，一直连生产/打包客户端必炸）。
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-csrf-token', 'x-csrf-token-v2', 'Idempotency-Key', 'x-request-id', 'x-ui-locale'],
   // 开发环境用短缓存，避免改了配置后浏览器还缓存旧的失败结果
   maxAge: config.nodeEnv === 'development' ? 10 : 86400,
 };
