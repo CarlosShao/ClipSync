@@ -173,6 +173,43 @@ describe('单弹窗结账流 · 试算的调用时机与参数', () => {
     // 关键：进 checkout 就拉明细，**没有**建任何订单
     expect(mocks.createPaymentOrder).not.toHaveBeenCalled()
   })
+
+  it('★客户端侧的「试算 == 实收」：拉试算与下单必须用同一组参数', async () => {
+    // 服务端两个端点共用 resolveOrderPricing()，所以只要参数一致，金额必然一致。
+    // 这一条守的就是「参数一致」—— 它是客户端这一半唯一可能出岔子的地方
+    //（例如有人给试算补上 subscriptionId 而 AlipayScanPay 没补，两边立刻算出差额）。
+    mocks.fetchUpgradeQuote.mockResolvedValue({ ok: true, status: 200, data: { quote: quoteFixture() } })
+    mocks.createPaymentOrder.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        order: {
+          orderNo: 'ORD1',
+          amount: 19.89,
+          currency: 'CNY',
+          status: 'pending',
+          paymentParams: { channel: 'alipay', cashierUrl: 'https://example.test/cashier' },
+        },
+        proration: { originalPrice: 19.9, creditAmount: 0.01, finalAmount: 19.89 },
+      },
+    })
+
+    await enterCheckout()
+    expect(mocks.fetchUpgradeQuote).toHaveBeenCalledTimes(1)
+
+    // 勾选协议才会下单（合规门），所以这一步是必须的
+    const cb = document.querySelector('[role="checkbox"]') as HTMLElement
+    expect(cb).not.toBeNull()
+    cb.click()
+    await tick(10)
+
+    expect(mocks.createPaymentOrder).toHaveBeenCalledTimes(1)
+    const [orderParams] = mocks.createPaymentOrder.mock.calls[0]
+    const [quoteParams] = mocks.fetchUpgradeQuote.mock.calls[0]
+    expect(orderParams.planId).toBe(quoteParams.planId)
+    expect(orderParams.billingCycle).toBe(quoteParams.billingCycle)
+    expect(orderParams).toEqual(quoteParams)
+  })
 })
 
 describe('单弹窗结账流 · 折抵明细', () => {
