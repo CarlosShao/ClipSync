@@ -9,6 +9,7 @@ import {
   exportUserData,
   forceLogoutUser,
   getUserDetail,
+  grantUserTrial,
   notifyUser,
   rebindUserIdentity,
   resetUserPassword,
@@ -21,6 +22,7 @@ import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { RebindModal } from '@/components/RebindModal';
 import { ResetPasswordModal } from '@/components/ResetPasswordModal';
+import { TrialModal } from '@/components/TrialModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone } from '@/components/StatusTag/mappers';
@@ -89,6 +91,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   // 2026-10-05：换绑手机号/邮箱（用户换号后自己改不了手机号）
   const [rebindOpen, setRebindOpen] = useState(false);
+  // 2026-10-05：人工开通/重置试用（用户侧试用是终身一次）
+  const [trialOpen, setTrialOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -214,6 +218,29 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
     },
   });
 
+  /** 2026-10-05：人工开通/重置试用（刻意绕过用户侧的终身一次闸，服务端会留痕） */
+  const trialMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      reason: string;
+      days: number;
+      planId: string;
+      billingCycle: 'monthly' | 'yearly';
+    }) =>
+      grantUserTrial(payload.id, {
+        reason: payload.reason,
+        days: payload.days,
+        planId: payload.planId,
+        billingCycle: payload.billingCycle,
+      }),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+      void message.success(`已为 ${updated.nickname || '该用户'} 开通试用`);
+      setTrialOpen(false);
+    },
+  });
+
   /** 2026-10-05：换绑登录标识（服务端 COALESCE：只传一项就只改那一项） */
   const rebindMutation = useMutation({
     mutationFn: (payload: { id: string; phone?: string; email?: string; reason: string }) =>
@@ -308,6 +335,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const canNotify = hasPerm('admin.announce.send');
   /** 2026-10-05：分配角色用的是 roles.manage（与服务端 requirePerm 一致，比 users.manage 更高） */
   const canAssignRole = hasPerm('admin.roles.manage');
+  /** 2026-10-05：开通试用服务端要求 admin.subscriptions.grant（人工给出订阅权益同一权限键） */
+  const canGrantSubscription = hasPerm('admin.subscriptions.grant');
 
   const renderBody = () => {
     if (isLoading || !user) {
@@ -417,6 +446,16 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
             <span>
               <Button disabled={!canManage} onClick={() => setRebindOpen(true)}>
                 换绑手机/邮箱
+              </Button>
+            </span>
+          </Tooltip>
+          {/* 2026-10-05：人工开通/重置试用（用户侧试用终身一次，这是刻意的例外通道） */}
+          <Tooltip
+            title={canGrantSubscription ? '用户侧试用每人只能一次，这里刻意绕过' : '缺少权限: admin.subscriptions.grant'}
+          >
+            <span>
+              <Button disabled={!canGrantSubscription} onClick={() => setTrialOpen(true)}>
+                开通试用
               </Button>
             </span>
           </Tooltip>
@@ -607,6 +646,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           confirmLoading={rebindMutation.isPending}
           onCancel={() => setRebindOpen(false)}
           onConfirm={(payload) => rebindMutation.mutateAsync({ id: user.id, ...payload })}
+        />
+
+        <TrialModal
+          open={trialOpen}
+          userLabel={user.nickname || user.phone || ''}
+          confirmLoading={trialMutation.isPending}
+          onCancel={() => setTrialOpen(false)}
+          onConfirm={(payload) => trialMutation.mutateAsync({ id: user.id, ...payload })}
         />
       </>
     );

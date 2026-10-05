@@ -83,6 +83,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/users\/[^/]+\/rebind$/,
   // 2026-10-05 新增：人工补履约 = 凭渠道核实结果开通权益，与退款同属资金级写操作。
   /^\/orders\/[^/]+\/fulfill$/,
+  // 2026-10-05 新增：人工开通试用是**人工给出订阅权益**（且刻意绕过用户侧的终身一次闸），
+  // 与 admin.subscriptions.grant 同类，必须限流。
+  /^\/users\/[^/]+\/trial$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

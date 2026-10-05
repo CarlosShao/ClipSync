@@ -48,6 +48,25 @@ export function deleteUser(
 }
 
 /**
+ * 2026-10-05 补：人工开通 / 重置试用。
+ *
+ * 用户侧 `POST /api/subscriptions/trial` 有一条**终身一次**闸（库里只要有任一
+ * `user_subscriptions` 行就拒，含 cancelled/expired，专门防「取消后再试用」套取），
+ * 但它没有例外通道 —— 客服补试用只能改库，而改库要同时写订阅行（含 trial_end）
+ * 与 users 的两个快照列，必错。
+ *
+ * 本函数**刻意绕过**那条闸，因此服务端：拒绝"已有生效中订阅"的用户（409）、
+ * days 限 1–30、审计留 `bypassedLifetimeGate: true`、并给用户发通知。
+ * 权限 `admin.subscriptions.grant`。
+ */
+export function grantUserTrial(
+  id: string,
+  payload: { reason: string; days?: number; planId?: string; billingCycle?: 'monthly' | 'yearly' }
+): Promise<AdminUser> {
+  return apiPost<AdminUser>(`/admin/users/${id}/trial`, payload);
+}
+
+/**
  * 2026-10-05 补：换绑登录标识（手机号 / 邮箱）。用户换号后自己改不了手机号，
  * 此前客服只能改库 —— 而改库要同时改明文 + 派生 hash + 密文三列，少一列人就登不进来。
  * 后端用 COALESCE：只传一项就只改那一项。

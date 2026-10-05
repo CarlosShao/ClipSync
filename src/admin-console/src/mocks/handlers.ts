@@ -429,6 +429,64 @@ const usersHandlers = [
     return ok(user, `已把 ${user.nickname} 的角色改为 ${role.name}`);
   }),
 
+  /**
+   * 2026-10-05 补：人工开通 / 重置试用。
+   *
+   * mock 判"已有生效中订阅"看 users 行的 `subscription.plan`（真实后端是按
+   * `user_subscriptions.status + current_period_end` 判），**方向一致**：付费套餐就拒。
+   * 别拿 mock 的判定当契约 —— 真实口径见 `routes/admin/users.js` 的 `/:id/trial`。
+   */
+  http.post('/api/admin/users/:id/trial', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as {
+      reason?: string;
+      days?: number | string;
+      planId?: string;
+      billingCycle?: string;
+    };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '开通试用必须填写原因（写入审计日志）');
+    const rawDays = body.days;
+    const days = rawDays === undefined || rawDays === null || rawDays === '' ? 7 : Number(rawDays);
+    if (!Number.isInteger(days) || days < 1 || days > 30) {
+      return fail(400, 4000, '试用天数须为 1–30 的整数（更长请改用「赠期」）');
+    }
+    const currentPlan = user.subscription?.plan ?? 'free';
+    if (currentPlan !== 'free') {
+      return fail(
+        409,
+        40906,
+        `该用户已有生效中的订阅（${currentPlan}），无需试用；如需补偿请用「赠期」，或先用「收回」终止`,
+      );
+    }
+    const planInput = (body.planId || 'pro').toLowerCase();
+    // 白名单收窄（同时让 TS 把类型收窄到 PlanKey 的成员，避免断言）
+    if (planInput !== 'pro' && planInput !== 'enterprise') {
+      return fail(400, 4000, '试用套餐仅支持 Pro / Enterprise（免费版不提供试用）');
+    }
+    const plan = planInput;
+    user.subscription = {
+      plan,
+      billingCycle: body.billingCycle === 'yearly' ? 'yearly' : 'monthly',
+      status: 'trialing',
+      currentPeriodEnd: dayjs().add(days, 'day').format('YYYY-MM-DD'),
+      autoRenew: false,
+    };
+    pushAudit(
+      'admin.subscriptions.trial',
+      'user_subscription',
+      id,
+      `target=${user.nickname}, plan=${plan}, days=${days}, bypassedLifetimeGate=true, reason="${reason}"`,
+    );
+    return ok(
+      user,
+      `已为 ${user.nickname} 开通 ${days} 天试用（${plan}，到期 ${user.subscription.currentPeriodEnd}）`,
+    );
+  }),
+
   /** 2026-10-05 补：重置两步验证（对齐后端 users.js 的 /:id/reset-2fa：清空四列即完成） */
   http.post('/api/admin/users/:id/reset-2fa', async ({ params }) => {
     await delay(250);

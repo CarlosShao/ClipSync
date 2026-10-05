@@ -954,6 +954,59 @@ describe('POST /api/admin/users/:id/reset-2fa（重置两步验证，端点早�
   });
 });
 
+describe('POST /api/admin/users/:id/trial（人工开通/重置试用）', () => {
+  test('★免费用户可开通：套餐变为所选套餐、状态 trialing，审计留痕绕过了终身一次闸', async () => {
+    const freeUsers = mockUsers.filter((u) => (u.subscription?.plan ?? 'free') === 'free');
+    const target = freeUsers[freeUsers.length - 1]!; // 取最后一个，尽量不干扰其它用例
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<{ subscription: { plan: string; status: string } }>(
+        `/api/admin/users/${target.id}/trial`,
+        { reason: '试用期内故障补偿', days: 7, planId: 'pro' },
+      ),
+    );
+
+    expect(data.subscription.plan).toBe('pro');
+    expect(data.subscription.status).toBe('trialing');
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.subscriptions.trial');
+    // ★刻意绕过产品规则必须留痕
+    expect(mockAuditLogs[0]?.details).toContain('bypassedLifetimeGate=true');
+  });
+
+  test('★已有生效中订阅（付费）→ 409，且套餐不变', async () => {
+    const paidUser = mockUsers.find((u) => (u.subscription?.plan ?? 'free') !== 'free')!;
+    const planBefore = paidUser.subscription.plan;
+
+    const resp = await post(`/api/admin/users/${paidUser.id}/trial`, {
+      reason: '想再给一次',
+      days: 7,
+      planId: 'pro',
+    });
+
+    expect(resp.status).toBe(409);
+    expect(expectFail(resp).message).toContain('赠期');
+    expect(paidUser.subscription.plan).toBe(planBefore);
+  });
+
+  test('校验：缺原因 / 天数越界 / 选免费版 / 用户不存在', async () => {
+    const free = mockUsers.find((u) => (u.subscription?.plan ?? 'free') === 'free')!;
+    expect((await post(`/api/admin/users/${free.id}/trial`, { days: 7 })).status).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${free.id}/trial`, { reason: 'x', days: 0 })).status,
+    ).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${free.id}/trial`, { reason: 'x', days: 31 })).status,
+    ).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${free.id}/trial`, { reason: 'x', days: 7, planId: 'free' }))
+        .status,
+    ).toBe(400);
+    expect((await post('/api/admin/users/usr_nope/trial', { reason: 'x' })).status).toBe(404);
+  });
+});
+
 describe('POST /api/admin/users/:id/reset-password（代重置密码）', () => {
   test('返回一次性临时密码 + 写审计（且审计里不含密码）', async () => {
     const user = mockUsers[0]!;

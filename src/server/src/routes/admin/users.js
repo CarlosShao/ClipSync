@@ -11,6 +11,7 @@
 //     → POST   /api/admin/users/:id/reset-2fa     重置两步验证
 //     → POST   /api/admin/users/:id/reset-password 代重置密码（返回一次性临时密码，2026-10-05）
 //     → POST   /api/admin/users/:id/rebind        换绑手机号/邮箱（三列一致，2026-10-05）
+//     → POST   /api/admin/users/:id/trial         人工开通/重置试用（刻意绕过终身一次闸，2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
@@ -20,6 +21,7 @@
 //   - PATCH /status / force-logout / reset-2fa → requirePerm('admin.users.manage')
 //   - POST /reset-password      → requirePerm('admin.users.manage')（高危：直接换掉登录凭据）
 //   - POST /rebind              → requirePerm('admin.users.manage')（高危：换掉登录标识）
+//   - POST /trial               → requirePerm('admin.subscriptions.grant')（人工给出订阅权益，同类同权）
 //   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
@@ -970,6 +972,184 @@ router.post('/:id/rebind', requirePerm('admin.users.manage'), async (req, res) =
   } catch (err) {
     logger.error('[admin/users] rebind failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '换绑失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/trial  body { reason, days?, planId?, billingCycle? }
+ * 人工开通 / 重置试用（2026-10-05 新增）。
+ *
+ * 为什么之前只能改库：用户侧 `POST /api/subscriptions/trial` 有一条**终身一次**闸
+ *（`SELECT id FROM user_subscriptions WHERE user_id = $1 LIMIT 1` —— 有行即拒，
+ * 连 cancelled/expired 也算，专门防「取消后再试用」循环套取）。这条闸本身是对的，
+ * 但它没有**例外通道**：客服想补一次试用（试用期内服务出故障、或用户是新人但库里
+ * 已有 Free 订阅行）就只能改库 —— 而试用会同时写 `user_subscriptions`（含 `trial_end`）
+ * 与 `users` 的两个快照列，人工改必错。
+ *
+ * 本端点**刻意绕过**那条闸（这就是「重置试用」的含义），所以：
+ *   - 拒绝"已有生效中订阅"的用户（付费/试用进行中都算）→ 避免叠出两条 active/trialing 行，
+ *     并提示改用「赠期」或先「收回」；
+ *   - days 默认 7（与用户侧一致）、上限 30 —— 更长就不叫试用了，请用「赠期」；
+ *   - 审计里明确记 `bypassedLifetimeGate: true`：**绕过产品规则必须留痕**，
+ *     否则事后无法把"客服补的试用"与"用户自助试用"分开；
+ *   - 通知用户（试用是用户可见的权益变化，静默开通也该在通知中心有迹可循）。
+ *
+ * 权限复用 `admin.subscriptions.grant`（同类：人工给出订阅权益）。
+ */
+router.post('/:id/trial', requirePerm('admin.subscriptions.grant'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '开通试用必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const days = body.days === undefined || body.days === null || body.days === '' ? 7 : Number(body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 30) {
+      return res.status(400).json({
+        code: 4000,
+        message: '试用天数须为 1–30 的整数（更长请改用「赠期」）',
+      });
+    }
+    const billingCycle = body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    // 已有生效中订阅（付费或试用进行中）⇒ 不叠加，避免两条 active/trialing 行
+    const live = await pool.query(
+      `SELECT id, status, current_period_end
+         FROM user_subscriptions
+        WHERE user_id = $1
+          AND status IN ('active', 'trialing', 'trial', 'past_due')
+          AND (current_period_end IS NULL OR current_period_end > NOW())
+        ORDER BY current_period_end DESC NULLS FIRST
+        LIMIT 1`,
+      [user.id]
+    );
+    if (live.rows.length > 0) {
+      const existing = live.rows[0];
+      const endStr = existing.current_period_end
+        ? new Date(existing.current_period_end).toISOString().slice(0, 10)
+        : '未知';
+      return res.status(409).json({
+        code: 40906,
+        reason: 'ALREADY_SUBSCRIBED',
+        existingStatus: existing.status,
+        message: `该用户已有生效中的订阅（${existing.status}，到期 ${endStr}），无需试用；如需补偿请用「赠期」，或先用「收回」终止`,
+      });
+    }
+
+    // 套餐解析：与 grant 同一套「UUID / 套餐名」分流（见 §4-A12：不能写成 id=$1 OR name=$1，
+    // 非 UUID 字符串会被 PG 直接以 22P02 抛错）。默认取名为 pro 的套餐。
+    const planInput = typeof body.planId === 'string' && body.planId.trim() ? body.planId.trim() : 'pro';
+    const { rows: planRows } = await pool.query(
+      UUID_RE.test(planInput)
+        ? 'SELECT id, name, display_name FROM subscription_plans WHERE id = $1 AND is_active = true'
+        : 'SELECT id, name, display_name FROM subscription_plans WHERE lower(name) = lower($1) AND is_active = true',
+      [planInput]
+    );
+    if (planRows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '套餐不存在' });
+    }
+    const plan = planRows[0];
+    if (String(plan.name || '').toLowerCase() === 'free') {
+      return res.status(400).json({ code: 4000, message: '免费版没有试用一说，请指定 Pro / Enterprise 套餐' });
+    }
+
+    // 与用户侧 trial 路由**同一口径**：status='trial'、区间用 SQL 计算（避免 JS/DB 时区偏移）
+    const trial = await pool.query(
+      `INSERT INTO user_subscriptions
+         (user_id, plan_id, status, start_date, end_date,
+          current_period_start, current_period_end, billing_cycle, trial_end)
+       VALUES ($1, $2, 'trial', NOW(), NOW() + make_interval(days => $4),
+               NOW(), NOW() + make_interval(days => $4), $3,
+               NOW() + make_interval(days => $4))
+       RETURNING id, trial_end, current_period_end`,
+      [user.id, plan.id, billingCycle, days]
+    );
+    const created = trial.rows[0];
+
+    await pool.query(
+      `UPDATE users
+          SET subscription_status = 'trial', current_subscription_id = $2, updated_at = NOW()
+        WHERE id = $1`,
+      [user.id, created.id]
+    );
+
+    const trialEndIso = created.current_period_end
+      ? new Date(created.current_period_end).toISOString()
+      : null;
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.subscriptions.trial',
+      resourceType: 'user_subscription',
+      resourceId: String(created.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        planId: plan.id,
+        planName: plan.display_name || plan.name,
+        days,
+        billingCycle,
+        trialEnd: trialEndIso,
+        reason,
+        // ★刻意绕过用户侧的"终身一次"闸 —— 必须留痕，否则事后分不清谁补的
+        bypassedLifetimeGate: true,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    try {
+      await sendNotification(user.id, {
+        notificationType: 'subscription_notice',
+        title: `已为你开通 ${days} 天试用`,
+        body: `你的 ${plan.display_name || plan.name} 试用已开通，有效期至 ${
+          trialEndIso ? trialEndIso.slice(0, 10) : '—'
+        }。`,
+        data: { subscriptionId: created.id, trialDays: days },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/users] trial notify failed (ignored)', {
+        targetUserId: user.id,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/users] manual trial granted', {
+      targetUserId: user.id,
+      days,
+      planName: plan.name,
+      operator: req.user?.userId,
+    });
+
+    const refreshed = await fetchUserById(user.id);
+    return res.json({
+      code: 0,
+      data: mapUserRow(refreshed || user),
+      message: `已为 ${user.nickname || '该用户'} 开通 ${days} 天试用（${
+        plan.display_name || plan.name
+      }，到期 ${trialEndIso ? trialEndIso.slice(0, 10) : '—'}）`,
+    });
+  } catch (err) {
+    logger.error('[admin/users] grant trial failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '开通试用失败' });
   }
 });
 
