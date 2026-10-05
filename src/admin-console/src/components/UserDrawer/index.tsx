@@ -10,6 +10,7 @@ import {
   forceLogoutUser,
   getUserDetail,
   grantUserTrial,
+  mergeAccounts,
   moderateUserProfile,
   notifyUser,
   rebindUserIdentity,
@@ -22,6 +23,7 @@ import { grantSubscription } from '@/api/subscriptions';
 import { AssignRoleModal } from '@/components/AssignRoleModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { ModerateProfileModal } from '@/components/ModerateProfileModal';
+import { MergeAccountModal } from '@/components/MergeAccountModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { RebindModal } from '@/components/RebindModal';
 import { ResetPasswordModal } from '@/components/ResetPasswordModal';
@@ -101,6 +103,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [moderateOpen, setModerateOpen] = useState(false);
   // 2026-10-05：单用户配额覆盖（迁移 084）
   const [limitsOpen, setLimitsOpen] = useState(false);
+  // 2026-10-05：合并重复账号（不可逆：被合并账号退役）
+  const [mergeOpen, setMergeOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -271,6 +275,30 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
         variables.clearAvatar ? '头像已清空，资料其余部分未改动' : '资料已处置'
       );
       setModerateOpen(false);
+    },
+  });
+
+  /**
+   * 2026-10-05：合并重复账号。onError 刻意不关弹窗 —— 服务端会先返回
+   * 409 CLIP_COUNT_MISMATCH（+ 准确条数）让运营二次确认，弹窗要留在原地显示条数。
+   */
+  const mergeMutation = useMutation({
+    mutationFn: (payload: {
+      canonicalUserId: string;
+      duplicateUserId: string;
+      confirmMovedClips?: number;
+      reason: string;
+    }) => mergeAccounts(payload),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+      void queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      void message.success(
+        `已合并：搬入 ${result.merged.movedClips} 条内容${
+          result.merged.movedSubscription ? '、1 个生效中的订阅' : ''
+        }`
+      );
+      setMergeOpen(false);
     },
   });
 
@@ -526,6 +554,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* 2026-10-05：合并重复账号（不可逆：被合并的账号会被停用） */}
+          <Tooltip title={canManage ? '把另一个账号并入/并入另一个账号，不可逆' : '缺少权限'}>
+            <span>
+              <Button danger disabled={!canManage} onClick={() => setMergeOpen(true)}>
+                合并账号
+              </Button>
+            </span>
+          </Tooltip>
           {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
           <Tooltip title={canManage ? '' : '缺少权限'}>
             <span>
@@ -745,6 +781,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
                 : { id: user.id, reason: payload.reason, overrides: payload.overrides }
             )
           }
+        />
+
+        <MergeAccountModal
+          open={mergeOpen}
+          currentUser={user}
+          confirmLoading={mergeMutation.isPending}
+          onCancel={() => setMergeOpen(false)}
+          onConfirm={(payload) => mergeMutation.mutateAsync(payload)}
         />
       </>
     );

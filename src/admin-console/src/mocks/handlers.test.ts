@@ -1007,6 +1007,76 @@ describe('POST /api/admin/users/:id/trial（人工开通/重置试用）', () =>
   });
 });
 
+describe('POST /api/admin/users/merge（合并重复账号）', () => {
+  test('★两步确认：第一次 409 告知条数（什么都不做），带条数才真合并', async () => {
+    // 挑一对"都不付费"的账号，避开订阅冲突分支
+    const free = mockUsers.filter((u) => (u.subscription?.plan ?? 'free') === 'free');
+    const canonical = free[0]!;
+    const duplicate = free[1]!;
+    const dupNickBefore = duplicate.nickname;
+    const auditBefore = mockAuditLogs.length;
+
+    const first = await post('/api/admin/users/merge', {
+      canonicalUserId: canonical.id,
+      duplicateUserId: duplicate.id,
+      reason: '同人两号',
+    });
+    expect(first.status).toBe(409);
+    expect(expectFail(first).message).toContain('3 条');
+    // 什么都没发生
+    expect(duplicate.nickname).toBe(dupNickBefore);
+    expect(mockAuditLogs.length).toBe(auditBefore);
+
+    const second = await post<{ merged: { movedClips: number } }>('/api/admin/users/merge', {
+      canonicalUserId: canonical.id,
+      duplicateUserId: duplicate.id,
+      confirmMovedClips: 3,
+      reason: '同人两号',
+    });
+    expect(second.status).toBe(200);
+    expect(expectOk(second).data.merged.movedClips).toBe(3);
+    // 被合并方退役
+    expect(duplicate.nickname).toContain('_merged');
+    expect(duplicate.isActive).toBe(false);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.merge');
+    expect(mockAuditLogs[0]?.details).toContain('movedClips=3');
+  });
+
+  test('校验：同一个账号 / 缺 id / 缺原因 → 400；账号不存在 → 404', async () => {
+    const a = mockUsers[0]!;
+    expect(
+      (
+        await post('/api/admin/users/merge', {
+          canonicalUserId: a.id,
+          duplicateUserId: a.id,
+          reason: 'x',
+        })
+      ).status,
+    ).toBe(400);
+    expect((await post('/api/admin/users/merge', { canonicalUserId: a.id, reason: 'x' })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await post('/api/admin/users/merge', {
+          canonicalUserId: a.id,
+          duplicateUserId: mockUsers[1]!.id,
+          confirmMovedClips: 3,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await post('/api/admin/users/merge', {
+          canonicalUserId: a.id,
+          duplicateUserId: 'usr_nope',
+          reason: 'x',
+        })
+      ).status,
+    ).toBe(404);
+  });
+});
+
 describe('PATCH /api/admin/users/:id/profile（违规昵称/头像处置）', () => {
   test('改昵称：更新内存 + 审计记改动前后', async () => {
     const user = mockUsers[0]!;

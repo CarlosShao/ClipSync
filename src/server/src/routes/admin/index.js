@@ -94,6 +94,8 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：解绑设备会删掉设备行、并**连带删除该设备产生的全部剪贴板内容**
   //（外键 CASCADE，不可恢复），必须限流。
   /^\/devices\/[^/]+$/,
+  // 2026-10-05 新增：合并账号会**退役一个账号**并跨表搬数据，不可逆，必须限流。
+  /^\/users\/merge$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

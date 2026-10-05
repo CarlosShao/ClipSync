@@ -65,6 +65,33 @@ export function moderateUserProfile(
 }
 
 /**
+ * 2026-10-05 补：合并重复账号（把 duplicate 并入 canonical，duplicate 退役）。
+ *
+ * 服务端口径：
+ *  - **不做模糊匹配**（登录时那份自动合并是关的，正因为它按用户可改的昵称/未验证邮箱匹配）；
+ *  - `confirmMovedClips` 是**内容计数闸**：第一次不给会被 409 拒绝并回传准确条数，
+ *    带上条数再提交才执行（合并不提供"反合并"，这道闸防选错账号）；
+ *  - 两边都有生效订阅 → 409；只搬剪贴板与生效中的订阅，**设备不搬**；
+ *  - 越级校验对**两个**账号都做；审计 `admin.user.merge`。
+ */
+export function mergeAccounts(payload: {
+  canonicalUserId: string;
+  duplicateUserId: string;
+  confirmMovedClips?: number;
+  reason: string;
+}): Promise<{ user: AdminUser; merged: { fromUserId: string; movedClips: number; movedSubscription: boolean; duplicateDeviceCount: number } }> {
+  return apiPost<{
+    user: AdminUser;
+    merged: {
+      fromUserId: string;
+      movedClips: number;
+      movedSubscription: boolean;
+      duplicateDeviceCount: number;
+    };
+  }>('/admin/users/merge', payload);
+}
+
+/**
  * 2026-10-05 补（迁移 084）：单用户配额覆盖。
  *
  * 配额的唯一来源是 `subscription_plans`，而 `PATCH /admin/plans/:id` 改的是套餐行 ——

@@ -14,6 +14,7 @@
 //     → POST   /api/admin/users/:id/trial         人工开通/重置试用（刻意绕过终身一次闸，2026-10-05）
 //     → PATCH  /api/admin/users/:id/profile       违规昵称/头像处置（并清 Redis 用户缓存，2026-10-05）
 //     → POST   /api/admin/users/:id/limits        单用户配额覆盖（迁移 084，2026-10-05）
+//     → POST   /api/admin/users/merge             合并重复账号（显式指定，不可逆；2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
@@ -25,6 +26,7 @@
 //   - POST /rebind              → requirePerm('admin.users.manage')（高危：换掉登录标识）
 //   - POST /trial               → requirePerm('admin.subscriptions.grant')（人工给出订阅权益，同类同权）
 //   - POST /limits              → requirePerm('admin.users.manage')（改单个用户的配额，等同放宽风控阈值）
+//   - POST /merge               → requirePerm('admin.users.manage')（退役一个账号 + 跨表搬数据，不可逆）
 //   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
@@ -52,6 +54,7 @@ import { computeFieldHash } from '../../utils/fieldHash.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendNotification, getOnlineDeviceCount } from '../../ws/server.js';
 import { resetUserPassword } from '../../services/userPasswordReset.js';
+import { mergeAccountInto } from '../../services/accountMerge.js';
 
 const router = Router();
 
@@ -1158,6 +1161,186 @@ router.post('/:id/trial', requirePerm('admin.subscriptions.grant'), async (req, 
   } catch (err) {
     logger.error('[admin/users] grant trial failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '开通试用失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/merge  body { canonicalUserId, duplicateUserId, confirmMovedClips, reason }
+ * 合并重复账号（2026-10-05 新增）：把 duplicate **并入** canonical，duplicate 退役。
+ *
+ * 为什么之前只能改库：`routes/auth.js` 里确实有一份"登录时自动合并"，但它
+ * ① 由 `IDENTITY_MERGE_ENABLED !== 'true'` **默认关闭**（原因写在它的注释里：匹配依据是
+ * 用户可自由设置的 nickname 与**未验证**的 email，攻击者改成受害者的就能把对方剪贴板
+ * 整体搬进自己账号），② 即便如此也只有登录时才跑，运营**无法指定**合并谁和谁。
+ * 于是"同一个人注册了两个号"这种真实工单，客服只能改库 —— 而合并涉及跨表迁移
+ * （剪贴板 + 订阅）与"退役"一个账号（改 phone/email/nickname/hash/会话），人工必错。
+ *
+ * 本端点的口径：
+ *   - **不做任何模糊匹配**：canonical / duplicate 由调用方显式指定（这正是那份自动合并
+ *     不敢开的原因）；执行逻辑在 services/accountMerge.js（一个事务 + advisory lock）。
+ *   - ★**内容计数闸**：必须回传 `confirmMovedClips`（当前会被搬走的条数），对不上就 409
+ *     且**什么都不做**。合并虽不是删除（数据是搬走），但**不可逆**（旧账号退役、无"反合并"），
+ *     这道闸防手滑选错账号，也防"预览与执行之间又同步进来几条"。
+ *   - 两边**都有生效中的订阅**时拒绝（否则被合并方那段已付费的时间会凭空消失）——
+ *     金额问题先按「退款/收窄」处理干净再来合并。
+ *   - 越级防护对**两个**账号都做（不能把超管的账号并掉，也不能把它并给别人）。
+ *   - 原因必填；审计 `admin.user.merge` 记搬走条数/是否搬了订阅/被合并方设备数；
+ *     通知保留方；已进高危限流名单。
+ *
+ * 合并边界（返回里如实报出，别以为"全搬"）：只搬**剪贴板**与**生效中的订阅**；
+ * `devices` 不搬（`UNIQUE(user_id, device_name)` 会撞同名设备，旧实现也没搬），
+ * 其余归属该账号的资源留在原地。详见 services/accountMerge.js 顶部注释。
+ */
+router.post('/merge', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const canonicalUserId =
+      typeof body.canonicalUserId === 'string' ? body.canonicalUserId.trim() : '';
+    const duplicateUserId =
+      typeof body.duplicateUserId === 'string' ? body.duplicateUserId.trim() : '';
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+
+    if (!canonicalUserId || !UUID_RE.test(canonicalUserId)) {
+      return res.status(400).json({ code: 4000, message: 'canonicalUserId 必填且须为合法 UUID' });
+    }
+    if (!duplicateUserId || !UUID_RE.test(duplicateUserId)) {
+      return res.status(400).json({ code: 4000, message: 'duplicateUserId 必填且须为合法 UUID' });
+    }
+    if (canonicalUserId === duplicateUserId) {
+      return res.status(400).json({ code: 4000, message: '保留账号与被合并账号不能是同一个' });
+    }
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '合并必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    // 两个账号都要过越级防护（先读一次拿角色等级；真正的执行在服务层的事务里）
+    const { rows } = await pool.query(
+      `SELECT u.id, u.nickname, u.phone, u.email, u.merged_into, r.level AS role_level
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.id = ANY($1::uuid[])`,
+      [[canonicalUserId, duplicateUserId]]
+    );
+    const canonical = rows.find((r) => r.id === canonicalUserId);
+    const duplicate = rows.find((r) => r.id === duplicateUserId);
+    if (!canonical || !duplicate) {
+      return res.status(404).json({
+        code: 40404,
+        message: !canonical ? '保留账号不存在' : '被合并账号不存在',
+      });
+    }
+    for (const target of [canonical, duplicate]) {
+      const guard = targetLevelGuardError(req, target);
+      if (guard) {
+        return res.status(guard.status).json(guard.body);
+      }
+    }
+
+    const result = await mergeAccountInto({
+      canonicalUserId,
+      duplicateUserId,
+      confirmMovedClips: body.confirmMovedClips,
+    });
+
+    if (!result.ok) {
+      const failureMap = {
+        USER_NOT_FOUND: [404, 40404, '账号不存在（可能刚被删除）'],
+        SAME_USER: [400, 4000, '保留账号与被合并账号不能是同一个'],
+        ALREADY_MERGED: [409, 40906, '其中一个账号已经被合并过，不能重复合并'],
+        SUBSCRIPTION_CONFLICT: [
+          409,
+          40906,
+          '两个账号都有生效中的订阅：合并会让被合并方那段已付费时间凭空消失。请先用「退款」或「收窄到付费终点」处理其中一个，再回来合并',
+        ],
+        CLIP_COUNT_MISMATCH: [
+          409,
+          40906,
+          `被合并账号当前有 ${result.movedClips} 条剪贴板内容会被搬走，与你回传的条数不一致（可能刚同步进新内容）。请刷新后按新条数重新确认`,
+        ],
+      };
+      const [status, code, message] = failureMap[result.reason] || [
+        409,
+        40906,
+        `合并被拒绝（${result.reason}）`,
+      ];
+      return res.status(status).json({
+        code,
+        reason: result.reason,
+        ...(result.movedClips !== undefined ? { movedClips: result.movedClips } : {}),
+        message,
+      });
+    }
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.merge',
+      resourceType: 'user',
+      resourceId: String(canonicalUserId),
+      details: {
+        canonicalUserId,
+        duplicateUserId,
+        canonicalNickname: result.canonicalNickname,
+        duplicateNickname: result.duplicateNickname,
+        reason,
+        movedClips: result.movedClips,
+        movedSubscription: result.movedSubscription,
+        // 如实报出"没搬走的东西"：被合并方的设备行会随账号失效，但不归到保留账号名下
+        duplicateDeviceCount: result.duplicateDeviceCount,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    try {
+      await sendNotification(canonicalUserId, {
+        notificationType: 'security_notice',
+        title: '你的两个账号已合并',
+        body: `管理员已把你的另一个账号合并到当前账号：搬入 ${result.movedClips} 条内容${
+          result.movedSubscription ? '与 1 个生效中的订阅' : ''
+        }。原账号已停用，今后请只用当前账号登录。`,
+        data: { mergedFrom: duplicateUserId, movedClips: result.movedClips },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/users] merge notify failed (ignored)', {
+        canonicalUserId,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/users] accounts merged', {
+      canonicalUserId,
+      duplicateUserId,
+      movedClips: result.movedClips,
+      movedSubscription: result.movedSubscription,
+      operator: req.user?.userId,
+    });
+
+    const refreshed = await fetchUserById(canonicalUserId);
+    return res.json({
+      code: 0,
+      data: {
+        user: refreshed ? mapUserRow(refreshed) : mapUserRow(canonical),
+        merged: {
+          fromUserId: duplicateUserId,
+          movedClips: result.movedClips,
+          movedSubscription: result.movedSubscription,
+          duplicateDeviceCount: result.duplicateDeviceCount,
+        },
+      },
+      message: `已合并：搬入 ${result.movedClips} 条内容${
+        result.movedSubscription ? '、1 个生效中的订阅' : ''
+      }；被合并账号已停用${
+        result.duplicateDeviceCount > 0
+          ? `（其 ${result.duplicateDeviceCount} 台设备随之失效，未归入保留账号）`
+          : ''
+      }`,
+    });
+  } catch (err) {
+    logger.error('[admin/users] merge failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '合并账号失败' });
   }
 });
 

@@ -4,6 +4,7 @@ import type {
   AdminDevice,
   AdminPlan,
   AdminSubscription,
+  AdminUser,
   Announcement,
   ApiResp,
   AuditLog,
@@ -622,6 +623,80 @@ const usersHandlers = [
         : `已设置配额覆盖：${Object.entries(next)
             .map(([k, v]) => `${k}=${v === null ? '不限' : v}`)
             .join(', ')}`,
+    );
+  }),
+
+  /**
+   * 2026-10-05 补：合并重复账号。
+   *
+   * mock 里被合并方固定"有 3 条内容"，好让**两步确认**（第一次 409 告知条数、
+   * 带 confirmMovedClips 再提交才执行）在本机也能走到；真实后端是
+   * `COUNT(clipboard_items)`，且会真的搬数据 + 退役账号。
+   *
+   * 必须注册在 `/:id/...` 之前无所谓（路径段数不同，不会互相匹配），但保持这个顺序更直观。
+   */
+  http.post('/api/admin/users/merge', async ({ request }) => {
+    await delay(300);
+    const body = (await request.json()) as {
+      canonicalUserId?: string;
+      duplicateUserId?: string;
+      confirmMovedClips?: number;
+      reason?: string;
+    };
+    const canonicalUserId = body.canonicalUserId?.trim() ?? '';
+    const duplicateUserId = body.duplicateUserId?.trim() ?? '';
+    const reason = body.reason?.trim() ?? '';
+    if (!canonicalUserId || !duplicateUserId) return fail(400, 4000, '两个账号都必须指定');
+    if (canonicalUserId === duplicateUserId) {
+      return fail(400, 4000, '保留账号与被合并账号不能是同一个');
+    }
+    if (!reason) return fail(400, 4000, '合并必须填写原因（写入审计日志）');
+
+    const canonical = mockUsers.find((u) => u.id === canonicalUserId);
+    const duplicate = mockUsers.find((u) => u.id === duplicateUserId);
+    if (!canonical || !duplicate) return fail(404, 40404, '账号不存在');
+
+    // 两边都有付费套餐 ⇒ 冲突（真实后端按 user_subscriptions.status='active' 判）
+    const paid = (u: AdminUser) => (u.subscription?.plan ?? 'free') !== 'free';
+    if (paid(canonical) && paid(duplicate)) {
+      return fail(
+        409,
+        40906,
+        '两个账号都有生效中的订阅：合并会让被合并方那段已付费时间凭空消失。请先用「退款」或「收窄到付费终点」处理其中一个，再回来合并',
+      );
+    }
+
+    const movedClips = 3;
+    if (body.confirmMovedClips !== movedClips) {
+      return fail(
+        409,
+        40906,
+        `被合并账号当前有 ${movedClips} 条剪贴板内容会被搬走，与你回传的条数不一致（可能刚同步进新内容）。请刷新后按新条数重新确认`,
+      );
+    }
+
+    const mergedSubscription = paid(duplicate) && !paid(canonical);
+    duplicate.nickname = `${duplicate.nickname}_merged`;
+    duplicate.isActive = false;
+    duplicate.status = 'disabled';
+    duplicate.subscription = { ...canonical.subscription };
+    pushAudit(
+      'admin.user.merge',
+      'user',
+      canonicalUserId,
+      `canonical=${canonical.nickname}, duplicate=${duplicateUserId}, movedClips=${movedClips}, movedSubscription=${mergedSubscription}, duplicateDeviceCount=${duplicate.deviceCount}, reason="${reason}"`,
+    );
+    return ok(
+      {
+        user: canonical,
+        merged: {
+          fromUserId: duplicateUserId,
+          movedClips,
+          movedSubscription: mergedSubscription,
+          duplicateDeviceCount: duplicate.deviceCount,
+        },
+      },
+      `已合并：搬入 ${movedClips} 条内容${mergedSubscription ? '、1 个生效中的订阅' : ''}；被合并账号已停用`,
     );
   }),
 
