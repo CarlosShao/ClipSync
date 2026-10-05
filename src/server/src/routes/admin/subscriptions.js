@@ -283,6 +283,151 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
 });
 
 /**
+ * mode=`shorten_to_paid_end` 的实现：把订阅周期**收窄到「已付订单所支撑的终点」**。
+ *
+ * 场景：订阅**既有真实已付订单、又被管理台误赠了一段**（grant 只在 period_end 上叠加）。
+ * 此时整条收回（immediate）会连带收掉用户付过钱的时段，而 revoke 的保护闸又不允许对
+ * 有已付订单的订阅动手 —— 这类混合场景此前只能改库。
+ *
+ * 口径（关键：**只收窄、绝不越界**）：
+ *   - 付费应得的周期数 = 该订阅下的**已付订单数**（一笔订单买一个周期；同套餐重复购买会被
+ *     服务端 409 拦掉、升级单会另开一条订阅，故此口径成立）；
+ *   - 付费终点 paidEnd = `current_period_start + 已付订单数 × billing_cycle`；
+ *   - 三种"什么都不该做"的情形一律拒，并把**算出来的 paidEnd 一并回传**，让运营看得见：
+ *       无已付订单（该用 immediate）、paidEnd 已在过去（付费期已用尽，该用 immediate）、
+ *       paidEnd ≥ 当前 period_end（本来就没多给）；
+ *   - 只改 `current_period_end`（+ `auto_renew=false`）：**仍是 active**、用户快照不动
+ *     —— 剩下的这段本来就是用户付过钱的。
+ */
+async function shortenToPaidEnd({ req, res, id, subscription, reason }) {
+  const paidCount = (
+    await pool.query(
+      `SELECT COUNT(*)::int AS n FROM payment_orders WHERE subscription_id = $1 AND status = 'paid'`,
+      [id]
+    )
+  ).rows[0].n;
+
+  if (paidCount === 0) {
+    return res.status(409).json({
+      code: 40906,
+      reason: 'NO_PAID_ORDER',
+      message: '该订阅没有任何已付订单，没有「付费终点」可作依据；请改用「立即收回」整条终止',
+    });
+  }
+
+  // 用 make_interval 而不是拼 SQL 字符串：周期虽是白名单枚举，能不用字符串就不用
+  const { rows } = await pool.query(
+    `SELECT
+        (CASE WHEN $3::text = 'yearly'
+              THEN current_period_start + make_interval(years => $2::int)
+              ELSE current_period_start + make_interval(months => $2::int)
+         END) AS paid_end
+       FROM user_subscriptions
+      WHERE id = $1`,
+    [id, paidCount, subscription.billing_cycle === 'yearly' ? 'yearly' : 'monthly']
+  );
+
+  const paidEnd = rows[0] && rows[0].paid_end ? new Date(rows[0].paid_end) : null;
+  const currentEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end)
+    : null;
+
+  if (
+    !paidEnd ||
+    Number.isNaN(paidEnd.getTime()) ||
+    !currentEnd ||
+    Number.isNaN(currentEnd.getTime())
+  ) {
+    return res.status(409).json({
+      code: 40906,
+      reason: 'PERIOD_UNRESOLVABLE',
+      message: '该订阅的周期数据不完整，算不出付费终点（请人工核对数据）',
+    });
+  }
+
+  const paidEndIso = paidEnd.toISOString();
+  if (paidEnd.getTime() >= currentEnd.getTime()) {
+    return res.status(409).json({
+      code: 40906,
+      reason: 'NOTHING_TO_SHORTEN',
+      paidEnd: paidEndIso,
+      message: `按 ${paidCount} 笔已付订单算出的付费终点 ${paidEndIso.slice(0, 10)} 不早于当前到期日，本来就没有多给，无需收窄`,
+    });
+  }
+  if (paidEnd.getTime() <= Date.now()) {
+    return res.status(409).json({
+      code: 40906,
+      reason: 'PAID_PERIOD_ALREADY_OVER',
+      paidEnd: paidEndIso,
+      message: `付费终点 ${paidEndIso.slice(0, 10)} 已经过去（付费期已用尽，现在只剩赠送时段）；请改用「立即收回」`,
+    });
+  }
+
+  const updated = (
+    await pool.query(
+      `UPDATE user_subscriptions
+          SET current_period_end = $2, auto_renew = false, updated_at = NOW()
+        WHERE id = $1
+        RETURNING *`,
+      [id, paidEnd]
+    )
+  ).rows[0];
+
+  await logAuditEvent({
+    userId: req.user?.userId,
+    action: 'admin.subscriptions.shorten',
+    resourceType: 'user_subscription',
+    resourceId: id,
+    details: {
+      targetUserId: subscription.user_id,
+      planId: subscription.plan_id,
+      planName: subscription.plan_display_name || subscription.plan_name,
+      reason,
+      paidOrders: paidCount,
+      billingCycle: subscription.billing_cycle,
+      fromPeriodEnd: currentEnd.toISOString(),
+      toPeriodEnd: paidEndIso,
+    },
+    ipAddress: req.ip,
+    userAgent: req.headers ? req.headers['user-agent'] : undefined,
+  });
+
+  // 到期日被提前了，要告知用户（静默缩短比缩短本身更糟）；文案中性，不带内部原因
+  try {
+    await sendNotification(subscription.user_id, {
+      notificationType: 'subscription_notice',
+      title: '订阅有效期已调整',
+      body: `你的订阅有效期已调整为 ${paidEndIso.slice(0, 10)}。如有疑问请联系客服。`,
+      data: { subscriptionId: id, currentPeriodEnd: paidEndIso },
+    });
+  } catch (notifyErr) {
+    logger.warn('[admin/subscriptions] shorten notify failed (ignored)', {
+      subscriptionId: id,
+      error: notifyErr?.message,
+    });
+  }
+
+  logger.info('[admin/subscriptions] shorten executed', {
+    subscriptionId: id,
+    paidOrders: paidCount,
+    from: currentEnd.toISOString(),
+    to: paidEndIso,
+    operator: req.user?.userId,
+  });
+
+  return res.json({
+    code: 0,
+    data: {
+      ...mapSubscriptionRow({ ...subscription, ...updated }),
+      shortenedFrom: currentEnd.toISOString(),
+      shortenedTo: paidEndIso,
+      paidOrders: paidCount,
+    },
+    message: `已把到期日从 ${currentEnd.toISOString().slice(0, 10)} 收窄到付费终点 ${paidEndIso.slice(0, 10)}（依据 ${paidCount} 笔已付订单）`,
+  });
+}
+
+/**
  * POST /api/admin/subscriptions/:id/revoke  body { reason, mode? = 'immediate' }
  * 收回「人工给出去」的订阅权益（赠期 / mock / 补偿）—— 2026-10-05 新增。
  *
@@ -301,6 +446,10 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
  *                        （与 orderFulfillment 升级取代旧订阅同一口径）
  *   period_end         期末生效：cancel_at_period_end=true，权益保留到到期
  *                        （与用户自助 POST /api/subscriptions/cancel 同一口径）
+ *   shorten_to_paid_end **收窄到付费终点**（2026-10-05 新增）：只把"多给的那段"收回来，
+ *                        仍是 active、快照不动。用于「既有真实已付订单、又被误赠一段」的
+ *                        混合场景 —— 那种场景下本端点的保护闸会拒、而整条收回又不该动
+ *                        用户花钱买的时间。算法与三个拒绝条件见 shortenToPaidEnd 的注释。
  */
 router.post('/:id/revoke', requirePerm('admin.subscriptions.grant'), async (req, res) => {
   try {
@@ -319,10 +468,10 @@ router.post('/:id/revoke', requirePerm('admin.subscriptions.grant'), async (req,
     if (reason.length > 200) {
       return res.status(400).json({ code: 4000, message: '撤销原因不能超过 200 字' });
     }
-    if (mode !== 'immediate' && mode !== 'period_end') {
+    if (mode !== 'immediate' && mode !== 'period_end' && mode !== 'shorten_to_paid_end') {
       return res
         .status(400)
-        .json({ code: 4000, message: 'mode 取值不合法（immediate / period_end）' });
+        .json({ code: 4000, message: 'mode 取值不合法（immediate / period_end / shorten_to_paid_end）' });
     }
 
     const { rows } = await pool.query(`${SUBSCRIPTION_SELECT} WHERE us.id = $1`, [id]);
@@ -334,6 +483,11 @@ router.post('/:id/revoke', requirePerm('admin.subscriptions.grant'), async (req,
 
     if (previousStatus === 'canceled' || previousStatus === 'expired') {
       return res.status(409).json({ code: 40904, message: '该订阅已终止，无需撤销' });
+    }
+
+    // 混合场景（既有已付订单、又被误赠）：不走下面的保护闸，改走"只收窄多给的那段"
+    if (mode === 'shorten_to_paid_end') {
+      return shortenToPaidEnd({ req, res, id, subscription, reason });
     }
 
     // ★保护闸：有真实已付订单一律拒（引导走退款审核）

@@ -840,13 +840,16 @@ export interface GrantSubscriptionPayload {
  * 服务端一律 409 HAS_PAID_ORDER 拒绝，必须走「退款审核」原路退款（退款会一并取消订阅）。
  */
 export interface RevokeSubscriptionPayload {
-  /** 撤销原因，必填，写入审计 admin.subscriptions.revoke */
+  /** 撤销原因，必填，写入审计 admin.subscriptions.revoke（收窄模式写 admin.subscriptions.shorten） */
   reason: string;
   /**
    * immediate（默认）立即终止、用户回落免费版；
-   * period_end 期末终止，权益保留到到期（与用户自助取消同口径）。
+   * period_end 期末终止，权益保留到到期（与用户自助取消同口径）；
+   * shorten_to_paid_end（2026-10-05）收窄到「付费终点」：只收回多给的那段，
+   *   到期日 = 周期开始 + 已付订单数 × 计费周期，订阅仍有效、用户档位不变。
+   *   无已付订单 / 付费期已用尽 / 本来就没多给 ⇒ 409（要用 immediate）。
    */
-  mode?: 'immediate' | 'period_end';
+  mode?: 'immediate' | 'period_end' | 'shorten_to_paid_end';
 }
 
 /** 对单个用户定向通知（POST /api/admin/users/:id/notify） */

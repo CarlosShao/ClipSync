@@ -1341,13 +1341,56 @@ const subscriptionsHandlers = [
     const mode = body.mode ?? 'immediate';
     if (!reason) return fail(400, 40003, '撤销原因必填（写入审计日志）');
     if (reason.length > 200) return fail(400, 40002, '撤销原因不能超过 200 字');
-    if (mode !== 'immediate' && mode !== 'period_end') {
-      return fail(400, 4000, 'mode 取值不合法（immediate / period_end）');
+    if (mode !== 'immediate' && mode !== 'period_end' && mode !== 'shorten_to_paid_end') {
+      return fail(400, 4000, 'mode 取值不合法（immediate / period_end / shorten_to_paid_end）');
     }
     if (sub.status === 'canceled' || sub.status === 'expired') {
       return fail(409, 40904, '该订阅已终止，无需撤销');
     }
     const paidOrders = mockOrders.filter((o) => o.userId === sub.userId && o.status === 'paid').length;
+
+    // 2026-10-05：收窄到付费终点（只收回多给的那段）。与真实后端同口径：
+    // 付费终点 = currentPeriodStart + 已付订单数 × 计费周期，且三种情形一律拒。
+    if (mode === 'shorten_to_paid_end') {
+      if (paidOrders === 0) {
+        return fail(409, 40906, '该订阅没有任何已付订单，没有「付费终点」可作依据；请改用「立即收回」');
+      }
+      const start = dayjs(sub.currentPeriodStart);
+      const paidEnd = start.add(
+        paidOrders,
+        sub.billingCycle === 'yearly' ? 'year' : 'month',
+      );
+      const currentEnd = sub.currentPeriodEnd ? dayjs(sub.currentPeriodEnd) : null;
+      if (!currentEnd || !currentEnd.isValid()) {
+        return fail(409, 40906, '该订阅的周期数据不完整，算不出付费终点（请人工核对数据）');
+      }
+      if (!paidEnd.isBefore(currentEnd)) {
+        return fail(
+          409,
+          40906,
+          `按 ${paidOrders} 笔已付订单算出的付费终点 ${paidEnd.format('YYYY-MM-DD')} 不早于当前到期日，本来就没有多给，无需收窄`,
+        );
+      }
+      if (!paidEnd.isAfter(dayjs())) {
+        return fail(
+          409,
+          40906,
+          `付费终点 ${paidEnd.format('YYYY-MM-DD')} 已经过去（付费期已用尽，现在只剩赠送时段）；请改用「立即收回」`,
+        );
+      }
+      sub.currentPeriodEnd = paidEnd.format('YYYY-MM-DD');
+      sub.autoRenew = false;
+      pushAudit(
+        'admin.subscriptions.shorten',
+        'user_subscription',
+        sub.id,
+        `user="${sub.userLabel}", plan=${sub.planKey}, paidOrders=${paidOrders}, to=${sub.currentPeriodEnd}, reason="${reason}"`,
+      );
+      return ok(
+        { ...sub, paidOrders, shortenedTo: sub.currentPeriodEnd },
+        `已把到期日收窄到付费终点 ${sub.currentPeriodEnd}（依据 ${paidOrders} 笔已付订单）`,
+      );
+    }
     if (paidOrders > 0) {
       return fail(
         409,

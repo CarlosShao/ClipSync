@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { setupServer } from 'msw/node';
+import dayjs from 'dayjs';
 import { handlers } from '@/mocks/handlers';
 import { mockAuditLogs, mockDevices, mockOrders, mockSubscriptions } from '@/mocks/data';
 import type {
@@ -325,5 +326,53 @@ describe('POST /api/admin/subscriptions/:id/revoke（收回权益）', () => {
 
     const notFound = await post('/api/admin/subscriptions/sub_nope/revoke', { reason: 'ok' });
     expect(notFound.status).toBe(404);
+  });
+
+  /**
+   * mode=shorten_to_paid_end（2026-10-05）：只收回「多给的那段」。
+   *
+   * 注意：本文件前面的「赠期」用例已经动过 sub_03（把它改成 monthly），所以这里
+   * **显式设置** billingCycle 与周期起止，让用例与执行顺序无关；日期也都相对"现在"算，
+   * 避免随真实时钟漂移而翻车。
+   */
+  test('收窄到付费终点：到期日改为「周期开始 + 已付订单数 × 周期」，订阅仍 active', async () => {
+    const sub = mockSubscriptions.find((s) => s.id === 'sub_03')!;
+    const now = dayjs();
+    sub.billingCycle = 'yearly';
+    sub.currentPeriodStart = now.subtract(5, 'day').format('YYYY-MM-DD');
+    sub.currentPeriodEnd = now.add(800, 'day').format('YYYY-MM-DD');
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<AdminSubscription & { paidOrders: number; shortenedTo: string }>(
+        '/api/admin/subscriptions/sub_03/revoke',
+        { reason: '误赠一年，收窄回付费终点', mode: 'shorten_to_paid_end' },
+      ),
+    );
+
+    // 周期是 yearly ⇒ 付费终点 = 开始 + 1 年
+    expect(data.paidOrders).toBe(1);
+    expect(data.shortenedTo).toBe(now.subtract(5, 'day').add(1, 'year').format('YYYY-MM-DD'));
+    // ★仍是 active（用户付过钱的那段还在）
+    expect(sub.status).toBe('active');
+    expect(sub.autoRenew).toBe(false);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    // 审计用独立 action，别和"收回"混在一起
+    expect(mockAuditLogs[0]?.action).toBe('admin.subscriptions.shorten');
+  });
+
+  test('收窄到付费终点：无已付订单 → 409 且提示改用「立即收回」', async () => {
+    const sub = mockSubscriptions.find((s) => s.id === 'sub_09')!; // 该用户没有任何订单
+    const noPaid = mockOrders.filter((o) => o.userId === sub.userId && o.status === 'paid').length;
+    expect(noPaid).toBe(0); // 前提自证
+
+    const resp = await post('/api/admin/subscriptions/sub_09/revoke', {
+      reason: 'x',
+      mode: 'shorten_to_paid_end',
+    });
+
+    expect(resp.status).toBe(409);
+    expect(expectFail(resp).message).toContain('立即收回');
+    expect(mockSubscriptions.find((s) => s.id === 'sub_09')!.status).not.toBe('canceled');
   });
 });

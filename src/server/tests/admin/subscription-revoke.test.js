@@ -272,3 +272,157 @@ describe('revoke · 入参与状态校验', () => {
     expect(res.body.code).toBe(4030);
   });
 });
+
+/**
+ * mode=`shorten_to_paid_end`（2026-10-05 新增）：只把「多给的那段」收回来。
+ *
+ * 场景：订阅**既有真实已付订单、又被误赠一段** —— 保护闸会拒 immediate，而整条收回
+ * 又会连带收掉用户付过钱的时段。这类混合场景此前只能改库。
+ *
+ * 判据集中在**不越界**上：绝不能把到期日收到付费终点之前，也不该在没有付费依据时动手。
+ */
+describe('revoke · mode=shorten_to_paid_end（收窄到付费终点）', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** 造"20 天前开始、40 天后到期、1 笔已付订单"的订阅；paid_end 由 db 侧算 */
+  function mockShorten({
+    paidCount = 1,
+    billingCycle = 'monthly',
+    startOffsetDays = -20,
+    endOffsetDays = 40,
+    paidEndOffsetDays = 10,
+    subOverrides = {},
+  } = {}) {
+    const start = new Date(Date.now() + startOffsetDays * DAY);
+    const end = new Date(Date.now() + endOffsetDays * DAY);
+    const paidEnd = new Date(Date.now() + paidEndOffsetDays * DAY);
+    const writes = { subscriptionUpdates: [], usersUpdates: [] };
+
+    pool.query.mockImplementation(async (sql, params) => {
+      if (sql.includes('perm_key')) {
+        const requested = params?.[1];
+        return requested === 'admin.subscriptions.grant'
+          ? { rows: [{ perm_key: requested }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+      if (sql.includes('FROM user_subscriptions us')) {
+        return {
+          rows: [
+            makeSubscriptionRow({
+              billing_cycle: billingCycle,
+              current_period_start: start,
+              current_period_end: end,
+              ...subOverrides,
+            }),
+          ],
+          rowCount: 1,
+        };
+      }
+      if (sql.includes('FROM payment_orders')) {
+        return { rows: [{ n: paidCount }], rowCount: 1 };
+      }
+      if (sql.includes('make_interval')) {
+        return { rows: [{ paid_end: paidEnd }], rowCount: 1 };
+      }
+      if (sql.includes('UPDATE user_subscriptions')) {
+        writes.subscriptionUpdates.push({ sql, params });
+        return { rows: [{ ...makeSubscriptionRow(), current_period_end: paidEnd }], rowCount: 1 };
+      }
+      if (sql.includes('UPDATE users')) {
+        writes.usersUpdates.push({ sql, params });
+        return { rows: [], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    return { writes, paidEnd, start, end };
+  }
+
+  it('★正常收窄：只改 current_period_end（+auto_renew），**status 不变、用户快照不动**', async () => {
+    const { writes, paidEnd } = mockShorten();
+
+    const res = await revoke({ reason: '误赠一个月，收窄回付费终点', mode: 'shorten_to_paid_end' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.code).toBe(0);
+    expect(res.body.data.shortenedTo).toBe(paidEnd.toISOString());
+    expect(res.body.data.paidOrders).toBe(1);
+
+    const upd = writes.subscriptionUpdates[0];
+    expect(upd.sql).toContain('current_period_end = $2');
+    expect(upd.sql).toContain('auto_renew = false');
+    // ★不能顺手把 status 改成 canceled —— 用户付过钱的那段还在
+    expect(upd.sql).not.toContain("status = 'canceled'");
+    expect(upd.params[0]).toBe(SUB_ID);
+    expect(new Date(upd.params[1]).toISOString()).toBe(paidEnd.toISOString());
+
+    // 仍是付费用户 ⇒ 用户档位快照不能动
+    expect(writes.usersUpdates).toHaveLength(0);
+
+    // 审计用**独立 action**，别和"收回"混在一起（事后审计要能分清是哪种操作）
+    const audit = findAuditCall('admin.subscriptions.shorten');
+    expect(audit).toBeTruthy();
+    const payload = audit[1]
+      .map((p) => (typeof p === 'string' ? p : JSON.stringify(p)))
+      .join('|');
+    expect(payload).toContain('toPeriodEnd');
+    expect(payload).toContain('paidOrders');
+
+    // 到期日被提前，必须告知用户；文案不带内部原因
+    const notify = pool.query.mock.calls.find(([sql]) =>
+      sql.includes('INSERT INTO notification_history')
+    );
+    expect(notify).toBeTruthy();
+    expect(JSON.stringify(notify[1])).not.toContain('误赠');
+  });
+
+  it('★年付订阅按年折算（billing_cycle 传下去）', async () => {
+    const { writes } = mockShorten({ billingCycle: 'yearly' });
+    await revoke({ reason: 'x', mode: 'shorten_to_paid_end' });
+    // make_interval 那条 SQL 的第三个参数是周期白名单
+    const shortenQuery = pool.query.mock.calls.find(([sql]) => sql.includes('make_interval'));
+    expect(shortenQuery[1][2]).toBe('yearly');
+    expect(writes.subscriptionUpdates).toHaveLength(1);
+  });
+
+  it('★无已付订单 → 409 NO_PAID_ORDER，且不写库（该用 immediate）', async () => {
+    const { writes } = mockShorten({ paidCount: 0 });
+
+    const res = await revoke({ reason: 'x', mode: 'shorten_to_paid_end' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.reason).toBe('NO_PAID_ORDER');
+    expect(res.body.message).toContain('立即收回');
+    expect(writes.subscriptionUpdates).toHaveLength(0);
+  });
+
+  it('★付费终点已过去（只剩赠送时段）→ 409 PAID_PERIOD_ALREADY_OVER，且不写库', async () => {
+    const { writes } = mockShorten({ paidEndOffsetDays: -3 });
+
+    const res = await revoke({ reason: 'x', mode: 'shorten_to_paid_end' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.reason).toBe('PAID_PERIOD_ALREADY_OVER');
+    expect(res.body.message).toContain('立即收回');
+    expect(writes.subscriptionUpdates).toHaveLength(0);
+  });
+
+  it('★付费终点不早于当前到期日（本来就没多给）→ 409 NOTHING_TO_SHORTEN，且不写库', async () => {
+    const { writes } = mockShorten({ paidEndOffsetDays: 45 }); // 比 endOffsetDays(40) 还晚
+
+    const res = await revoke({ reason: 'x', mode: 'shorten_to_paid_end' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.reason).toBe('NOTHING_TO_SHORTEN');
+    // 回传算出来的付费终点，让运营看得见依据
+    expect(res.body.paidEnd).toBeTruthy();
+    expect(writes.subscriptionUpdates).toHaveLength(0);
+  });
+
+  it('★新模式没有削弱保护闸：有已付订单时 immediate 依旧 409 HAS_PAID_ORDER', async () => {
+    // 同一个 mock（有 1 笔已付订单），换个 mode 就必须被保护闸拦住
+    mockShorten({ paidCount: 2 });
+    const res = await revoke({ reason: 'x', mode: 'immediate' });
+    expect(res.status).toBe(409);
+    expect(res.body.reason).toBe('HAS_PAID_ORDER');
+  });
+});

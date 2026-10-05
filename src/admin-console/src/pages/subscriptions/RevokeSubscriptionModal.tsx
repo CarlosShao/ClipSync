@@ -7,7 +7,7 @@ import styles from './GrantSubscriptionModal.module.css';
 
 const { TextArea } = Input;
 
-export type RevokeMode = 'immediate' | 'period_end';
+export type RevokeMode = 'immediate' | 'period_end' | 'shorten_to_paid_end';
 
 interface RevokeSubscriptionModalProps {
   open: boolean;
@@ -107,17 +107,20 @@ export function RevokeSubscriptionModal({
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            message="这里只收回「人工给出去」的权益"
-            description="该订阅若存在真实已付订单，服务端会直接拒绝并提示你走「退款审核」—— 用户花钱买到的权益不能在这里撤销，只能原路退款（退款会一并取消订阅）。"
+            message="「立即/期末收回」只收回人工给出去的权益"
+            description="该订阅若存在真实已付订单，服务端会拒绝这两种方式并提示你走「退款审核」—— 用户花钱买到的权益不能这样撤销。若属于「既有已付订单、又被误赠一段」的混合情况，改用下面的「收窄到付费终点」。"
           />
           <p className={styles.hintLine}>
-            立即收回：订阅当场终止，用户回落免费版；期末收回：本次周期内权益不受影响，到期后不再续。
+            立即收回：订阅当场终止，用户回落免费版；期末收回：本次周期内权益不受影响，到期后不再续；
+            <b>收窄到付费终点</b>：只把多送的那段收回来，到期日改为「周期开始 + 已付订单数 × 计费周期」，
+            订阅仍然有效、用户档位不变（付费期已用尽或无已付订单时会被拒，那时请用「立即收回」）。
           </p>
           <Form form={form} layout="vertical" requiredMark={false}>
             <Form.Item name="mode" label="生效方式" rules={[{ required: true }]}>
               <Radio.Group>
                 <Radio.Button value="immediate">立即收回</Radio.Button>
                 <Radio.Button value="period_end">期末收回</Radio.Button>
+                <Radio.Button value="shorten_to_paid_end">收窄到付费终点</Radio.Button>
               </Radio.Group>
             </Form.Item>
             <Form.Item
