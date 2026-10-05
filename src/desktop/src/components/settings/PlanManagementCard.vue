@@ -25,6 +25,7 @@ import { useConfigStore } from '@/stores/configStore'
 import { useSonner } from '@/composables/useSonner'
 import { invalidatePlanLimits } from '@/composables/usePlanLimits'
 import {
+  canRequestSelfRefund,
   formatExpiryDate,
   hasUpgradeHeadroom,
   invalidateCurrentSubscription,
@@ -46,8 +47,9 @@ const current = computed(() => resolveCurrentSubscription(configStore.user.plan)
 const expiryText = computed(() => formatExpiryDate(current.value.periodEnd))
 const currentPlanLabel = computed(() => t('role_' + (current.value.planName || 'Free').toLowerCase()))
 const upgradable = computed(() => hasUpgradeHeadroom(current.value.planName))
-/** 退款只针对付费生效中的订阅；Free/超管走不到这里（超管由 ProfileView 隐藏整卡） */
-const refundable = computed(() => current.value.paidActive)
+/** 退款入口可见性：判据在 useSubscriptionAccess.canRequestSelfRefund（单一真相源 + 可单测）。
+ * 2026-10-05 起不再只看 paidActive —— 赠期出来的订阅也算「付费生效」，但没人付过钱。 */
+const refundable = computed(() => canRequestSelfRefund(current.value))
 
 function refreshSubscription() {
   void loadCurrentSubscription(true)
@@ -271,6 +273,40 @@ function canRequest(o: RefundableOrder): boolean {
   return rowState(o) === 'requestable'
 }
 
+/**
+ * 列表展示顺序：**还能操作的单排前面**。
+ *
+ * 服务端按 paid_at 倒序返回（时间线口径），而「唯一能自助退的那一笔」——锚点单——通常正是
+ * 最老的一笔，于是它被挤到折叠线以下。2026-10-05 owner 就是这么判成「弹出的页面没有真正
+ * 可以退款的地方」的：他看到的头 4 行全是「已退款」，带按钮的两行在下面看不见。
+ * 组内仍保持服务端给的 paid_at 倒序（sort 是稳定的，用原索引兜底）。
+ */
+const orderedOrders = computed(() => {
+  const weight = (o: RefundableOrder) => (rowState(o) === 'requestable' ? 0 : 1)
+  return orders.value
+    .map((o, i) => ({ o, i }))
+    .sort((a, b) => weight(a.o) - weight(b.o) || a.i - b.i)
+    .map((x) => x.o)
+})
+
+/**
+ * 弹窗顶部结论行：一眼说清「现在能不能退」。
+ * 每行的具体原因（超窗 / 已退款 / 非当前订阅单）照旧挂在行上，这里只给结论 ——
+ * 避免出现「列表里一个能点的按钮都没有，却没人告诉我为什么」。
+ */
+const verdictText = computed(() => {
+  if (orders.value.length === 0) return ''
+  const hit = orders.value.filter((o) => o.refundable).length
+  if (hit > 0) return t('refund_verdict_available', { count: hit })
+  if (orders.value.every((o) => rowState(o) === 'refunded')) return t('refund_verdict_all_refunded')
+  return t('refund_verdict_none')
+})
+
+/** 结论行是否该按「坏消息」配色：一条都退不了时才告警，有可退单就按正常提示 */
+const verdictIsWarn = computed(
+  () => Boolean(verdictText.value) && !orders.value.some((o) => o.refundable),
+)
+
 /** 按钮下方（或替代按钮）那一行状态/原因 */
 function rowHint(o: RefundableOrder): string {
   switch (rowState(o)) {
@@ -340,10 +376,17 @@ function onRefundClick(o: RefundableOrder) {
         <p v-if="windowDays !== null" class="pmc-desc">{{ t('refund_window_hint', { days: windowDays }) }}</p>
         <div v-if="submittedNotice" class="pmc-notice">{{ submittedNotice }}</div>
         <div v-if="listNotice" class="pmc-notice pmc-notice--warn">{{ listNotice }}</div>
+        <!-- 结论先行：一条都退不了时，别让用户对着 4 行「已退款」自己猜 -->
+        <div
+          v-if="verdictText"
+          :class="['pmc-notice', verdictIsWarn ? 'pmc-notice--warn' : '']"
+        >
+          {{ verdictText }}
+        </div>
         <div v-if="ordersLoading" class="pmc-state">{{ t('refund_loading') }}</div>
         <div v-else-if="orders.length === 0" class="pmc-state">{{ t('refund_empty') }}</div>
         <div v-else class="pmc-orders">
-          <div v-for="o in orders" :key="o.orderId" class="pmc-order">
+          <div v-for="o in orderedOrders" :key="o.orderId" class="pmc-order">
             <div class="pmc-order-info">
               <div class="pmc-order-no">{{ o.orderNo }}</div>
               <div class="pmc-order-date">{{ dateText(o.paidAt) }}</div>

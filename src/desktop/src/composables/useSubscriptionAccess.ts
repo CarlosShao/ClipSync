@@ -33,6 +33,20 @@ export interface CurrentSubscription {
   subscriptionId: string | null
   /** 是否处于付费生效期：true ⇒ 再次购买属「升级」，需提示残值折抵 */
   paidActive: boolean
+  /**
+   * 当前生效订阅是否有**真实已付订单**支撑（服务端 GET /subscriptions/current 的 purchaseBacked）。
+   *
+   * 为什么需要它：`paidActive` 是拿**套餐目录价 > 0** 推出来的，所以管理台**赠期**出来的订阅
+   * 也会让 paidActive 为真 —— 而那种账号一分钱没付过，退款入口点开只有一堆不可退的历史单
+   * （2026-10-05 owner 实测：赠期一个月 Pro 后立刻冒出「申请退款」）。
+   * 「这个人到底付过钱没有」只有服务端知道，判据在 refundPolicy 的锚点查询里。
+   *
+   * null = 服务端没给这个字段（旧后端）。此时**退回旧行为**（只看 paidActive），而不是当作
+   * false 收口：退款入口是用户唯一的应用内退款路径，必须由服务端**明确说 false** 才隐藏；
+   * 字段缺失就藏起来等于「后端没升级 ⇒ 退款入口消失」，那是个假故障。退款在服务端仍有
+   * 全套闸门（窗口 / 锚点 / 渠道），这里宽松不构成资损面。
+   */
+  purchaseBacked: boolean | null
   /** 当前档月付价（元）；/current 的 plan.price 即 price_monthly，Free 恒 0 */
   priceMonthly: number
   /** 当前档权益展示串（plan.features 归一，订阅页直接列） */
@@ -167,8 +181,11 @@ let currentInflight: Promise<CurrentSubscription | null> | null = null
  * GET /api/subscriptions/current 的字段归一。
  * 服务端历史上 camelCase / snake_case 混发（现有支付结果页读的是 snake_case，
  * 新契约写的是 current_period_end），两个键都取，取到哪个算哪个。
+ *
+ * 导出仅为可单测（纯函数，不碰网络）：purchaseBacked 的「缺失 → null」这一条
+ * 决定退款入口是收口还是退回旧行为，必须能被断言。
  */
-function normalizeCurrent(payload: any): CurrentSubscription {
+export function normalizeCurrent(payload: any): CurrentSubscription {
   const sub = payload?.subscription ?? null
   const plan = payload?.plan ?? null
   const rawEnd = sub?.current_period_end ?? sub?.currentPeriodEnd ?? null
@@ -180,6 +197,8 @@ function normalizeCurrent(payload: any): CurrentSubscription {
     subscriptionId: sub?.id != null ? String(sub.id) : null,
     // 付费生效：有订阅记录且当前档月付 > 0（Free 行 price 恒为 0）
     paidActive: Boolean(sub) && planName.toLowerCase() !== 'free' && price > 0,
+    // 只有服务端明确发了布尔值才算「知道」；缺失/非法一律 null（= 沿用旧行为，见字段注释）
+    purchaseBacked: typeof payload?.purchaseBacked === 'boolean' ? payload.purchaseBacked : null,
     priceMonthly: Number.isFinite(price) ? price : 0,
     features: normalizeFeatureLabels(plan?.features),
   }
@@ -231,6 +250,8 @@ export function resolveCurrentSubscription(fallbackPlanName?: string | null): Cu
     periodEnd: null,
     subscriptionId: null,
     paidActive: false,
+    // 快照没加载出来 ⇒ 无从判断；paidActive 已经是 false，入口本来就收着
+    purchaseBacked: null,
     priceMonthly: 0,
     features: [],
   }
@@ -264,6 +285,24 @@ export function hasUpgradeHeadroom(planName: string | null | undefined): boolean
   return tierRankByName(planName) < TOP_TIER_RANK
 }
 
+/**
+ * 「申请退款」入口是否可见（2026-10-05 收紧）。**判据只此一处**，别在组件里另写一份。
+ *
+ * 规则：付费生效 **且** 当前订阅有真实已付订单支撑。
+ *
+ * 为什么不能只看 paidActive：它由**套餐目录价 > 0** 推出，而管理台**赠期**出来的订阅同样
+ * 满足 —— 那种账号一分钱没付过，点开只有一堆不可退的历史单（owner 实测：赠期一个月 Pro
+ * 后立刻冒出「申请退款」）。
+ *
+ * purchaseBacked === false 才收口；null（旧后端未回传该字段）**退回旧行为**而非收口 ——
+ * 入口是用户唯一的应用内退款路径，必须由服务端明确说 false 才隐藏，否则「后端没升级」
+ * 会表现成「退款入口集体消失」这种假故障。退款在服务端仍有全套闸门。
+ */
+export function canRequestSelfRefund(current: CurrentSubscription | null | undefined): boolean {
+  if (!current?.paidActive) return false
+  return current.purchaseBacked !== false
+}
+
 export function useSubscriptionAccess() {
   return {
     currentSubscription,
@@ -279,6 +318,7 @@ export function useSubscriptionAccess() {
     currentMonthlyPrice,
     formatExpiryDate,
     hasUpgradeHeadroom,
+    canRequestSelfRefund,
     tierRankByName,
   }
 }

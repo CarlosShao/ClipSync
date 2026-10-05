@@ -21,6 +21,8 @@ import {
   tierRankByName,
   yearlySavingPct,
   normalizeFeatureLabels,
+  canRequestSelfRefund,
+  normalizeCurrent,
   type CurrentSubscription,
 } from '@/composables/useSubscriptionAccess'
 import type { PricingPlan } from '@/composables/usePlanLimits'
@@ -43,6 +45,8 @@ const sub = (planName: string, opts: Partial<CurrentSubscription> = {}): Current
   periodEnd: null,
   subscriptionId: planName === 'Free' ? null : 'sub-1',
   paidActive: planName !== 'Free',
+  // 默认夹具是「真付过钱」的常规付费用户；赠期场景由用例显式传 purchaseBacked: false
+  purchaseBacked: planName === 'Free' ? null : true,
   priceMonthly: opts.priceMonthly ?? 0,
   features: [],
   ...opts,
@@ -183,5 +187,70 @@ describe('normalizeFeatureLabels', () => {
     expect(normalizeFeatureLabels(undefined)).toEqual([])
     expect(normalizeFeatureLabels('非 JSON')).toEqual([])
     expect(normalizeFeatureLabels({ team_management: true })).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2026-10-05：退款入口判据收紧（owner 实测：赠期一个月 Pro 后立刻冒出「申请退款」）
+// ---------------------------------------------------------------------------
+// 现场根因是 paidActive 由**套餐目录价 > 0** 推出，赠期出来的订阅与真金白银买的
+// 长得一模一样。真实「有没有付过钱」只有服务端知道（/subscriptions/current 的
+// purchaseBacked，判据是 refundPolicy 的锚点查询）。下面把这条规则的每个分支钉死。
+
+describe('canRequestSelfRefund（退款入口可见性）', () => {
+  it('付费生效 + 有真实已付订单支撑 → 显示', () => {
+    expect(canRequestSelfRefund(sub('Pro', { paidActive: true, purchaseBacked: true }))).toBe(true)
+  })
+
+  it('★赠期场景：付费生效但服务端说没有人付过钱 → 必须收口', () => {
+    // 这正是 owner 遇到的：赠期把 free 账号变成 active Pro，paidActive 也是 true
+    expect(canRequestSelfRefund(sub('Pro', { paidActive: true, purchaseBacked: false }))).toBe(false)
+  })
+
+  it('旧后端未回传该字段（null）→ 退回旧行为，不能把入口整体藏掉', () => {
+    // 若这里返回 false，「后端没升级」就会表现成「退款入口集体消失」这种假故障
+    expect(canRequestSelfRefund(sub('Pro', { paidActive: true, purchaseBacked: null }))).toBe(true)
+  })
+
+  it('非付费生效（Free / 到期回落）→ 显示入口的前提都不成立', () => {
+    expect(canRequestSelfRefund(sub('Free', { paidActive: false, purchaseBacked: null }))).toBe(false)
+    expect(canRequestSelfRefund(sub('Pro', { paidActive: false, purchaseBacked: true }))).toBe(false)
+  })
+
+  it('快照缺失 → 不显示（此时 paidActive 本就为 false）', () => {
+    expect(canRequestSelfRefund(null)).toBe(false)
+    expect(canRequestSelfRefund(undefined)).toBe(false)
+  })
+})
+
+describe('normalizeCurrent：purchaseBacked 的三态映射', () => {
+  const payload = (over: Record<string, unknown> = {}) => ({
+    subscription: { id: 's1', status: 'active', currentPeriodEnd: '2026-11-19T00:00:00.000Z' },
+    plan: { name: 'Pro', price: 9.9, features: [] },
+    ...over,
+  })
+
+  it('服务端明确 false → false（收口）', () => {
+    expect(normalizeCurrent(payload({ purchaseBacked: false })).purchaseBacked).toBe(false)
+  })
+
+  it('服务端明确 true → true', () => {
+    expect(normalizeCurrent(payload({ purchaseBacked: true })).purchaseBacked).toBe(true)
+  })
+
+  it('字段缺失 → null（= 未知，沿用旧行为），绝不把它当成 false', () => {
+    expect(normalizeCurrent(payload()).purchaseBacked).toBeNull()
+  })
+
+  it('非布尔（字符串/数字）一律按未知处理，不猜', () => {
+    expect(normalizeCurrent(payload({ purchaseBacked: 'false' })).purchaseBacked).toBeNull()
+    expect(normalizeCurrent(payload({ purchaseBacked: 0 })).purchaseBacked).toBeNull()
+  })
+
+  it('顺带确认 paidActive 仍是「有订阅 + 档位非 Free + 目录价 > 0」', () => {
+    const snap = normalizeCurrent(payload())
+    expect(snap.paidActive).toBe(true)
+    expect(snap.planName).toBe('Pro')
+    expect(normalizeCurrent(payload({ plan: { name: 'Free', price: 0, features: [] } })).paidActive).toBe(false)
   })
 })

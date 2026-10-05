@@ -32,6 +32,10 @@ export interface PaymentOrder {
   transactionId?: string | null
   createdAt?: string
   paymentParams?: CashierParams
+  /** 升级单：新套餐原价（未折抵）。非升级单缺省 */
+  originalAmount?: number
+  /** 升级单：折抵掉的残值。非升级单缺省 */
+  creditAmount?: number
 }
 
 export interface OrderStatus {
@@ -61,6 +65,69 @@ export function createPaymentOrder(
 /** 查询订单状态（支付遮罩轮询；服务端会顺带主动查一次支付宝做兜底） */
 export function fetchOrderStatus(orderNo: string) {
   return api<{ order: PaymentOrder }>('GET', `/api/payments/order/${encodeURIComponent(orderNo)}/status`)
+}
+
+// ===== 升级折抵试算（2026-10-05）=====
+//
+// 为什么需要它：抵扣明细必须在用户点「升级」那一刻就能显示，而明细此前只在 create-order
+// 响应里、且只活在下单响应内存中（订单状态接口不回传 metadata），刷新即丢。
+// 用「先建一条 pending 单」换明细会同时破坏三条语义：95s 过期、24h 关单扫描、
+// 以及 enable_subscription 关闭时不建单。
+//
+// 服务端与 create-order **共用同一个 resolveOrderPricing()**，所以 quote.finalAmount 必然
+// 等于随后建单的 order.amount（服务端 tests/upgrade-quote.test.js 逐分钉死）。
+//
+// 失败形状与 create-order 完全一致，调用方可复用同一套文案：
+//   404 Plan not found / 400 PLAN_PRICE_MISSING / 409 ALREADY_SUBSCRIBED /
+//   409 DOWNGRADE_NOT_ALLOWED / 503 SUBSCRIPTION_DISABLED
+
+export interface UpgradeQuote {
+  planId: string
+  planName: string
+  planDisplayName?: string | null
+  billingCycle: 'monthly' | 'yearly'
+  currency: string
+  /** 新套餐价（未折抵） */
+  originalPrice: number
+  /** 剩余可抵扣（旧套餐残值） */
+  creditAmount: number
+  /** 需支付差额 = max(originalPrice − creditAmount, 0.01) */
+  finalAmount: number
+  /** 当前套餐本期实付金额；无折抵时为 null */
+  paidAmount: number | null
+  /** 已使用金额 = paidAmount − creditAmount；无折抵时为 null */
+  usedAmount: number | null
+  /**
+   * 折抵基准来源：'order'=按该订阅的已付订单实付折算；'plan'=该订阅**没有支付记录**
+   * （赠期/mock/历史数据），按套餐标价折算。明细里必须如实区分 —— 不能把
+   * 「按标价折算」说成「你付过这笔钱」。无折抵时为 null。
+   */
+  creditSource: 'order' | 'plan' | null
+  remainingDays: number | null
+  cycleDays: number | null
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  oldSubscriptionId: string | null
+  oldPlanId: string | null
+  /**
+   * 残值是否被 0.01 下限截断（截断 ⇒ 用户有残值没用上）。
+   * 可选：服务端 43e89093 起才回传，未部署该提交时缺省 —— 缺省按「未知」处理，不当作 false。
+   */
+  floorApplied?: boolean
+  /**
+   * 因下限而不予结转的作废金额（owner 2026-10-05 口径：继续作废，但明细必须写明）。
+   * 无折抵时为 null；未触发下限时为 0。
+   */
+  forfeitAmount?: number | null
+}
+
+/** 升级折抵试算（只读：不建单、不写库） */
+export function fetchUpgradeQuote(params: {
+  planId: string
+  subscriptionId?: string
+  billingCycle?: 'monthly' | 'yearly'
+}) {
+  return api<{ quote: UpgradeQuote }>('POST', '/api/payments/upgrade-quote', params)
 }
 
 // ===== 用户自助退款申请（个人资料页「申请退款」）=====
