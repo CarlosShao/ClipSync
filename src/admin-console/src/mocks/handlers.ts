@@ -1415,6 +1415,45 @@ const devicesHandlers = [
     return ok(device, '设备已远程下线');
   }),
 
+  /**
+   * 2026-10-05 补：强制解绑设备。
+   * mock 里每台设备固定"有 1 条内容"，好让**两步确认**在本机也能走到；
+   * 真实后端是 `COUNT(clipboard_items)`，且外键 CASCADE 会真删内容 —— 别拿 mock 当契约。
+   */
+  http.delete('/api/admin/devices/:id', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const idx = mockDevices.findIndex((d) => d.id === id);
+    if (idx === -1) return fail(404, 40404, '设备不存在');
+    const device = mockDevices[idx]!;
+    const body = (await request
+      .json()
+      .catch(() => ({}))) as { reason?: string; confirmItemCount?: number };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '解绑必须填写原因（写入审计日志）');
+
+    const itemCount = 1;
+    if (body.confirmItemCount !== itemCount) {
+      return fail(
+        409,
+        40906,
+        `解绑会连带删除该设备产生的 ${itemCount} 条剪贴板内容（外键 CASCADE，不可恢复）。确认后请带上 confirmItemCount: ${itemCount} 重试；若只想让它下线并保留内容，请改用「远程下线」`,
+      );
+    }
+
+    mockDevices.splice(idx, 1);
+    pushAudit(
+      'admin.device.unbind',
+      'device',
+      id,
+      `device="${device.name}", owner="${device.ownerNickname}", removedItems=${itemCount}, reason="${reason}"`,
+    );
+    return ok(
+      { id, name: device.name, removedItems: itemCount, wsKicked: true },
+      `设备已解绑（同时删除该设备产生的 ${itemCount} 条内容）`,
+    );
+  }),
+
   // AF-43：设备公钥脱敏摘要（admin.keys.view）——只回指纹，不回公钥原文/私钥
   http.get('/api/admin/devices/:id/keys', async ({ params }) => {
     await delay(150);

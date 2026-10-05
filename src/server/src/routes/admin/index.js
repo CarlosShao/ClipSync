@@ -91,6 +91,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/users\/[^/]+\/profile$/,
   // 2026-10-05 新增：配额覆盖等于**单个放宽风控阈值**（存储/文件大小），必须限流。
   /^\/users\/[^/]+\/limits$/,
+  // 2026-10-05 新增：解绑设备会删掉设备行、并**连带删除该设备产生的全部剪贴板内容**
+  //（外键 CASCADE，不可恢复），必须限流。
+  /^\/devices\/[^/]+$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

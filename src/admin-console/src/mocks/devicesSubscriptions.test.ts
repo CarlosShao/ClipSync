@@ -46,6 +46,16 @@ const post = async <T>(path: string, body: unknown): Promise<Resp<T>> => {
   return { status: resp.status, body: (await resp.json()) as ApiResp<T> | ApiErrorBody };
 };
 
+/** DELETE 也可以带 body（axios 用 config.data，服务端 express.json 一样解析） */
+const del = async <T>(path: string, body: unknown): Promise<Resp<T>> => {
+  const resp = await fetch(`http://localhost${path}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: resp.status, body: (await resp.json()) as ApiResp<T> | ApiErrorBody };
+};
+
 /** 断言成功壳并返回 data（错误壳则让测试失败并带出错误信息） */
 function expectOk<T>(resp: Resp<T>): ApiResp<T> {
   if (!('data' in resp.body)) {
@@ -139,6 +149,43 @@ describe('GET /api/admin/devices/stats + 远程下线', () => {
     const noReason = await post<AdminDevice>(`/api/admin/devices/${online?.id}/offline`, {});
     expect(noReason.status).toBe(400);
     expect(expectFail(noReason).code).toBe(40003);
+  });
+});
+
+describe('DELETE /api/admin/devices/:id（强制解绑）', () => {
+  test('★有内容时第一次提交被拒（409 + 条数），带上 confirmItemCount 才真正删除', async () => {
+    const device = mockDevices.find((d) => d.status === 'online') ?? mockDevices[0]!;
+    const before = mockDevices.length;
+
+    // 第一步：只带原因 ⇒ 服务端告知会连带删除 1 条内容
+    const first = await del(`/api/admin/devices/${device.id}`, { reason: '设备丢失' });
+    expect(first.status).toBe(409);
+    const err = expectFail(first);
+    expect(err.message).toContain('远程下线');
+    expect(mockDevices.length).toBe(before); // 什么都没删
+
+    // 第二步：带上条数 ⇒ 真删
+    const second = await del<{ name: string; removedItems: number }>(
+      `/api/admin/devices/${device.id}`,
+      { reason: '设备丢失', confirmItemCount: 1 },
+    );
+    expect(second.status).toBe(200);
+    const data = expectOk(second).data;
+    expect(data.removedItems).toBe(1);
+    expect(mockDevices.length).toBe(before - 1);
+    // 审计记被删条数（事后追责/申诉靠它）
+    expect(mockAuditLogs[0]?.action).toBe('admin.device.unbind');
+    expect(mockAuditLogs[0]?.details).toContain('removedItems=1');
+  });
+
+  test('条数对不上 / 缺原因 / 设备不存在', async () => {
+    const device = mockDevices[0]!;
+    // 条数对不上（预览 3、实际 1）⇒ 仍拒，不按旧计数删
+    expect(
+      (await del(`/api/admin/devices/${device.id}`, { reason: 'x', confirmItemCount: 3 })).status,
+    ).toBe(409);
+    expect((await del(`/api/admin/devices/${device.id}`, {})).status).toBe(400);
+    expect((await del('/api/admin/devices/dev_nope', { reason: 'x' })).status).toBe(404);
   });
 });
 

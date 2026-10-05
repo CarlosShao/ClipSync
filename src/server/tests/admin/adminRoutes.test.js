@@ -139,6 +139,7 @@ describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/limits')).toBe(true); // 单用户放宽配额
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/force-logout')).toBe(true);
     expect(hit('/devices/a1000000-0000-4000-8000-000000000001/offline')).toBe(true);
+    expect(hit('/devices/a1000000-0000-4000-8000-000000000001')).toBe(true); // 解绑（会连带删内容）
     expect(hit('/ops/actions')).toBe(true);
   });
 

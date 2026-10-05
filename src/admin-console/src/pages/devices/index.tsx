@@ -10,6 +10,7 @@ import {
   Select,
   Spin,
   Table,
+  Tooltip,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
@@ -19,9 +20,11 @@ import {
   getDevices,
   getDeviceStats,
   offlineDevice,
+  unbindDevice,
 } from '@/api/devices';
 import type { AdminDevice, DeviceKind, DevicePlatform } from '@/api/types';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
+import { UnbindDeviceModal } from '@/components/UnbindDeviceModal';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusTag } from '@/components/StatusTag';
 import { useTableQuery } from '@/hooks/useTableQuery';
@@ -47,6 +50,8 @@ export default function DevicesPage() {
   const { message } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const [offlineTarget, setOfflineTarget] = useState<AdminDevice | null>(null);
+  // 2026-10-05：强制解绑（会连带删除该设备产生的内容，故弹窗内是两步确认）
+  const [unbindTarget, setUnbindTarget] = useState<AdminDevice | null>(null);
   const [keysTarget, setKeysTarget] = useState<AdminDevice | null>(null);
   const [draft, setDraft] = useState<DeviceFilters>(DEFAULT_FILTERS);
 
@@ -75,6 +80,29 @@ export default function DevicesPage() {
       void queryClient.invalidateQueries({ queryKey: ['devices'] });
       void message.success(`设备「${updated.name}」已下线`);
       setOfflineTarget(null);
+    },
+  });
+
+  /**
+   * 2026-10-05：强制解绑。注意 onError 里**不**关闭弹窗 —— 服务端可能返回
+   * 409 CONTENT_WILL_BE_DELETED（该设备还有内容），弹窗要留在原地展示条数让运营二次确认。
+   */
+  const unbindMutation = useMutation({
+    mutationFn: (payload: { id: string; reason: string; confirmItemCount?: number }) =>
+      unbindDevice(payload.id, {
+        reason: payload.reason,
+        ...(payload.confirmItemCount !== undefined
+          ? { confirmItemCount: payload.confirmItemCount }
+          : {}),
+      }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['devices'] });
+      void message.success(
+        result.removedItems > 0
+          ? `设备「${result.name}」已解绑，同时删除其产生的 ${result.removedItems} 条内容`
+          : `设备「${result.name}」已解绑`
+      );
+      setUnbindTarget(null);
     },
   });
 
@@ -166,10 +194,11 @@ export default function DevicesPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 168,
+      width: 250,
       render: (_: string, record) => {
         const showOffline = record.status === 'online' && canOffline;
-        if (!canViewKeys && !showOffline) {
+        const showUnbind = canOffline;
+        if (!canViewKeys && !showOffline && !showUnbind) {
           return <span className={styles.mutedCell}>—</span>;
         }
         return (
@@ -183,6 +212,13 @@ export default function DevicesPage() {
               <Button size="small" danger onClick={() => setOfflineTarget(record)}>
                 远程下线
               </Button>
+            )}
+            {showUnbind && (
+              <Tooltip title="真正移除设备行、释放设备名额；会连带删除该设备产生的内容（下一步会先告诉你条数）">
+                <Button size="small" danger onClick={() => setUnbindTarget(record)}>
+                  解绑
+                </Button>
+              </Tooltip>
             )}
           </div>
         );
@@ -305,7 +341,7 @@ export default function DevicesPage() {
               即将下线设备 <b>{offlineTarget.name}</b>（{offlineTarget.os} · 应用{' '}
               {offlineTarget.appVersion}，属主 {offlineTarget.ownerNickname}）。
               {/* AF-41：真实下线——服务端已推送 force_logout 并断开该设备 WS 连接 */}
-              该设备将被**立即断开连接并退出登录**，需重新登录才能恢复同步；原因写入审计日志。
+              该设备将被<b>立即断开连接并退出登录</b>，需重新登录才能恢复同步；原因写入审计日志。
             </>
           ) : null
         }
@@ -313,6 +349,17 @@ export default function DevicesPage() {
         confirmLoading={offlineMutation.isPending}
         onCancel={() => setOfflineTarget(null)}
         onConfirm={(reason) => offlineMutation.mutateAsync({ id: offlineTarget?.id ?? '', reason })}
+      />
+
+      {/* 2026-10-05：强制解绑（两步确认 —— 服务端若发现该设备还有内容会先返回条数） */}
+      <UnbindDeviceModal
+        open={Boolean(unbindTarget)}
+        device={unbindTarget}
+        confirmLoading={unbindMutation.isPending}
+        onCancel={() => setUnbindTarget(null)}
+        onConfirm={(payload) =>
+          unbindMutation.mutateAsync({ id: unbindTarget?.id ?? '', ...payload })
+        }
       />
     </>
   );
