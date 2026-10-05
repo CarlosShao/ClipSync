@@ -1,7 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from '@/mocks/handlers';
-import { mockAuditLogs, mockOrders, mockPlans, mockRoles, mockSubscriptions } from '@/mocks/data';
+import {
+  mockAuditLogs,
+  mockOrders,
+  mockPlans,
+  mockRoles,
+  mockSubscriptions,
+  mockUsers,
+} from '@/mocks/data';
 import type {
   AdminPlan,
   Announcement,
@@ -828,5 +835,121 @@ describe('GET /api/admin/plans（套餐与价格页契约 AN-01）', () => {
       max_file_size_mb: 1,
     });
     expect(notFound.status).toBe(404);
+  });
+});
+
+/**
+ * 用户级运营动作的 mock 行为（2026-10-05 补）。
+ *
+ * 这三个端点此前**没有 handler**，而 MSW 是 `onUnhandledRequest: 'bypass'` ——
+ * 没 handler 的请求会真的打到 vite proxy 的目标（本机联调时是**生产**）。
+ * 所以补 handler 不只是"让 mock 里按钮能用"，更是**挡住 mock 模式下的真实写入**。
+ */
+describe('POST /api/admin/users/:id/notify（定向通知）', () => {
+  const activeUser = mockUsers.find((u) => u.status === 'active')!;
+
+  test('落库 + 写审计 admin.user.notify + 如实回报在线设备数', async () => {
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<{ notificationType: string; onlineDevices: number }>(
+        `/api/admin/users/${activeUser.id}/notify`,
+        { title: '关于你的赠期', body: '你获赠的一个月专业版已到账。' },
+      ),
+    );
+
+    expect(data.notificationType).toBe('admin_message');
+    expect(typeof data.onlineDevices).toBe('number');
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.notify');
+    expect(mockAuditLogs[0]?.details).toContain('关于你的赠期');
+  });
+
+  test('四类白名单都接受；非法类型 → 400', async () => {
+    for (const type of [
+      'admin_message',
+      'subscription_notice',
+      'device_notice',
+      'security_notice',
+    ]) {
+      const resp = await post(`/api/admin/users/${activeUser.id}/notify`, {
+        title: 't',
+        body: 'b',
+        notificationType: type,
+      });
+      expect(resp.status, type).toBe(200);
+    }
+    const bad = await post(`/api/admin/users/${activeUser.id}/notify`, {
+      title: 't',
+      body: 'b',
+      notificationType: 'whatever',
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  test('缺标题/正文、超长 → 400；用户不存在 → 404', async () => {
+    expect((await post(`/api/admin/users/${activeUser.id}/notify`, { body: 'b' })).status).toBe(
+      400,
+    );
+    expect((await post(`/api/admin/users/${activeUser.id}/notify`, { title: 't' })).status).toBe(
+      400,
+    );
+    expect(
+      (await post(`/api/admin/users/${activeUser.id}/notify`, { title: 'x'.repeat(101), body: 'b' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${activeUser.id}/notify`, { title: 't', body: 'x'.repeat(501) }))
+        .status,
+    ).toBe(400);
+    expect((await post('/api/admin/users/usr_nope/notify', { title: 't', body: 'b' })).status).toBe(
+      404,
+    );
+  });
+});
+
+describe('PATCH /api/admin/users/:id/role（分配角色，端点早有、此前无 UI）', () => {
+  const target = mockUsers.find((u) => u.roleId !== 'role_super_admin')!;
+  const adminRole = mockRoles.find((r) => r.roleKey === 'admin')!;
+  const superRole = mockRoles.find((r) => r.roleKey === 'super_admin')!;
+
+  test('更新 roleId 并写审计 role.assign', async () => {
+    const auditBefore = mockAuditLogs.length;
+    const { data } = expectOk(
+      await patch<{ roleId: string }>(`/api/admin/users/${target.id}/role`, {
+        roleId: adminRole.id,
+        reason: '接管客服',
+      }),
+    );
+    expect(data.roleId).toBe(adminRole.id);
+    expect(mockUsers.find((u) => u.id === target.id)!.roleId).toBe(adminRole.id);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('role.assign');
+  });
+
+  test('超管角色不可授予 → 403；缺 roleId → 400；角色不存在 → 404', async () => {
+    const superResp = await patch(`/api/admin/users/${target.id}/role`, { roleId: superRole.id });
+    expect(superResp.status).toBe(403);
+
+    expect((await patch(`/api/admin/users/${target.id}/role`, {})).status).toBe(400);
+    expect((await patch(`/api/admin/users/${target.id}/role`, { roleId: 'role_nope' })).status).toBe(
+      404,
+    );
+  });
+});
+
+describe('POST /api/admin/users/:id/reset-2fa（重置两步验证，端点早有、此前无 UI）', () => {
+  test('重置并写审计 admin.user.reset_2fa；用户不存在 → 404', async () => {
+    const user = mockUsers[0]!;
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<{ twoFactorEnabled: boolean }>(`/api/admin/users/${user.id}/reset-2fa`, {}),
+    );
+    expect(data.twoFactorEnabled).toBe(false);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.reset_2fa');
+
+    expect((await post('/api/admin/users/usr_nope/reset-2fa', {})).status).toBe(404);
   });
 });

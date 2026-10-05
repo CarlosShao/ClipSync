@@ -3,8 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteUser, exportUserData, forceLogoutUser, getUserDetail, notifyUser, updateUserStatus } from '@/api/users';
+import {
+  assignUserRole,
+  deleteUser,
+  exportUserData,
+  forceLogoutUser,
+  getUserDetail,
+  notifyUser,
+  resetUserTwoFactor,
+  updateUserStatus,
+} from '@/api/users';
 import { grantSubscription } from '@/api/subscriptions';
+import { AssignRoleModal } from '@/components/AssignRoleModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
@@ -58,7 +68,7 @@ const DEVICE_COLUMNS: ColumnsType<DeviceRow> = [
  * 「停用账号」走 ConfirmReasonModal（原因必填）→ PATCH /admin/users/:id/status。
  */
 export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerProps) {
-  const { message } = AntdApp.useApp();
+  const { message, modal } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
@@ -69,6 +79,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [exportOpen, setExportOpen] = useState(false);
   // 2026-10-05：对单个用户定向通知（此前只能改库或对全体广播公告）
   const [notifyOpen, setNotifyOpen] = useState(false);
+  // 2026-10-05：分配角色（端点早有、此前无 UI）
+  const [assignRoleOpen, setAssignRoleOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -155,6 +167,33 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
     },
   });
 
+  /**
+   * 2026-10-05：分配角色（端点早有、此前无 UI）。
+   * 超管唯一性/越级两道闸在服务端，前端只把 403 的原话交给拦截器 toast。
+   */
+  const assignRoleMutation = useMutation({
+    mutationFn: (payload: { id: string; roleId: string; reason: string }) =>
+      assignUserRole(payload.id, { roleId: payload.roleId, reason: payload.reason }),
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['roles'] });
+      void message.success(`已更新 ${updated.nickname || '该用户'} 的角色`);
+      setAssignRoleOpen(false);
+    },
+  });
+
+  /**
+   * 2026-10-05：重置两步验证（端点早有、此前无 UI）。
+   * 端点不收 reason，所以这里用一次普通确认（不可撤销 + 会削弱账号安全，值得拦一下）。
+   */
+  const resetTwoFactorMutation = useMutation({
+    mutationFn: (id: string) => resetUserTwoFactor(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void message.success('两步验证已重置，用户需重新绑定');
+    },
+  });
+
   // AF-10：赠期 / 调整套餐（复用订阅页 GrantSubscriptionModal；无订阅行则提示）
   const grantMutation = useMutation({
     mutationFn: (payload: {
@@ -231,6 +270,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
    * requirePerm 一致，刻意与管理类权限分开 —— 能改用户资料的运营未必该能私信用户。
    */
   const canNotify = hasPerm('admin.announce.send');
+  /** 2026-10-05：分配角色用的是 roles.manage（与服务端 requirePerm 一致，比 users.manage 更高） */
+  const canAssignRole = hasPerm('admin.roles.manage');
 
   const renderBody = () => {
     if (isLoading || !user) {
@@ -316,6 +357,40 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
             <span>
               <Button disabled={!canNotify} onClick={() => setNotifyOpen(true)}>
                 发站内通知
+              </Button>
+            </span>
+          </Tooltip>
+          {/* 2026-10-05：分配角色（端点早有、此前前端零调用） */}
+          <Tooltip title={canAssignRole ? '' : '缺少权限: admin.roles.manage'}>
+            <span>
+              <Button disabled={!canAssignRole} onClick={() => setAssignRoleOpen(true)}>
+                分配角色
+              </Button>
+            </span>
+          </Tooltip>
+          {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button
+                disabled={!canManage}
+                loading={resetTwoFactorMutation.isPending}
+                onClick={() => {
+                  // 花括号包起来：modal.confirm 有返回值，直接箭头返回会被判
+                  // "Promise-returning function to void attribute"
+                  modal.confirm({
+                    title: '重置两步验证？',
+                    content:
+                      '将清空该用户的两步验证配置，他可仅凭密码登录，需要重新绑定 TOTP。写审计 admin.user.reset_2fa。',
+                    okText: '确认重置',
+                    okButtonProps: { danger: true },
+                    cancelText: '取消',
+                    onOk: () => {
+                      resetTwoFactorMutation.mutate(user.id);
+                    },
+                  });
+                }}
+              >
+                重置 2FA
               </Button>
             </span>
           </Tooltip>
@@ -452,6 +527,17 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           confirmLoading={notifyMutation.isPending}
           onCancel={() => setNotifyOpen(false)}
           onConfirm={(payload) => notifyMutation.mutateAsync({ id: user.id, ...payload })}
+        />
+
+        <AssignRoleModal
+          open={assignRoleOpen}
+          userLabel={user.nickname || user.phone || ''}
+          currentRoleId={user.roleId}
+          confirmLoading={assignRoleMutation.isPending}
+          onCancel={() => setAssignRoleOpen(false)}
+          onConfirm={(roleId, reason) =>
+            assignRoleMutation.mutateAsync({ id: user.id, roleId, reason })
+          }
         />
       </>
     );

@@ -48,6 +48,27 @@ export function deleteUser(
 }
 
 /**
+ * 2026-10-05 补：分配角色（端点 `PATCH /admin/users/:id/role` 早就存在，此前**前端零调用** ——
+ * 见 docs/audit/admin-console-db-only-gaps-2026-10-05.md）。
+ * 后端两道闸：超管角色不可授予（403 40301）、不得授予等级不低于操作者的角色（403 40303）。
+ * 权限键是 `admin.roles.manage`（与 users.manage 分开）。
+ */
+export function assignUserRole(
+  id: string,
+  payload: { roleId: string; reason?: string }
+): Promise<AdminUser> {
+  return apiPatch<AdminUser>(`/admin/users/${id}/role`, payload);
+}
+
+/**
+ * 2026-10-05 补：重置两步验证（端点 `POST /admin/users/:id/reset-2fa` 早就存在，此前前端零调用）。
+ * 清空 TOTP 四列即完成，用户需重新绑定；写审计 admin.user.reset_2fa。
+ */
+export function resetUserTwoFactor(id: string): Promise<{ id: string; twoFactorEnabled: boolean }> {
+  return apiPost<{ id: string; twoFactorEnabled: boolean }>(`/admin/users/${id}/reset-2fa`, {});
+}
+
+/**
  * 2026-10-05：对**单个用户**定向通知（原因/正文写入审计 admin.user.notify）。
  * 通道是站内通知（notification_history 落库 + WS 实时推给该用户所有在线设备）。
  * 返回值里的 onlineDevices 用于如实告诉运营"对方此刻是否在线"——落库一定会成功，

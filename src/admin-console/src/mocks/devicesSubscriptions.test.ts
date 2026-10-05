@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from '@/mocks/handlers';
-import { mockAuditLogs, mockDevices, mockSubscriptions } from '@/mocks/data';
+import { mockAuditLogs, mockDevices, mockOrders, mockSubscriptions } from '@/mocks/data';
 import type {
   AdminDevice,
   AdminSubscription,
@@ -237,5 +237,93 @@ describe('GET /api/admin/subscriptions/stats + 赠期', () => {
     });
     expect(noReason.status).toBe(400);
     expect(expectFail(noReason).code).toBe(40003);
+  });
+});
+
+/**
+ * 收回权益（2026-10-05 新增端点的 mock 行为）。
+ *
+ * 这个 handler 必须存在，原因不只是"mock 里按钮能用"：MSW 用的是
+ * `onUnhandledRequest: 'bypass'`，**没有 handler 的请求会真的打到 vite proxy 的目标**，
+ * 而本机联调时那个目标是生产 —— 等于"标着 MOCK 数据的界面上点了会真写生产"。
+ *
+ * 种子数据刻意覆盖两条分支，好让本机也能看到保护闸：
+ *   sub_01 的用户有已付订单 ⇒ 必须被拒；sub_11 / sub_12 的用户没有任何订单 ⇒ 可收回。
+ */
+describe('POST /api/admin/subscriptions/:id/revoke（收回权益）', () => {
+  test('★有已付订单 → 409 且订阅状态不变、不写审计（保护闸）', async () => {
+    const sub = mockSubscriptions.find((s) => s.id === 'sub_01')!;
+    // 前提自证：这条订阅的用户确实有已付订单，否则本用例测的不是保护闸
+    const paidCount = mockOrders.filter(
+      (o) => o.userId === sub.userId && o.status === 'paid',
+    ).length;
+    expect(paidCount).toBeGreaterThan(0);
+
+    const statusBefore = sub.status;
+    const auditBefore = mockAuditLogs.length;
+
+    const resp = await post<AdminSubscription>('/api/admin/subscriptions/sub_01/revoke', {
+      reason: '误发赠期，尝试收回',
+    });
+
+    expect(resp.status).toBe(409);
+    const err = expectFail(resp);
+    expect(err.message).toContain('已支付订单');
+    // 必须把人引导到退款，而不是让人以为是参数错
+    expect(err.message).toContain('退款');
+    // 核心反例：不能"先撤了再说"
+    expect(mockSubscriptions.find((s) => s.id === 'sub_01')!.status).toBe(statusBefore);
+    expect(mockAuditLogs.length).toBe(auditBefore);
+  });
+
+  test('无已付订单 + immediate（默认）→ 置 canceled 且写审计 admin.subscriptions.revoke', async () => {
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<AdminSubscription & { revokedMode: string }>(
+        '/api/admin/subscriptions/sub_11/revoke',
+        { reason: '误发赠期' },
+      ),
+    );
+
+    expect(data.revokedMode).toBe('immediate');
+    expect(mockSubscriptions.find((s) => s.id === 'sub_11')!.status).toBe('canceled');
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.subscriptions.revoke');
+    expect(mockAuditLogs[0]?.details).toContain('mode=immediate');
+    // 审计里要能看出"没没收付费权益"
+    expect(mockAuditLogs[0]?.details).toContain('paidOrders=0');
+  });
+
+  test('period_end → 200 但**不置 canceled**（权益保留到到期）', async () => {
+    const { data } = expectOk(
+      await post<AdminSubscription & { revokedMode: string }>(
+        '/api/admin/subscriptions/sub_12/revoke',
+        { reason: '到期后不再续', mode: 'period_end' },
+      ),
+    );
+    expect(data.revokedMode).toBe('period_end');
+    const sub = mockSubscriptions.find((s) => s.id === 'sub_12')!;
+    expect(sub.status).toBe('active');
+    expect(sub.autoRenew).toBe(false);
+  });
+
+  test('缺原因 / 原因超长 / mode 非法 → 400；已终止的订阅 → 409', async () => {
+    expect((await post('/api/admin/subscriptions/sub_11/revoke', {})).status).toBe(400);
+    expect(
+      (await post('/api/admin/subscriptions/sub_11/revoke', { reason: 'x'.repeat(201) })).status,
+    ).toBe(400);
+    expect(
+      (await post('/api/admin/subscriptions/sub_11/revoke', { reason: 'ok', mode: 'whenever' }))
+        .status,
+    ).toBe(400);
+
+    // sub_10 种子里就是 canceled
+    const terminated = await post('/api/admin/subscriptions/sub_10/revoke', { reason: 'ok' });
+    expect(terminated.status).toBe(409);
+    expect(expectFail(terminated).code).toBe(40904);
+
+    const notFound = await post('/api/admin/subscriptions/sub_nope/revoke', { reason: 'ok' });
+    expect(notFound.status).toBe(404);
   });
 });

@@ -361,6 +361,83 @@ const usersHandlers = [
     });
     return ok(user, body.status === 'disabled' ? '账号已停用' : '账号已启用');
   }),
+
+  /**
+   * 2026-10-05 补：对单个用户定向通知。
+   *
+   * ⚠️ 这个 handler **必须存在** —— MSW 的 `onUnhandledRequest: 'bypass'`（`mocks/browser.ts`
+   * 的 worker 启动参数见 `main.tsx`）意味着**没有 handler 的请求会真的打到 vite proxy 的目标**。
+   * 本机联调时那个目标是**生产**，所以漏一个 handler 不只是"mock 里按钮失效"，
+   * 而是"标着 MOCK 数据的界面上点了会真写生产"。
+   */
+  http.post('/api/admin/users/:id/notify', async ({ request, params }) => {
+    await delay(250);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as { title?: string; body?: string; notificationType?: string };
+    const title = body.title?.trim() ?? '';
+    const content = body.body?.trim() ?? '';
+    if (!title || !content) return fail(400, 40002, '通知标题与内容不能为空');
+    if (title.length > 100) return fail(400, 40002, '通知标题不能超过 100 字');
+    if (content.length > 500) return fail(400, 40002, '通知内容不能超过 500 字');
+    const allowed = ['admin_message', 'subscription_notice', 'device_notice', 'security_notice'];
+    const notificationType = body.notificationType ?? 'admin_message';
+    if (!allowed.includes(notificationType)) {
+      return fail(400, 40002, `notificationType 取值不合法（${allowed.join(' / ')}）`);
+    }
+    // 与真实后端同口径：mock 里也如实回报在线设备数（种子数据给个非零值便于看到实时文案）
+    const onlineDevices = user.status === 'active' ? 1 : 0;
+    pushAudit(
+      'admin.user.notify',
+      'user',
+      id,
+      `to=${user.nickname}, type=${notificationType}, title="${title}", onlineDevices=${onlineDevices}`,
+    );
+    return ok(
+      { userId: id, notificationType, title, onlineDevices },
+      onlineDevices > 0
+        ? `已下发（${onlineDevices} 台在线设备已实时收到）`
+        : '已下发（对方当前无在线设备，下次打开客户端即可在通知中心看到）',
+    );
+  }),
+
+  /** 2026-10-05 补：分配角色（对齐后端 users.js 的 /:id/role：越级与超管两道闸） */
+  http.patch('/api/admin/users/:id/role', async ({ request, params }) => {
+    await delay(250);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as { roleId?: string; reason?: string };
+    const roleId = body.roleId?.trim() ?? '';
+    // 注：真实端点还要求 roleId 是合法 UUID（`UUID_RE.test`），而 mock 的角色 id 是
+    // 'role_admin' 这类可读串，所以这里只校验非空 —— 别把 mock 当契约。
+    if (!roleId) return fail(400, 4000, 'roleId 必填（真实端点还要求合法 UUID）');
+    const role = mockRoles.find((r) => r.id === roleId);
+    if (!role) return fail(404, 40404, '角色不存在');
+    if (role.roleKey === 'super_admin') {
+      return fail(403, 40301, '超级管理员角色不可授予其他用户（数据库触发器保证超管唯一）');
+    }
+    // 生产上 `user.roleId` 由详情接口下发；mock 的 AdminUser 有该字段
+    user.roleId = role.id;
+    pushAudit(
+      'role.assign',
+      'user',
+      id,
+      `target=${user.nickname}, role=${role.name}, reason="${body.reason?.trim() ?? ''}"`,
+    );
+    return ok(user, `已把 ${user.nickname} 的角色改为 ${role.name}`);
+  }),
+
+  /** 2026-10-05 补：重置两步验证（对齐后端 users.js 的 /:id/reset-2fa：清空四列即完成） */
+  http.post('/api/admin/users/:id/reset-2fa', async ({ params }) => {
+    await delay(250);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    pushAudit('admin.user.reset_2fa', 'user', id, `target=${user.nickname}`);
+    return ok({ id, twoFactorEnabled: false }, '两步验证已重置');
+  }),
 ];
 
 // ───────────────────────── 订单 ─────────────────────────
@@ -1147,6 +1224,53 @@ const subscriptionsHandlers = [
       `user="${sub.userLabel}", plan=${sub.planKey}, months=${months}, reason="${body.reason.trim()}"`,
     );
     return ok(sub, `已为 ${sub.userLabel} 赠期 ${months} 个月`);
+  }),
+
+  /**
+   * 2026-10-05 补：收回权益。
+   *
+   * ⚠️ 保护闸的 mock 口径与生产**不完全一致**：生产按 `payment_orders.subscription_id`
+   * 判「该订阅有没有已付订单」，而 mock 的订单行只有 `userId`（没有 subscriptionId），
+   * 所以这里退化成「该用户有没有已付订单」。**行为方向一致（有付费痕迹就拒），
+   * 但别拿 mock 的判定当契约** —— 真实口径见 `routes/admin/subscriptions.js` 的 `/:id/revoke`。
+   */
+  http.post('/api/admin/subscriptions/:id/revoke', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const sub = mockSubscriptions.find((s) => s.id === id);
+    if (!sub) return fail(404, 40404, '订阅不存在');
+    const body = (await request.json()) as { reason?: string; mode?: string };
+    const reason = body.reason?.trim() ?? '';
+    const mode = body.mode ?? 'immediate';
+    if (!reason) return fail(400, 40003, '撤销原因必填（写入审计日志）');
+    if (reason.length > 200) return fail(400, 40002, '撤销原因不能超过 200 字');
+    if (mode !== 'immediate' && mode !== 'period_end') {
+      return fail(400, 4000, 'mode 取值不合法（immediate / period_end）');
+    }
+    if (sub.status === 'canceled' || sub.status === 'expired') {
+      return fail(409, 40904, '该订阅已终止，无需撤销');
+    }
+    const paidOrders = mockOrders.filter((o) => o.userId === sub.userId && o.status === 'paid').length;
+    if (paidOrders > 0) {
+      return fail(
+        409,
+        40905,
+        `该订阅有 ${paidOrders} 笔已支付订单，不能在这里撤销；请用「退款审核」原路退款（退款会一并取消订阅）`,
+      );
+    }
+    if (mode === 'immediate') sub.status = 'canceled';
+    // 两种模式都关掉"续费"标记：本产品无自动续费，撤销后更不该留着
+    sub.autoRenew = false;
+    pushAudit(
+      'admin.subscriptions.revoke',
+      'user_subscription',
+      sub.id,
+      `user="${sub.userLabel}", plan=${sub.planKey}, mode=${mode}, reason="${reason}", paidOrders=0`,
+    );
+    return ok(
+      { ...sub, revokedMode: mode, revokedAt: new Date().toISOString() },
+      mode === 'immediate' ? '订阅已立即终止，用户已回落免费版' : '订阅已设为期末终止',
+    );
   }),
 ];
 
