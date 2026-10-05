@@ -3,9 +3,11 @@ import {
   UPSTREAM_HEADER,
   adoptUpstreamFromQuery,
   clearUpstream,
+  devDefaultProxyTarget,
   getUpstream,
   mockInterceptsApi,
   normalizeUpstream,
+  resolveUpstreamView,
   setUpstream,
   upstreamHeaders,
 } from './upstream';
@@ -37,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('normalizeUpstream', () => {
@@ -159,5 +162,64 @@ describe('adoptUpstreamFromQuery（桌面端 ?api= 交接）', () => {
     adoptUpstreamFromQuery();
     expect(getUpstream()).toBe('');
     expect(upstreamHeaders()).toEqual({});
+  });
+});
+
+/**
+ * 2026-10-05 事故回归：本机 .env.development.local 把 vite proxy 的**默认目标**指到了生产，
+ * 而面板只渲染「默认（vite proxy）」这个字面量，操作者据此判定「管理台连的是 dev」——判反了。
+ * 这里钉死：默认目标必须能被算出来并被判为生产，界面才有条件显式告警。
+ */
+describe('resolveUpstreamView（必须暴露真正生效的目标）', () => {
+  it('无运行时覆盖：以 vite proxy 默认目标为准，且生产默认目标被判为生产', () => {
+    const view = resolveUpstreamView('', 'https://api.clipchain.top');
+    expect(view.effective).toBe('https://api.clipchain.top');
+    expect(view.source).toBe('default');
+    expect(view.isProduction).toBe(true);
+  });
+
+  it('默认目标是本地时不误报生产', () => {
+    const view = resolveUpstreamView('', 'http://127.0.0.1:3001');
+    expect(view.effective).toBe('http://127.0.0.1:3001');
+    expect(view.source).toBe('default');
+    expect(view.isProduction).toBe(false);
+  });
+
+  it('面板里填过地址就以它为准（覆盖优先级），来源标为 runtime', () => {
+    const view = resolveUpstreamView('http://127.0.0.1:3001', 'https://api.clipchain.top');
+    expect(view.effective).toBe('http://127.0.0.1:3001');
+    expect(view.source).toBe('runtime');
+    expect(view.isProduction).toBe(false);
+  });
+
+  it('两者都没有时不瞎猜：effective 为空且不报生产', () => {
+    const view = resolveUpstreamView('', '');
+    expect(view.effective).toBe('');
+    expect(view.source).toBe('default');
+    expect(view.isProduction).toBe(false);
+  });
+});
+
+describe('devDefaultProxyTarget（面板默认目标取值口）', () => {
+  it('未显式配置时返回空串（此时 proxy 用 vite.config 内置的非生产默认值）', () => {
+    vi.stubEnv('VITE_PROXY_TARGET', '');
+    expect(devDefaultProxyTarget()).toBe('');
+  });
+
+  it('去空格并去掉尾斜杠', () => {
+    vi.stubEnv('VITE_PROXY_TARGET', '  http://127.0.0.1:3001/  ');
+    expect(devDefaultProxyTarget()).toBe('http://127.0.0.1:3001');
+  });
+
+  // 2026-10-05 现场复现：.env.development.local 把默认目标指到生产，
+  // 面板必须据此判定「直连生产」，而不是只显示「默认（vite proxy）」。
+  it('默认目标为生产时：面板取得到它，并被判定为生产', () => {
+    vi.stubEnv('VITE_PROXY_TARGET', 'https://api.clipchain.top');
+    const target = devDefaultProxyTarget();
+    expect(target).toBe('https://api.clipchain.top');
+    const view = resolveUpstreamView(getUpstream(), target);
+    expect(view.effective).toBe('https://api.clipchain.top');
+    expect(view.source).toBe('default');
+    expect(view.isProduction).toBe(true);
   });
 });

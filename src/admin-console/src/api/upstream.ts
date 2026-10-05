@@ -79,6 +79,64 @@ export function upstreamHeaders(): Record<string, string> {
 }
 
 /**
+ * vite proxy 的默认目标（无运行时覆盖时 `/api` 真正去哪）。
+ *
+ * 面板过去只渲染「默认（vite proxy）」这个**字面量**，把真正的默认目标藏起来了；而默认
+ * 目标可以来自 `.env.development.local`（本机就指向生产）。于是「以为在连 dev、其实在连
+ * 生产」这种误判无法从界面上排除——这正是 2026-10-05 发生的事。所以默认目标必须显示出来。
+ *
+ * 取值来源说明（别改成 define：**Vite 的 define 在 dev 下不生效**）：
+ * `vite.config.ts` 里 `server.proxy['/api'].target` 取 `env.VITE_PROXY_TARGET || 'http://127.0.0.1:3001'`，
+ * 而 `VITE_PROXY_TARGET` 是 VITE_ 前缀变量，dev 下本来就会注入 `import.meta.env`
+ *（已实测：transformed 模块里 `import.meta.env` 含该值）。见 vite 源码 `vite:define` 插件：
+ * `if (environment.config.consumer === 'client' && !isBuild) return` —— dev 完全不替换用户 define。
+ *
+ * 未显式配置时返回空串：此时 proxy 用的是 vite.config.ts 内置的 `http://127.0.0.1:3001`，
+ * **不可能是生产**，故安全上无需精确显示（面板会注明「未显式配置」）。
+ * 唯一有安全含义的情形——默认目标被指到生产——必然是显式配置的，一定取得到值。
+ *
+ * 生产构建恒返回空串：面板不进 bundle，线上页面没有改指向的入口。
+ */
+export function devDefaultProxyTarget(): string {
+  if (!upstreamEditable) return '';
+  // as unknown：ImportMetaEnv 是索引签名（any），直接赋值会触发 no-unsafe-assignment
+  const raw = import.meta.env.VITE_PROXY_TARGET as unknown;
+  return typeof raw === 'string' ? raw.trim().replace(/\/+$/, '') : '';
+}
+
+export type UpstreamSource = 'runtime' | 'default';
+
+export type UpstreamView = {
+  /** localStorage 里的运行时覆盖；空串表示没有覆盖 */
+  runtime: string;
+  /** `/api` 实际会打到的地址（覆盖优先，其次 vite proxy 默认目标） */
+  effective: string;
+  /** 生效目标是否为生产：面板据此决定要不要红字告警 */
+  isProduction: boolean;
+  /** 生效来源：本面板填的，还是 vite proxy 默认 */
+  source: UpstreamSource;
+};
+
+/**
+ * 面板展示用的唯一解析口。
+ * 抽成纯函数是为了能直接给定 target 断言，不必依赖构建期注入或真实 env。
+ */
+export function resolveUpstreamView(runtime: string, defaultTarget: string): UpstreamView {
+  const effective = runtime || defaultTarget;
+  return {
+    runtime,
+    effective,
+    isProduction: effective ? isProductionOrigin(effective) : false,
+    source: runtime ? 'runtime' : 'default',
+  };
+}
+
+/** 当前页面真正生效的转发目标 */
+export function currentUpstreamView(): UpstreamView {
+  return resolveUpstreamView(getUpstream(), devDefaultProxyTarget());
+}
+
+/**
  * dev 下 MSW 是否会吃掉 `/api`（此时后端地址填了也不生效）。
  * 判定只此一份：面板显示的「假数据 / 真实后端」必须和 main.tsx 的启动条件同源，
  * 否则会出现面板说直连、请求却是假数据的错觉。

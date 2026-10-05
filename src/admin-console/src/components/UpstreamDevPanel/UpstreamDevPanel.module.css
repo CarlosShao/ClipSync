@@ -35,12 +35,34 @@
   color: #b45309;
 }
 
+/* 生效目标是生产：必须比「直连」更显眼——这个面板上的写操作都是真实的 */
+.prod {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .mode {
   padding: 0 6px;
   border-radius: 4px;
   background: #f3f4f6;
   color: #4b5563;
   cursor: default;
+}
+
+.modeProd {
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.warn {
+  padding: 6px 8px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fef2f2;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #b91c1c;
 }
 
 .form {
