@@ -101,11 +101,32 @@ export const LEGAL_URLS = Object.freeze({
 export const UPDATE_ENDPOINT_TEMPLATE =
   `${ORIGINS.updates}/api/app/updates/latest?target={{target}}&current_version={{current_version}}`;
 
-/** CORS 白名单（生产）。对应 k8s configmap 的 ALLOWED_ORIGINS。 */
+/**
+ * ⚠️ **本常量服务端不读，改它不会改变任何线上行为。**
+ *
+ * 服务端 CORS 白名单来自环境变量 `CORS_ORIGINS`（`docker-compose.prod.yml` 透传 →
+ * `src/server/src/config.js` → `src/server/src/index.js` 的 `cors({ origin })`）。
+ * `ALLOWED_ORIGINS` 是同义的历史遗留名，**全仓零消费方**，只在 k8s configmap 里出现
+ * 同名键（而 k8s 这条路已废弃）。
+ *
+ * 这个坑已经咬过两次，故把口径写死在这里：
+ *   · 2026-09-19：运维按「白名单」配了 `ALLOWED_ORIGINS` 而没配 `CORS_ORIGINS`
+ *     → `allowedOrigins` 成空数组 → **所有带 Origin 的跨域请求一律 403**，Web 端全不可用
+ *     （见 docs/audit/v1-full-audit-2026-09-22/06-server-datalayer-api-design.md:936,945）。
+ *   · 2026-10-04：另一个 agent 看到本数组缺 Tauri origin，误判为「发版阻断」——
+ *     而生产 `CORS_ORIGINS` 本来就含 `http://tauri.localhost` 与 `http://localhost:1420`。
+ *
+ * 真值以**生产 `.env.production` 的 `CORS_ORIGINS`** 为准（含桌面端两个 origin）。
+ * 这里保留 Web 三域 + 桌面端 origin 只是为了与 k8s configmap 的历史值对齐、便于人工比对。
+ */
 export const ALLOWED_ORIGINS = Object.freeze([
   ORIGINS.www,
   ORIGINS.admin,
   ORIGINS.root,
+  // 桌面端（Tauri）origin：Windows 打包后是 http://tauri.localhost，dev 是 http://localhost:1420。
+  // 生产 CORS_ORIGINS 已包含这两项；此处列出以免再被误读成"漏了"。
+  'http://tauri.localhost',
+  'http://localhost:1420',
 ]);
 
 export default {
