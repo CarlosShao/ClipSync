@@ -214,6 +214,9 @@ describe('升级试算 · 升档折抵', () => {
     expect(q.usedAmount).toBeGreaterThan(0);
     // 差额 = 新价 − 折抵
     expect(q.finalAmount).toBeCloseTo(roundToCent(plan.Enterprise.monthly - q.creditAmount), 2);
+    // 没触发下限 ⇒ 残值全额用上，没有作废金额
+    expect(q.floorApplied).toBe(false);
+    expect(q.forfeitAmount).toBe(0);
   });
 
   it('残值高于新价时：差额落到 0.01 下限，绝不产出 0 元/负数单', async () => {
@@ -237,6 +240,15 @@ describe('升级试算 · 升档折抵', () => {
     // 超出部分不会退给用户，这是 proration.js 既有的边界口径，见 tests/proration.test.js）
     expect(q.usedAmount).toBeCloseTo(roundToCent(paidAmount - q.creditAmount), 2);
     expect(q.usedAmount).toBeGreaterThan(0);
+
+    // ★owner 2026-10-05 口径：超出部分作废，但明细必须把它**写出来**（用户会自己算）
+    expect(q.floorApplied).toBe(true);
+    // 作废金额 = 残值 − 新价里真正被抵掉的部分（差额保底 0.01，故抵掉的是 新价 − 0.01）
+    expect(q.forfeitAmount).toBeCloseTo(
+      roundToCent(q.creditAmount - (plan.Enterprise.monthly - 0.01)),
+      2
+    );
+    expect(q.forfeitAmount).toBeGreaterThan(0);
   });
 
   it('★核心不变量：试算金额逐分等于随后建单的实收金额', async () => {
@@ -332,6 +344,8 @@ describe('升级试算 · 无 active 订阅（全价新订）', () => {
     expect(q.usedAmount).toBeNull();
     expect(q.creditSource).toBeNull();
     expect(q.remainingDays).toBeNull();
+    expect(q.floorApplied).toBe(false);
+    expect(q.forfeitAmount).toBeNull();
     expect(q.currentPeriodEnd).toBeNull();
   });
 

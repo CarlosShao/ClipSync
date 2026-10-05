@@ -187,6 +187,8 @@ async function resolveOrderPricing({ userId, subscriptionId, planId, billingCycl
   let proration = null;
   let paidAmount = null;
   let creditSource = null;
+  // 残值是否被 MIN_ORDER_AMOUNT 下限截断（截断 = 用户有残值没用上，见下面 forfeitAmount）
+  let floorApplied = false;
 
   if (currentSubscription) {
     const decision = decidePlanChange({
@@ -246,6 +248,7 @@ async function resolveOrderPricing({ userId, subscriptionId, planId, billingCycl
       periodEnd: currentSubscription.current_period_end,
       newPrice: listPrice,
     });
+    floorApplied = base.floorApplied;
     proration = {
       originalPrice: base.originalPrice,
       creditAmount: base.creditAmount,
@@ -272,6 +275,7 @@ async function resolveOrderPricing({ userId, subscriptionId, planId, billingCycl
     proration,
     paidAmount,
     creditSource,
+    floorApplied,
   };
 }
 
@@ -316,6 +320,27 @@ router.post('/upgrade-quote', authenticateToken, async (req, res) => {
         ? roundToCent(Math.max(0, Number(paidAmount) - Number(proration.creditAmount)))
         : null;
 
+    /**
+     * 残值高于新价时，超出的那部分**不予结转**（owner 2026-10-05 定口径：保持现状，
+     * 但明细里必须把作废金额写出来 —— 否则用户自己一算「我剩 ¥89.10，为何只付 ¥0.01」
+     * 就是一笔糊涂账，而这是明细上线**新引入**的可见性问题）。
+     *
+     * 作废金额 = 残值 − 实际被用掉的折抵；
+     * 实际用掉的折抵 = min(残值, 新价 − 实付)，即差额里真正被残值抵掉的那部分。
+     * 未触发下限时另一项恒为 0（残值全部用上）。
+     */
+    const consumedCredit = proration
+      ? roundToCent(
+          Math.min(
+            Number(proration.creditAmount),
+            Math.max(0, Number(proration.originalPrice) - Number(pricing.amount))
+          )
+        )
+      : 0;
+    const forfeitAmount = proration
+      ? roundToCent(Math.max(0, Number(proration.creditAmount) - consumedCredit))
+      : null;
+
     res.json({
       quote: {
         planId: pricing.targetPlan.id,
@@ -329,6 +354,9 @@ router.post('/upgrade-quote', authenticateToken, async (req, res) => {
         paidAmount,
         usedAmount,
         creditSource,
+        // 见上方：下限截断时明细必须显式写出「本次折抵上限 = 新套餐价，超出部分不再结转」
+        floorApplied: pricing.floorApplied,
+        forfeitAmount,
         remainingDays: proration ? proration.remainingDays : null,
         cycleDays: proration ? proration.cycleDays : null,
         currentPeriodStart: currentSubscription ? currentSubscription.current_period_start : null,
