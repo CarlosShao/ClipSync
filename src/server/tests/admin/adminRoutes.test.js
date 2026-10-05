@@ -35,7 +35,7 @@ import express from 'express';
 import request from 'supertest';
 import { pool } from '../../src/db/pool.js';
 import { clearPermCache } from '../../src/middleware/adminAuth.js';
-import adminRouter from '../../src/routes/admin/index.js';
+import adminRouter, { ADMIN_STRICT_WRITE_PATTERNS } from '../../src/routes/admin/index.js';
 
 function buildApp() {
   const app = express();
@@ -112,5 +112,41 @@ describe('POST 挂载链：/api/admin（authenticateToken → requireRole(50) �
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ code: 5000, message: '获取权限信息失败' });
+  });
+});
+
+// ───────────────────────── AN-07 高危写限流名单 ─────────────────────────
+// 这份名单是"哪些管理写操作要叠加更严限流"的唯一真相源。漏一条是**静默**的
+//（不报错，只是那道闸没了）—— 所以必须钉住。
+// 2026-10-05：收回订阅权益（revoke）当时就漏了，尽管旁边 reject 那条的注释
+// 写着同样的理由「会改用户权益，同样按高危限流」。
+describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
+  const hit = (path) => ADMIN_STRICT_WRITE_PATTERNS.some((re) => re.test(path));
+
+  it('① 会改用户权益/钱的端点必须在名单里', () => {
+    expect(hit('/subscriptions/a1000000-0000-4000-8000-000000000001/revoke')).toBe(true); // 收回权益
+    expect(hit('/refund-reviews/a1000000-0000-4000-8000-000000000001/reject')).toBe(true); // 驳回改权益
+    expect(hit('/refund-reviews/a1000000-0000-4000-8000-000000000001/approve')).toBe(true); // 真打款
+    expect(hit('/orders/ORD123/refund')).toBe(true); // 退款
+  });
+
+  it('② 对外触达与账号级动作也在名单里', () => {
+    expect(hit('/users/a1000000-0000-4000-8000-000000000001/notify')).toBe(true); // 定向通知=对外触达
+    expect(hit('/users/a1000000-0000-4000-8000-000000000001/force-logout')).toBe(true);
+    expect(hit('/devices/a1000000-0000-4000-8000-000000000001/offline')).toBe(true);
+    expect(hit('/ops/actions')).toBe(true);
+  });
+
+  it('③ 只读路径不得被误伤（否则普通查询会被 10/min 卡住）', () => {
+    expect(hit('/subscriptions')).toBe(false);
+    expect(hit('/users')).toBe(false);
+    expect(hit('/audit-logs')).toBe(false);
+    // 注意：/users/:id 那条是为 DELETE 写的，但也匹配 GET/PATCH —— 限流只对 POST/DELETE 生效
+    //（见 index.js 里 req.method 判断），故这里不把它算作误伤。
+  });
+
+  it('④ 模式是"整段匹配"而不是前缀匹配（/users/:id 不该把 /users/:id/export 也吞掉）', () => {
+    expect(hit('/users/a1000000-0000-4000-8000-000000000001/export')).toBe(false);
+    expect(hit('/subscriptions/a1000000-0000-4000-8000-000000000001/stats')).toBe(false);
   });
 });

@@ -3,9 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { App as AntdApp, Avatar, Button, Drawer, Skeleton, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { deleteUser, exportUserData, forceLogoutUser, getUserDetail, updateUserStatus } from '@/api/users';
+import { deleteUser, exportUserData, forceLogoutUser, getUserDetail, notifyUser, updateUserStatus } from '@/api/users';
 import { grantSubscription } from '@/api/subscriptions';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
+import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone } from '@/components/StatusTag/mappers';
@@ -66,6 +67,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [grantOpen, setGrantOpen] = useState(false);
   // AN-13：数据主体数据导出（原因写入审计 admin.users.export）
   const [exportOpen, setExportOpen] = useState(false);
+  // 2026-10-05：对单个用户定向通知（此前只能改库或对全体广播公告）
+  const [notifyOpen, setNotifyOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -123,6 +126,32 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
       URL.revokeObjectURL(url);
       void message.success('用户数据已导出');
       setExportOpen(false);
+    },
+  });
+
+  /**
+   * 2026-10-05：对单个用户定向通知（落 notification_history + WS 实时推给其在线设备）。
+   * onlineDevices 如实回报"对方此刻在不在线" —— 落库一定成功，但不谎报已送达。
+   */
+  const notifyMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      title: string;
+      body: string;
+      notificationType: NotifyType;
+    }) =>
+      notifyUser(payload.id, {
+        title: payload.title,
+        body: payload.body,
+        notificationType: payload.notificationType,
+      }),
+    onSuccess: (result) => {
+      void message.success(
+        result.onlineDevices > 0
+          ? `已发送（${result.onlineDevices} 台在线设备已实时收到）`
+          : '已发送（对方当前不在线，下次打开客户端即可在通知中心看到）',
+      );
+      setNotifyOpen(false);
     },
   });
 
@@ -197,6 +226,11 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   // RB-07：管理操作按钮按权限键裁剪（对齐 devices 页 canOffline 模式）
   const canManage = hasPerm('admin.users.manage');
   const canDelete = hasPerm('admin.users.delete');
+  /**
+   * 2026-10-05：定向通知用「对外触达」权限（admin.announce.send），与服务端
+   * requirePerm 一致，刻意与管理类权限分开 —— 能改用户资料的运营未必该能私信用户。
+   */
+  const canNotify = hasPerm('admin.announce.send');
 
   const renderBody = () => {
     if (isLoading || !user) {
@@ -274,6 +308,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
             <span>
               <Button disabled={!grantTarget} onClick={() => setGrantOpen(true)}>
                 赠期 1 个月
+              </Button>
+            </span>
+          </Tooltip>
+          {/* 2026-10-05：定向通知（只发给这一个人，不广播；对方离线则落通知中心） */}
+          <Tooltip title={canNotify ? '' : '缺少权限: admin.announce.send'}>
+            <span>
+              <Button disabled={!canNotify} onClick={() => setNotifyOpen(true)}>
+                发站内通知
               </Button>
             </span>
           </Tooltip>
@@ -402,6 +444,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               reason,
             })
           }
+        />
+
+        <NotifyUserModal
+          open={notifyOpen}
+          userLabel={user.nickname || user.phone || ''}
+          confirmLoading={notifyMutation.isPending}
+          onCancel={() => setNotifyOpen(false)}
+          onConfirm={(payload) => notifyMutation.mutateAsync({ id: user.id, ...payload })}
         />
       </>
     );

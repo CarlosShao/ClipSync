@@ -3,6 +3,7 @@ import type {
   AdminSubscription,
   GrantSubscriptionPayload,
   PageData,
+  RevokeSubscriptionPayload,
   SubscriptionListParams,
   SubscriptionStats,
 } from '@/api/types';
@@ -34,4 +35,21 @@ export function grantSubscription(
   payload: GrantSubscriptionPayload,
 ): Promise<AdminSubscription> {
   return apiPost<AdminSubscription>(`/admin/subscriptions/${id}/grant`, payload);
+}
+
+/**
+ * 收回订阅权益（2026-10-05 新增；原因必填，写入审计 admin.subscriptions.revoke）。
+ *
+ * 服务端有**保护闸**：该订阅下存在真实已付订单时返回 409 HAS_PAID_ORDER ——
+ * 用户花钱买到的权益只能走「退款审核」原路退款，不能在这里撤。
+ * 调用方需把该 code 讲成人话（见 RevokeSubscriptionModal）。
+ */
+export function revokeSubscription(
+  id: string,
+  payload: RevokeSubscriptionPayload,
+): Promise<AdminSubscription & { revokedMode: string; revokedAt: string }> {
+  return apiPost<AdminSubscription & { revokedMode: string; revokedAt: string }>(
+    `/admin/subscriptions/${id}/revoke`,
+    payload,
+  );
 }

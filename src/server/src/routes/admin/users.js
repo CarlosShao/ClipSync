@@ -9,12 +9,14 @@
 //     → PATCH  /api/admin/users/:id/role          分配角色   body { roleId, reason }（super_admin 角色不可授予）
 //     → POST   /api/admin/users/:id/force-logout  强制下线（吊销该用户全部会话）
 //     → POST   /api/admin/users/:id/reset-2fa     重置两步验证
+//     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
 // 上游链（index.js 顶层已装配）：authenticateToken → requireRole(50) → superAdminAudit
 // 细粒度权限（043_admin_permission_catalog.sql 目录）：
 //   - GET  /users, /users/:id   → requirePerm('admin.users.view')
 //   - PATCH /status / force-logout / reset-2fa → requirePerm('admin.users.manage')
+//   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
 //
@@ -36,6 +38,7 @@ import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { decryptField } from '../../utils/encryption.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+import { sendNotification, getOnlineDeviceCount } from '../../ws/server.js';
 
 const router = Router();
 
@@ -813,6 +816,119 @@ router.post('/:id/reset-2fa', requirePerm('admin.users.manage'), async (req, res
   } catch (err) {
     logger.error('[admin/users] reset 2fa failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '重置两步验证失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/notify  body { title, body, notificationType? }
+ * 对**单个用户**定向通知（2026-10-05 新增）。
+ *
+ * 为什么需要它：管理台此前只有「公告下发」，而公告受众只有 all / pro_plus / free
+ * 三个**群体** —— 想只告知一个人（客服跟进、误发权益的说明、风控提醒）此前只能改库
+ * 往 notification_history 插行，或者对全体广播。通道本身早就有了
+ *（ws/server.js 的 sendNotification = WS 实时推 + 落 notification_history），只差一个入口。
+ *
+ * 权限刻意用 admin.announce.send（"公告与通知下发"）而不是本文件其它路由的
+ * admin.users.manage：这是**对外触达**类能力，与公告同类；只负责改用户资料的运营角色
+ * 不该顺带拿到"私信任意用户"的能力。
+ *
+ * 两个刻意设计：
+ *  ① notificationType 由服务端**白名单**给出，不让调用方自由填。四个取值都落在客户端
+ *     已有的分类映射上（useNotifications.ts 的 typeToCategory 按 includes 匹配，未知类型
+ *     兜底 'update'）⇒ **不需要客户端改代码**，还没升级的版本也能正确归类。
+ *  ② 不检查 notification_preferences：那是**产品推送**的开关，不该屏蔽管理员/客服的
+ *     直接告知（与站内其它通知刻意不同，故写明）。
+ */
+const NOTIFY_TYPES = new Set([
+  'admin_message', // → 客户端分类 update（通用告知）
+  'subscription_notice', // → subscription
+  'device_notice', // → device
+  'security_notice', // → security
+]);
+
+router.post('/:id/notify', requirePerm('admin.announce.send'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const content = typeof body.body === 'string' ? body.body.trim() : '';
+    const notificationType =
+      body.notificationType === undefined || body.notificationType === null
+        ? 'admin_message'
+        : body.notificationType;
+
+    if (!title || !content) {
+      return res.status(400).json({ code: 4000, message: '通知标题与内容不能为空' });
+    }
+    if (title.length > 100) {
+      return res.status(400).json({ code: 4000, message: '通知标题不能超过 100 字' });
+    }
+    if (content.length > 500) {
+      return res.status(400).json({ code: 4000, message: '通知内容不能超过 500 字' });
+    }
+    if (!NOTIFY_TYPES.has(notificationType)) {
+      return res.status(400).json({
+        code: 4000,
+        message: `notificationType 取值不合法（${[...NOTIFY_TYPES].join(' / ')}）`,
+      });
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+
+    // 与公告下发同一条通道：落 notification_history + WS 实时推给该用户所有在线设备
+    await sendNotification(user.id, {
+      notificationType,
+      title,
+      body: content,
+      data: { source: 'admin', sentBy: req.user?.userId ?? null },
+    });
+
+    const onlineDevices = getOnlineDeviceCount(user.id);
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.notify',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        notificationType,
+        title,
+        // 只留预览：审计要能看出"发了什么"，但不该把整篇正文塞进审计表
+        bodyPreview: content.slice(0, 200),
+        onlineDevices,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/users] notify sent', {
+      targetUserId: user.id,
+      notificationType,
+      onlineDevices,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: { userId: user.id, notificationType, title, onlineDevices },
+      // 如实说明触达情况：落库一定会成功，但对方当前可能一台设备都不在线
+      message:
+        onlineDevices > 0
+          ? `已下发（${onlineDevices} 台在线设备已实时收到）`
+          : '已下发（对方当前无在线设备，下次打开客户端即可在通知中心看到）',
+    });
+  } catch (err) {
+    logger.error('[admin/users] notify failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '通知下发失败' });
   }
 });
 

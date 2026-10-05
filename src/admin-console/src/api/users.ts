@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/api/client';
 import type {
   AdminUser,
+  NotifyUserPayload,
   PageData,
   UpdateUserStatusPayload,
   UserDetail,
@@ -44,6 +45,22 @@ export function deleteUser(
   payload: { reason: string }
 ): Promise<{ id: string; deleted: boolean }> {
   return apiDelete<{ id: string; deleted: boolean }>(`/admin/users/${id}`, payload);
+}
+
+/**
+ * 2026-10-05：对**单个用户**定向通知（原因/正文写入审计 admin.user.notify）。
+ * 通道是站内通知（notification_history 落库 + WS 实时推给该用户所有在线设备）。
+ * 返回值里的 onlineDevices 用于如实告诉运营"对方此刻是否在线"——落库一定会成功，
+ * 但在线数可能为 0（对方下次打开客户端才会在通知中心看到）。
+ */
+export function notifyUser(
+  id: string,
+  payload: NotifyUserPayload
+): Promise<{ userId: string; notificationType: string; title: string; onlineDevices: number }> {
+  return apiPost<{ userId: string; notificationType: string; title: string; onlineDevices: number }>(
+    `/admin/users/${id}/notify`,
+    payload
+  );
 }
 
 /**

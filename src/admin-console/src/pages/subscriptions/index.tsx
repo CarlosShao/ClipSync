@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { App as AntdApp, Button, Card, Input, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
-import { subscriptionKeys, getSubscriptions, getSubscriptionStats, grantSubscription } from '@/api/subscriptions';
+import { subscriptionKeys, getSubscriptions, getSubscriptionStats, grantSubscription, revokeSubscription } from '@/api/subscriptions';
 import type { AdminSubscription, PlanKey, SubscriptionStatus } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { StatusTag, type StatusTone } from '@/components/StatusTag';
@@ -11,6 +11,7 @@ import { useTableQuery } from '@/hooks/useTableQuery';
 import { fmtDate } from '@/utils/format';
 import { hasPerm } from '@/utils/permissions';
 import { GrantSubscriptionModal, type GrantPlanId } from './GrantSubscriptionModal';
+import { RevokeSubscriptionModal, type RevokeMode } from './RevokeSubscriptionModal';
 import styles from './subscriptions.module.css';
 
 interface SubscriptionFilters {
@@ -63,6 +64,8 @@ export default function SubscriptionsPage() {
   const { message } = AntdApp.useApp();
   const queryClient = useQueryClient();
   const [grantTarget, setGrantTarget] = useState<AdminSubscription | null>(null);
+  // 2026-10-05：收回权益（此前 grant 是单向的，误发赠期只能改库）
+  const [revokeTarget, setRevokeTarget] = useState<AdminSubscription | null>(null);
   const [draft, setDraft] = useState<SubscriptionFilters>(DEFAULT_FILTERS);
 
   const { tableProps, setFilters } = useTableQuery<AdminSubscription, SubscriptionFilters>({
@@ -89,6 +92,25 @@ export default function SubscriptionsPage() {
         `已为 ${updated.userLabel} 调整为 ${planLabel[updated.planKey?.toLowerCase() as PlanKey] ?? updated.planName} 并赠期 ${variables.months} 个月`,
       );
       setGrantTarget(null);
+    },
+  });
+
+  /**
+   * 收回权益（2026-10-05）。服务端有保护闸：该订阅存在真实已付订单时返回 409，
+   * 中文说明由 api client 拦截器统一 toast（服务端 message 已写明「请用退款审核」），
+   * 所以这里不另写一套错误文案，避免两处口径漂移。
+   */
+  const revokeMutation = useMutation({
+    mutationFn: (payload: { id: string; mode: RevokeMode; reason: string }) =>
+      revokeSubscription(payload.id, { mode: payload.mode, reason: payload.reason }),
+    onSuccess: (updated, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
+      void message.success(
+        variables.mode === 'immediate'
+          ? `已立即收回 ${updated.userLabel} 的订阅权益，账号已回落免费版`
+          : `已把 ${updated.userLabel} 的订阅设为期末终止`,
+      );
+      setRevokeTarget(null);
     },
   });
 
@@ -170,12 +192,21 @@ export default function SubscriptionsPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 104,
+      width: 168,
       render: (_: string, record) =>
         canGrant ? (
-          <Button size="small" onClick={() => setGrantTarget(record)}>
-            赠期/调整
-          </Button>
+          <div className={styles.actionCell}>
+            <Button size="small" onClick={() => setGrantTarget(record)}>
+              赠期/调整
+            </Button>
+            {/* 已终止的订阅没什么可收回的；其余一律给入口 —— 是否有已付订单只有服务端知道，
+                真被保护闸拦下时拦截器会把「请用退款审核」原样告诉运营 */}
+            {record.status !== 'canceled' && record.status !== 'expired' && (
+              <Button size="small" danger onClick={() => setRevokeTarget(record)}>
+                收回
+              </Button>
+            )}
+          </div>
         ) : (
           <span className={styles.mutedCell}>—</span>
         ),
@@ -186,7 +217,7 @@ export default function SubscriptionsPage() {
     <>
       <PageHeader
         title="订阅管理"
-        description="付费与试用订阅的全生命周期视图 · 赠期/调整写入审计日志"
+        description="付费与试用订阅的全生命周期视图 · 赠期/调整与收回都写入审计日志 · 有偿订阅只能走退款"
       />
 
       <Card styles={{ body: { padding: 0 } }}>
@@ -239,6 +270,16 @@ export default function SubscriptionsPage() {
         onCancel={() => setGrantTarget(null)}
         onConfirm={(planId, months, reason) =>
           grantMutation.mutateAsync({ id: grantTarget?.id ?? '', planId, months, reason })
+        }
+      />
+
+      <RevokeSubscriptionModal
+        open={Boolean(revokeTarget)}
+        subscription={revokeTarget}
+        confirmLoading={revokeMutation.isPending}
+        onCancel={() => setRevokeTarget(null)}
+        onConfirm={(mode, reason) =>
+          revokeMutation.mutateAsync({ id: revokeTarget?.id ?? '', mode, reason })
         }
       />
     </>

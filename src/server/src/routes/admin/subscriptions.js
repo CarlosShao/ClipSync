@@ -5,9 +5,13 @@
 //   adminRouter.use('/subscriptions', subscriptionsRouter)
 //     → GET  /api/admin/subscriptions           订阅分页列表（含用户摘要与套餐名）
 //     → POST /api/admin/subscriptions/:id/grant 人工赠期/调整套餐（高危）
+//     → POST /api/admin/subscriptions/:id/revoke 收回人工授予的权益（高危；有已付订单一律拒）
 //
 // 上游链（index.js 顶层已装配）：authenticateToken → requireRole(50) → superAdminAudit
-// 细粒度权限：POST /:id/grant → requirePerm('admin.subscriptions.grant')
+// 细粒度权限：POST /:id/grant 与 /:id/revoke → requirePerm('admin.subscriptions.grant')
+//   （revoke 刻意复用 grant 的权限键：两者是同一类"人工调整高危操作"，且新增权限键要动
+//    043 权限目录的迁移，而生产落后分支很远，不值得为语义细分冒迁移风险。
+//    收回与赠出是对称的 —— 能赠的人本就该能撤。）
 //
 // 响应契约：成功 { code: 0, data }；错误 { code, message }；分页壳 { list, total, page, pageSize }
 // =============================================
@@ -17,6 +21,7 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
+import { sendNotification } from '../../ws/server.js';
 
 const router = Router();
 
@@ -274,6 +279,182 @@ router.post('/:id/grant', requirePerm('admin.subscriptions.grant'), async (req, 
   } catch (err) {
     logger.error('[admin/subscriptions] grant failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '赠期执行失败' });
+  }
+});
+
+/**
+ * POST /api/admin/subscriptions/:id/revoke  body { reason, mode? = 'immediate' }
+ * 收回「人工给出去」的订阅权益（赠期 / mock / 补偿）—— 2026-10-05 新增。
+ *
+ * 为什么需要它：grant 是**单向**的（只把 plan_id 往前挪 + period_end 往后延），
+ * 误发或滥用赠期后**没有任何入口可收回** —— 此前只能改库，而改库既不写审计，
+ * 也很容易把 users 的订阅快照和 user_subscriptions 改得不一致。
+ *
+ * ⚠️ 本端点最重要的设计是**保护闸**：订阅下只要存在**真实已付订单**（status='paid'）
+ * 就一律拒收（409 / REVOKE_PAID_SUBSCRIPTION_USE_REFUND）。用户付过钱买到的权益只能走
+ * 「退款审核」（/refund-review：先调渠道原路退款、再取消订阅）—— 否则在这里点一下
+ * 就等于**没收用户花钱买的东西**，是资损 + 投诉 + 合规面。
+ * 本端点只处理与钱无关的那部分（管理台赠期、mock、人工补偿）。
+ *
+ * mode：
+ *   immediate（默认）立即生效：status='canceled' + canceled_at，用户快照回落 free
+ *                        （与 orderFulfillment 升级取代旧订阅同一口径）
+ *   period_end         期末生效：cancel_at_period_end=true，权益保留到到期
+ *                        （与用户自助 POST /api/subscriptions/cancel 同一口径）
+ */
+router.post('/:id/revoke', requirePerm('admin.subscriptions.grant'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || typeof id !== 'string' || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '订阅 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    const mode = body.mode === undefined || body.mode === null ? 'immediate' : body.mode;
+
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '撤销原因必填（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '撤销原因不能超过 200 字' });
+    }
+    if (mode !== 'immediate' && mode !== 'period_end') {
+      return res
+        .status(400)
+        .json({ code: 4000, message: 'mode 取值不合法（immediate / period_end）' });
+    }
+
+    const { rows } = await pool.query(`${SUBSCRIPTION_SELECT} WHERE us.id = $1`, [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ code: 40404, message: '订阅不存在' });
+    }
+    const subscription = rows[0];
+    const previousStatus = String(subscription.status || '');
+
+    if (previousStatus === 'canceled' || previousStatus === 'expired') {
+      return res.status(409).json({ code: 40904, message: '该订阅已终止，无需撤销' });
+    }
+
+    // ★保护闸：有真实已付订单一律拒（引导走退款审核）
+    const paid = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM payment_orders WHERE subscription_id = $1 AND status = 'paid'`,
+      [id]
+    );
+    const paidOrders = paid.rows[0].n;
+    if (paidOrders > 0) {
+      logger.warn('[admin/subscriptions] revoke blocked: subscription has paid order(s)', {
+        subscriptionId: id,
+        paidOrders,
+        operator: req.user?.userId,
+      });
+      return res.status(409).json({
+        code: 40905,
+        reason: 'HAS_PAID_ORDER',
+        paidOrders,
+        message: `该订阅有 ${paidOrders} 笔已支付订单，不能在这里撤销；请用「退款审核」原路退款（退款会一并取消订阅）`,
+      });
+    }
+
+    let updated;
+    if (mode === 'immediate') {
+      const r = await pool.query(
+        `UPDATE user_subscriptions
+            SET status = 'canceled',
+                canceled_at = NOW(),
+                cancel_at_period_end = false,
+                auto_renew = false,
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [id]
+      );
+      updated = r.rows[0];
+
+      // users 快照回落：**只在该订阅正是当前指向的那条时**回落，
+      // 否则会把用户另一条生效订阅的档位改错（同用户可能存在多条订阅行）
+      await pool.query(
+        `UPDATE users
+            SET subscription_status = 'free',
+                current_subscription_id = NULL,
+                updated_at = NOW()
+          WHERE id = $1 AND current_subscription_id = $2`,
+        [subscription.user_id, id]
+      );
+    } else {
+      const r = await pool.query(
+        `UPDATE user_subscriptions
+            SET cancel_at_period_end = true,
+                auto_renew = false,
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [id]
+      );
+      updated = r.rows[0];
+    }
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.subscriptions.revoke',
+      resourceType: 'user_subscription',
+      resourceId: id,
+      details: {
+        targetUserId: subscription.user_id,
+        planId: subscription.plan_id,
+        planName: subscription.plan_display_name || subscription.plan_name,
+        mode,
+        reason,
+        previousStatus,
+        currentPeriodEnd: subscription.current_period_end,
+        // 留痕：撤销时该订阅**确实**没有已付订单（保护闸已过），事后可自证没没收付费权益
+        paidOrders: 0,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    // 告知用户（静默收回权益比收回本身更糟）。注意**不把内部原因**塞给用户 ——
+    // reason 是给审计看的（"误发""滥用"），对用户只给中性文案。失败只 warn，不影响撤销。
+    try {
+      const endText = subscription.current_period_end
+        ? new Date(subscription.current_period_end).toLocaleDateString()
+        : '';
+      await sendNotification(subscription.user_id, {
+        notificationType: 'subscription_revoked',
+        title: mode === 'immediate' ? '订阅权益已收回' : '订阅将于到期后结束',
+        body:
+          mode === 'immediate'
+            ? '管理员已收回该订阅的权益，账号已回落免费版。如有疑问请联系客服。'
+            : `该订阅将于 ${endText} 到期后结束，期间权益不受影响。`,
+        data: { subscriptionId: id, mode },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/subscriptions] revoke notify failed (ignored)', {
+        subscriptionId: id,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/subscriptions] revoke executed', {
+      subscriptionId: id,
+      mode,
+      previousStatus,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: {
+        ...mapSubscriptionRow({ ...subscription, ...updated }),
+        revokedMode: mode,
+        revokedAt: new Date().toISOString(),
+      },
+      message: mode === 'immediate' ? '订阅已立即终止，用户已回落免费版' : '订阅已设为期末终止',
+    });
+  } catch (err) {
+    logger.error('[admin/subscriptions] revoke failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '撤销订阅失败' });
   }
 });
 

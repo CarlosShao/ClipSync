@@ -58,7 +58,9 @@ adminRouter.use(authenticateToken, requireRole(50), superAdminAudit);
 // ---- AN-07：高危写操作叠加更严限流（adminStrictLimiter：每 IP+资源段 10 次/分钟）----
 // 命中工单列举的高危口径：退款 / 强制下线（用户/设备）/ 账号删除 / 运维动作区（全员下线等）。
 // req.path 为相对 /api/admin 的子路径；未命中模式直接放行，不影响普通管理操作。
-const ADMIN_STRICT_WRITE_PATTERNS = [
+// 导出仅为可单测：这份名单是"高危写操作"的**唯一真相源**，少一条就等于少一道限流闸，
+// 而漏掉是静默的（没有报错，只是"没那么严"）—— 必须有断言兜着。
+export const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/orders\/[^/]+\/refund$/,      // 退款
   /^\/refund-reviews\/[^/]+\/approve$/, // 审核通过 = 真打款，与上面同危
   /^\/refund-reviews\/[^/]+\/reject$/,  // 驳回会改用户权益，同样按高危限流
@@ -67,6 +69,12 @@ const ADMIN_STRICT_WRITE_PATTERNS = [
   /^\/devices\/[^/]+\/offline$/,    // 设备远程下线
   /^\/ops\/actions$/,               // 运维动作区（clear_cache / force_logout_all 等）
   /^\/sessions\/[^/]+\/revoke$/,    // AN-12：管理员单会话强制下线
+  // 2026-10-05 新增：收回订阅权益会直接改用户权益（与上面 reject 同一理由，那条注释就写着
+  // 「驳回会改用户权益，同样按高危限流」），当时漏了它。
+  /^\/subscriptions\/[^/]+\/revoke$/,
+  // 2026-10-05 新增：对单个用户定向通知是**对外触达**，限流是为了给"被拿来刷屏"设上限。
+  // 注：/announcements（全体公告）反而**不在**本名单里 —— 见文档遗留项，未擅自改动既有口径。
+  /^\/users\/[^/]+\/notify$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

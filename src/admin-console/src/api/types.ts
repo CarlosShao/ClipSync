@@ -833,6 +833,30 @@ export interface GrantSubscriptionPayload {
   reason: string;
 }
 
+/**
+ * 收回人工授予的订阅权益（POST /api/admin/subscriptions/:id/revoke，2026-10-05 新增）。
+ *
+ * 只用于**人工给出去**的权益（赠期 / mock / 补偿）：该订阅下若存在真实已付订单，
+ * 服务端一律 409 HAS_PAID_ORDER 拒绝，必须走「退款审核」原路退款（退款会一并取消订阅）。
+ */
+export interface RevokeSubscriptionPayload {
+  /** 撤销原因，必填，写入审计 admin.subscriptions.revoke */
+  reason: string;
+  /**
+   * immediate（默认）立即终止、用户回落免费版；
+   * period_end 期末终止，权益保留到到期（与用户自助取消同口径）。
+   */
+  mode?: 'immediate' | 'period_end';
+}
+
+/** 对单个用户定向通知（POST /api/admin/users/:id/notify） */
+export interface NotifyUserPayload {
+  title: string;
+  body: string;
+  /** 服务端白名单；缺省 admin_message。四类都落在客户端已有分类上 */
+  notificationType?: 'admin_message' | 'subscription_notice' | 'device_notice' | 'security_notice';
+}
+
 // ─────────────── AN-01 追加：套餐与价格管理（只增不改） ───────────────
 
 /**
