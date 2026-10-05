@@ -10,6 +10,7 @@ import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter, g
 import { blacklistJti, parseDurationToSeconds } from '../utils/redis-client.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { encryptField, decryptField } from '../utils/encryption.js';
+import { computeFieldHash } from '../utils/fieldHash.js';
 import { EMAILS } from '../../../shared/domains.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
@@ -91,27 +92,9 @@ async function consumeVerificationCodeById(id, code) {
 }
 
 // 哈希盐（用于 phone_hash / email_hash 计算，已参与存量数据派生，不可静默变更）。
-// 生产环境缺失 ENCRYPTION_KEY 即 fail-fast（config.js 已有同口径校验，此处双保险），
-// 绝不静默落回仓库公开可知的兜底盐；非生产保留兜底以免既有 dev 数据全部校验失败。
-const HASH_SALT = (() => {
-  const key = process.env.ENCRYPTION_KEY;
-  if (!key) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('ENCRYPTION_KEY is required in production (phone/email hash salt); refusing to start');
-    }
-    return 'CLIPSYNC_SALT_2026';
-  }
-  return key.substring(0, 16);
-})();
-
-/**
- * 计算字段值的 SHA-256 哈希（用于 O(1) 查询）
- * 返回 hex 字符串（64 字符）
- */
-function computeFieldHash(value) {
-  if (!value) return null;
-  return crypto.createHash('sha256').update(value + HASH_SALT).digest('hex');
-}
+// 2026-10-05：实现已抽到 utils/fieldHash.js —— 此前 auth.js 与 aiTools.js 各有一份**完全相同**
+// 的实现（两份注释都写着"与 auth.js 保持一致"），任何一处漂了都会让一部分用户"查不到自己"
+//（登录是按 `phone = $1 OR phone_hash = $2` 查的）。盐与 fail-fast 口径见该文件。
 
 const router = Router();
 

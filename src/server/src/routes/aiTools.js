@@ -27,6 +27,7 @@ import { searchWeb } from '../utils/searchProviders.js'
 import { removeSharedLinkFiles } from './sharedLinks.js'
 // 2026-10-05：与管理台 POST /admin/users/:id/reset-password 共用同一份重置实现
 import { resetUserPassword } from '../services/userPasswordReset.js'
+import { computeFieldHash } from '../utils/fieldHash.js'
 
 const router = Router()
 
@@ -50,22 +51,8 @@ async function locateStoredFile(relName, dirs) {
 }
 
 // ============ RBAC 管理工具辅助（feature/ai-rbac-backend）============
-// 哈希盐与 auth.js 保持一致（phone_hash / email_hash 计算）；生产缺 ENCRYPTION_KEY 即 fail-fast
-const HASH_SALT = (() => {
-  const key = process.env.ENCRYPTION_KEY
-  if (!key) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('ENCRYPTION_KEY is required in production (phone/email hash salt); refusing to start')
-    }
-    return 'CLIPSYNC_SALT_2026'
-  }
-  return key.substring(0, 16)
-})()
-
-function computeFieldHash(value) {
-  if (!value) return null
-  return crypto.createHash('sha256').update(String(value) + HASH_SALT).digest('hex')
-}
+// 哈希盐与 phone_hash / email_hash 的计算：2026-10-05 起统一到 utils/fieldHash.js
+//（此前这里与 auth.js 各有一份完全相同的实现，漂了会让一部分用户"查不到自己"）
 
 // 手机号脱敏：138****11072
 function maskPhone(p) {

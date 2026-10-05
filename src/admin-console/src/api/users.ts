@@ -48,6 +48,18 @@ export function deleteUser(
 }
 
 /**
+ * 2026-10-05 补：换绑登录标识（手机号 / 邮箱）。用户换号后自己改不了手机号，
+ * 此前客服只能改库 —— 而改库要同时改明文 + 派生 hash + 密文三列，少一列人就登不进来。
+ * 后端用 COALESCE：只传一项就只改那一项。
+ */
+export function rebindUserIdentity(
+  id: string,
+  payload: { phone?: string; email?: string; reason: string }
+): Promise<AdminUser> {
+  return apiPost<AdminUser>(`/admin/users/${id}/rebind`, payload);
+}
+
+/**
  * 2026-10-05 补：管理员代重置密码（用户手机+邮箱双失效时的**唯一救援路径**）。
  *
  * 返回的 `temporaryPassword` **只在本次响应出现一次** —— 服务端不写审计、不写日志、

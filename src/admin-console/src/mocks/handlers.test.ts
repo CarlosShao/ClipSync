@@ -987,3 +987,44 @@ describe('POST /api/admin/users/:id/reset-password（代重置密码）', () => 
     ).toBe(404);
   });
 });
+
+describe('POST /api/admin/users/:id/rebind（换绑登录标识）', () => {
+  test('换绑手机号：更新展示值 + 写审计（打码，不含明文）', async () => {
+    // 用一个独立用户，避免污染其它用例依赖的种子行
+    const user = mockUsers.find((u) => u.id !== mockUsers[0]!.id) ?? mockUsers[0]!;
+    const auditBefore = mockAuditLogs.length;
+    const NEW_PHONE = '13900000009';
+
+    const { data } = expectOk(
+      await post<{ phone: string }>(`/api/admin/users/${user.id}/rebind`, {
+        phone: NEW_PHONE,
+        reason: '用户换号',
+      }),
+    );
+
+    // mock 的用户对象里手机号本来就是打码值，换绑后也应保持打码
+    expect(data.phone).toContain('****');
+    expect(data.phone).not.toBe(NEW_PHONE);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.rebind');
+    expect(mockAuditLogs[0]?.details).not.toContain(NEW_PHONE);
+    expect(mockAuditLogs[0]?.details).toContain('用户换号');
+  });
+
+  test('校验：都缺 → 400；手机号/邮箱格式非法 → 400；缺原因 → 400；用户不存在 → 404', async () => {
+    const id = mockUsers[0]!.id;
+    expect((await post(`/api/admin/users/${id}/rebind`, { reason: 'x' })).status).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${id}/rebind`, { phone: '123', reason: 'x' })).status,
+    ).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${id}/rebind`, { email: 'nope', reason: 'x' })).status,
+    ).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${id}/rebind`, { phone: '13900000009' })).status,
+    ).toBe(400);
+    expect(
+      (await post('/api/admin/users/usr_nope/rebind', { phone: '13900000009', reason: 'x' })).status,
+    ).toBe(404);
+  });
+});

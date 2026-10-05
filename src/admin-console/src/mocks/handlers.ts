@@ -439,6 +439,48 @@ const usersHandlers = [
     return ok({ id, twoFactorEnabled: false }, '两步验证已重置');
   }),
 
+/**
+ * 2026-10-05 补：换绑手机号/邮箱。
+ *
+ * ⚠️ mock 只改**展示层**（mockUsers 里本来就是打码值），不模拟"明文 + hash + 密文三列一起写"
+ * 这条真实不变量 —— 那条口径的判据在服务端测试里（tests/admin/user-rebind.test.js）。
+ * 之所以还是要这个 handler：MSW 是 `onUnhandledRequest: 'bypass'`，
+ * 没有 handler 的请求会真的打到 proxy 目标（本机联调时是生产）。
+ */
+http.post('/api/admin/users/:id/rebind', async ({ request, params }) => {
+  await delay(300);
+  const id = params['id'] as string;
+  const user = mockUsers.find((u) => u.id === id);
+  if (!user) return fail(404, 40404, '用户不存在');
+  const body = (await request.json()) as { phone?: string; email?: string; reason?: string };
+  const reason = body.reason?.trim() ?? '';
+  const phone = body.phone?.trim() ?? '';
+  const email = body.email?.trim() ?? '';
+  if (!reason) return fail(400, 4000, '换绑必须填写原因（写入审计日志）');
+  if (!phone && !email) return fail(400, 4000, 'phone 与 email 至少提供一个');
+  if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+    return fail(400, 4000, '手机号格式不合法（须为 11 位大陆手机号）');
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return fail(400, 4000, '邮箱格式不合法');
+  }
+  const maskPhoneMock = (p: string) => (p.length < 7 ? `${p.slice(0, 1)}****` : `${p.slice(0, 3)}****${p.slice(-4)}`);
+  const maskEmailMock = (e: string) => {
+    const at = e.indexOf('@');
+    if (at <= 0) return e;
+    return `${e.slice(0, 3)}***@${e.slice(at + 1)}`;
+  };
+  if (phone) user.phone = maskPhoneMock(phone);
+  if (email) user.email = maskEmailMock(email.toLowerCase());
+  pushAudit(
+    'admin.user.rebind',
+    'user',
+    id,
+    `target=${user.nickname}, from→to 已换绑, reason="${reason}"`,
+  );
+  return ok(user, phone && email ? '手机号与邮箱已换绑' : phone ? '手机号已换绑' : '邮箱已换绑');
+}),
+
   /**
    * 2026-10-05 补：代重置密码。
    * 临时密码用**固定值**（8 字符、与真实格式一致）以便验收时结果可预期；

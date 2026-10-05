@@ -10,6 +10,7 @@ import {
   forceLogoutUser,
   getUserDetail,
   notifyUser,
+  rebindUserIdentity,
   resetUserPassword,
   resetUserTwoFactor,
   updateUserStatus,
@@ -18,6 +19,7 @@ import { grantSubscription } from '@/api/subscriptions';
 import { AssignRoleModal } from '@/components/AssignRoleModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
+import { RebindModal } from '@/components/RebindModal';
 import { ResetPasswordModal } from '@/components/ResetPasswordModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
 import { StatusTag } from '@/components/StatusTag';
@@ -85,6 +87,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [assignRoleOpen, setAssignRoleOpen] = useState(false);
   // 2026-10-05：代重置密码（用户收不到验证码时的唯一救援路径）
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  // 2026-10-05：换绑手机号/邮箱（用户换号后自己改不了手机号）
+  const [rebindOpen, setRebindOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -207,6 +211,22 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
       resetUserPassword(payload.id, { reason: payload.reason }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  /** 2026-10-05：换绑登录标识（服务端 COALESCE：只传一项就只改那一项） */
+  const rebindMutation = useMutation({
+    mutationFn: (payload: { id: string; phone?: string; email?: string; reason: string }) =>
+      rebindUserIdentity(payload.id, {
+        phone: payload.phone,
+        email: payload.email,
+        reason: payload.reason,
+      }),
+    onSuccess: (_updated, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      const what = variables.phone && variables.email ? '手机号与邮箱' : variables.phone ? '手机号' : '邮箱';
+      void message.success(`已换绑${what}，请提醒用户用新标识登录`);
+      setRebindOpen(false);
     },
   });
 
@@ -392,6 +412,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* 2026-10-05：换绑手机号/邮箱（用户换号后自己改不了手机号） */}
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button disabled={!canManage} onClick={() => setRebindOpen(true)}>
+                换绑手机/邮箱
+              </Button>
+            </span>
+          </Tooltip>
           {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
           <Tooltip title={canManage ? '' : '缺少权限'}>
             <span>
@@ -569,6 +597,16 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           userLabel={user.nickname || user.phone || ''}
           onCancel={() => setResetPasswordOpen(false)}
           onConfirm={(reason) => resetPasswordMutation.mutateAsync({ id: user.id, reason })}
+        />
+
+        <RebindModal
+          open={rebindOpen}
+          userLabel={user.nickname || user.phone || ''}
+          currentPhone={user.phone}
+          currentEmail={user.email}
+          confirmLoading={rebindMutation.isPending}
+          onCancel={() => setRebindOpen(false)}
+          onConfirm={(payload) => rebindMutation.mutateAsync({ id: user.id, ...payload })}
         />
       </>
     );

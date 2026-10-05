@@ -78,6 +78,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：代重置密码会直接换掉登录凭据（并吊销该用户全部会话），
   // 是管理台里仅次于退款的敏感写操作，必须限流。
   /^\/users\/[^/]+\/reset-password$/,
+  // 2026-10-05 新增：换绑登录标识是**账号接管链路的第一环**
+  //（换到自己控制的手机号 → 再走忘记密码），必须限流。
+  /^\/users\/[^/]+\/rebind$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

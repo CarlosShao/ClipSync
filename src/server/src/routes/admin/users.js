@@ -10,6 +10,7 @@
 //     → POST   /api/admin/users/:id/force-logout  强制下线（吊销该用户全部会话）
 //     → POST   /api/admin/users/:id/reset-2fa     重置两步验证
 //     → POST   /api/admin/users/:id/reset-password 代重置密码（返回一次性临时密码，2026-10-05）
+//     → POST   /api/admin/users/:id/rebind        换绑手机号/邮箱（三列一致，2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
@@ -18,6 +19,7 @@
 //   - GET  /users, /users/:id   → requirePerm('admin.users.view')
 //   - PATCH /status / force-logout / reset-2fa → requirePerm('admin.users.manage')
 //   - POST /reset-password      → requirePerm('admin.users.manage')（高危：直接换掉登录凭据）
+//   - POST /rebind              → requirePerm('admin.users.manage')（高危：换掉登录标识）
 //   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
@@ -38,7 +40,9 @@ import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
-import { decryptField } from '../../utils/encryption.js';
+import { decryptField, encryptField } from '../../utils/encryption.js';
+import { isValidEmail, isValidPhone, sanitizeString } from '../../validation/validator.js';
+import { computeFieldHash } from '../../utils/fieldHash.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendNotification, getOnlineDeviceCount } from '../../ws/server.js';
 import { resetUserPassword } from '../../services/userPasswordReset.js';
@@ -819,6 +823,153 @@ router.post('/:id/reset-2fa', requirePerm('admin.users.manage'), async (req, res
   } catch (err) {
     logger.error('[admin/users] reset 2fa failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '重置两步验证失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/rebind  body { phone?, email?, reason }
+ * 换绑登录标识（手机号 / 邮箱）—— 2026-10-05 新增。
+ *
+ * 为什么之前只能改库：手机号是**登录标识**（auth.js 按 `phone` / `phone_hash` 查用户），
+ * 用户换号就登不上了；而用户侧 `PUT /profile` 只允许改 email（且没有验证码校验），
+ * phone 完全没有自助路径。更要命的是改库必须**同时**改三列
+ *（`phone` / `phone_hash` / `phone_encrypted`，口径见 auth.js 的注册写入），人工改必错 ——
+ * 少改一列的直接后果就是「这个人再也登录不进来」。
+ *
+ * 口径：
+ *   - phone / email **至少给一个**；给了就三列一起写（明文 + 派生 hash + 密文）；
+ *   - email 一律**小写归一**（auth.js 的注册与登录都是 lower-case 之后再写/查；
+ *     不归一就会出现「注册写大写、登录查小写 ⇒ 查不到自己」这种事故）；
+ *   - 撞号保护：新值已被**其他**账号占用（按值或 hash 查）→ 409；排除自己，因此允许改回原值；
+ *   - 越级防护：不得换绑**自己**或等级不低于自己的用户 —— 否则 admin 把某个账号换绑到
+ *     自己控制的手机号上，再走「忘记密码」即可接管；
+ *   - 原因必填；审计只记**打码后**的新旧值（审计长期留存，不扩散明文 PII；明文在 users 表里）；
+ *   - **不吊销会话**：换绑本身不授予新访问（仍需要密码），已登录设备仍是本人，
+ *     强行踢掉只会把「换个手机号」变成一次全端下线事故。
+ */
+router.post('/:id/rebind', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '换绑必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const rawPhone = typeof body.phone === 'string' ? body.phone.trim() : '';
+    const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!rawPhone && !rawEmail) {
+      return res.status(400).json({ code: 4000, message: 'phone 与 email 至少提供一个' });
+    }
+
+    let cleanPhone = null;
+    if (rawPhone) {
+      cleanPhone = sanitizeString(rawPhone);
+      if (!isValidPhone(cleanPhone)) {
+        return res.status(400).json({ code: 4000, message: '手机号格式不合法（须为 11 位大陆手机号）' });
+      }
+    }
+    let cleanEmail = null;
+    if (rawEmail) {
+      cleanEmail = sanitizeString(rawEmail.toLowerCase());
+      if (!isValidEmail(cleanEmail)) {
+        return res.status(400).json({ code: 4000, message: '邮箱格式不合法' });
+      }
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    // 撞号检查（排除自己：允许把手机号/邮箱改回它原本的值）
+    if (cleanPhone) {
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE (phone = $1 OR phone_hash = $2) AND id <> $3',
+        [cleanPhone, computeFieldHash(cleanPhone), user.id]
+      );
+      if (dup.rows.length > 0) {
+        return res.status(409).json({ code: 40904, message: '该手机号已被其他账号使用' });
+      }
+    }
+    if (cleanEmail) {
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE (email = $1 OR email_hash = $2) AND id <> $3',
+        [cleanEmail, computeFieldHash(cleanEmail), user.id]
+      );
+      if (dup.rows.length > 0) {
+        return res.status(409).json({ code: 40904, message: '该邮箱已被其他账号使用' });
+      }
+    }
+
+    // COALESCE：只写本次给到的列，其余保持原值（避免"只改邮箱"顺手把手机号清空）
+    await pool.query(
+      `UPDATE users
+          SET phone = COALESCE($2, phone),
+              phone_hash = COALESCE($3, phone_hash),
+              phone_encrypted = COALESCE($4, phone_encrypted),
+              email = COALESCE($5, email),
+              email_hash = COALESCE($6, email_hash),
+              email_encrypted = COALESCE($7, email_encrypted),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [
+        user.id,
+        cleanPhone,
+        cleanPhone ? computeFieldHash(cleanPhone) : null,
+        cleanPhone ? encryptField(cleanPhone) : null,
+        cleanEmail,
+        cleanEmail ? computeFieldHash(cleanEmail) : null,
+        cleanEmail ? encryptField(cleanEmail) : null,
+      ]
+    );
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.rebind',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        reason,
+        // 打码：审计是长期留存的，不该成为明文的第二份副本；要核对明文去 users 表
+        fromPhone: user.phone ? maskPhone(user.phone) : null,
+        fromEmail: user.email ? maskEmail(user.email) : null,
+        toPhone: cleanPhone ? maskPhone(cleanPhone) : null,
+        toEmail: cleanEmail ? maskEmail(cleanEmail) : null,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/users] rebind executed', {
+      targetUserId: user.id,
+      changedPhone: Boolean(cleanPhone),
+      changedEmail: Boolean(cleanEmail),
+      operator: req.user?.userId,
+    });
+
+    const refreshed = await fetchUserById(user.id);
+    return res.json({
+      code: 0,
+      data: mapUserRow(refreshed || user),
+      message: cleanPhone && cleanEmail ? '手机号与邮箱已换绑' : cleanPhone ? '手机号已换绑' : '邮箱已换绑',
+    });
+  } catch (err) {
+    logger.error('[admin/users] rebind failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '换绑失败' });
   }
 });
 
