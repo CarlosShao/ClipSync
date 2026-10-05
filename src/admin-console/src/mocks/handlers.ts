@@ -487,6 +487,68 @@ const usersHandlers = [
     );
   }),
 
+  /**
+   * 2026-10-05 补：违规昵称/头像处置。
+   * mock 的 AdminUser 没有头像字段，所以头像改动只体现在审计文案里（真实后端会落 avatar_url）。
+   */
+  http.patch('/api/admin/users/:id/profile', async ({ request, params }) => {
+    await delay(250);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as {
+      nickname?: string;
+      avatarUrl?: string;
+      clearAvatar?: boolean;
+      reason?: string;
+    };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '处置原因必填（写入审计日志）');
+    const nickname = body.nickname?.trim() ?? '';
+    const avatarUrl = body.avatarUrl?.trim() ?? '';
+    const clearAvatar = body.clearAvatar === true;
+    // 「至少给一项」按**字段是否出现**判定（与服务端一致）；空串昵称是另一条错（见下）
+    const hasNickname = body.nickname !== undefined && body.nickname !== null;
+    if (!hasNickname && !avatarUrl && !clearAvatar) {
+      return fail(400, 4000, 'nickname / avatarUrl / clearAvatar 至少给一项（否则没有任何改动）');
+    }
+    if (hasNickname && !nickname) {
+      return fail(
+        400,
+        4000,
+        '昵称不能为空（空昵称在客户端会显示成空白）；要清除违规昵称请给一个中性替代名，如「用户4821」',
+      );
+    }
+    if (nickname && (nickname.length > 50 || /[<>"'&]/.test(nickname))) {
+      return fail(400, 4000, '昵称不合法：不超过 50 字、且不能包含 < > " \' &');
+    }
+    if (
+      avatarUrl &&
+      !/^https?:\/\//i.test(avatarUrl) &&
+      !/^data:image\/[a-z0-9.+-]+;base64,/i.test(avatarUrl)
+    ) {
+      return fail(400, 4000, '头像只接受 http(s) 链接或 data:image/...;base64, 形式');
+    }
+    const from = user.nickname;
+    if (nickname) user.nickname = nickname;
+    pushAudit(
+      'admin.user.profile_moderation',
+      'user',
+      id,
+      `nicknameFrom="${from}", nicknameTo="${user.nickname}", avatarChanged=${Boolean(avatarUrl || clearAvatar)}, reason="${reason}"`,
+    );
+    return ok(
+      user,
+      nickname && (avatarUrl || clearAvatar)
+        ? '昵称与头像已处置'
+        : nickname
+          ? '昵称已处置'
+          : clearAvatar
+            ? '头像已清空'
+            : '头像已更新',
+    );
+  }),
+
   /** 2026-10-05 补：重置两步验证（对齐后端 users.js 的 /:id/reset-2fa：清空四列即完成） */
   http.post('/api/admin/users/:id/reset-2fa', async ({ params }) => {
     await delay(250);

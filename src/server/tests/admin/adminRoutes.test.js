@@ -135,6 +135,7 @@ describe('ADMIN_STRICT_WRITE_PATTERNS —— 高危写限流名单', () => {
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/reset-password')).toBe(true); // 换掉登录凭据
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/rebind')).toBe(true); // 换掉登录标识
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/trial')).toBe(true); // 人工给出订阅权益
+    expect(hit('/users/a1000000-0000-4000-8000-000000000001/profile')).toBe(true); // 改用户可见内容
     expect(hit('/users/a1000000-0000-4000-8000-000000000001/force-logout')).toBe(true);
     expect(hit('/devices/a1000000-0000-4000-8000-000000000001/offline')).toBe(true);
     expect(hit('/ops/actions')).toBe(true);

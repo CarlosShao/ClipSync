@@ -86,6 +86,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：人工开通试用是**人工给出订阅权益**（且刻意绕过用户侧的终身一次闸），
   // 与 admin.subscriptions.grant 同类，必须限流。
   /^\/users\/[^/]+\/trial$/,
+  // 2026-10-05 新增：资料处置会改动**用户可见内容**（昵称/头像），与 notify 同为对外可见，
+  // 限流是为了给"拿它批量刷用户资料"设上限。
+  /^\/users\/[^/]+\/profile$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&

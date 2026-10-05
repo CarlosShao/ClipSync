@@ -12,13 +12,14 @@
 //     → POST   /api/admin/users/:id/reset-password 代重置密码（返回一次性临时密码，2026-10-05）
 //     → POST   /api/admin/users/:id/rebind        换绑手机号/邮箱（三列一致，2026-10-05）
 //     → POST   /api/admin/users/:id/trial         人工开通/重置试用（刻意绕过终身一次闸，2026-10-05）
+//     → PATCH  /api/admin/users/:id/profile       违规昵称/头像处置（并清 Redis 用户缓存，2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
 // 上游链（index.js 顶层已装配）：authenticateToken → requireRole(50) → superAdminAudit
 // 细粒度权限（043_admin_permission_catalog.sql 目录）：
 //   - GET  /users, /users/:id   → requirePerm('admin.users.view')
-//   - PATCH /status / force-logout / reset-2fa → requirePerm('admin.users.manage')
+//   - PATCH /status / force-logout / reset-2fa / profile → requirePerm('admin.users.manage')
 //   - POST /reset-password      → requirePerm('admin.users.manage')（高危：直接换掉登录凭据）
 //   - POST /rebind              → requirePerm('admin.users.manage')（高危：换掉登录标识）
 //   - POST /trial               → requirePerm('admin.subscriptions.grant')（人工给出订阅权益，同类同权）
@@ -43,7 +44,8 @@ import { pool } from '../../db/pool.js';
 import { logger } from '../../utils/logger.js';
 import { logAuditEvent } from '../../utils/audit.js';
 import { decryptField, encryptField } from '../../utils/encryption.js';
-import { isValidEmail, isValidPhone, sanitizeString } from '../../validation/validator.js';
+import { isValidEmail, isValidPhone, sanitizeString, validateNickname } from '../../validation/validator.js';
+import { clearUserCache } from '../../utils/cache.js';
 import { computeFieldHash } from '../../utils/fieldHash.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendNotification, getOnlineDeviceCount } from '../../ws/server.js';
@@ -1150,6 +1152,191 @@ router.post('/:id/trial', requirePerm('admin.subscriptions.grant'), async (req, 
   } catch (err) {
     logger.error('[admin/users] grant trial failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '开通试用失败' });
+  }
+});
+
+/**
+ * PATCH /api/admin/users/:id/profile  body { nickname?, avatarUrl?, clearAvatar?, reason }
+ * 违规昵称 / 头像处置（2026-10-05 新增）。
+ *
+ * 为什么之前只能改库：`routes/admin/` 里**没有任何 profile 写端点**，而用户侧
+ * `PUT /profile` 只能改**自己**的资料。于是运营遇到违规昵称/头像时只有两个选择：
+ * 停用整个账号（过重，且与违规程度不成比例），或者改库。
+ *
+ * 改库在这里**确实不够**，有两个具体原因（本端点都处理了）：
+ *   ① `GET /profile` 有 Redis 缓存（`utils/cache.js` 的 `user:<id>`，TTL 5 分钟）。
+ *      用户侧改资料会 `clearUserCache`，改库**不会** —— 于是用户最长 5 分钟仍看到旧昵称，
+ *      客服会以为"改了没生效"。
+ *   ② 用户侧 `PUT /profile` 对昵称**没有长度校验**、对头像**完全不校验协议**
+ *      （任何 trim 后的字符串都原样存下）。管理台入口比它更严，见下。
+ *
+ * 口径：
+ *   - `nickname`：trim → 复用**与用户侧同一个** `validateNickname`（≤50、不含 `<>"'&`）
+ *     → 再 `sanitizeString` 落库（存储形态与用户侧一致）。**不接受空值** ——
+ *     空昵称在客户端会显示成空白，比违规昵称更糟；要"清掉"请给一个中性替代名（如「用户4821」）。
+ *   - `clearAvatar: true` → `avatar_url = ''`（列默认值）。
+ *   - `avatarUrl` → 替换头像，只接受 `http(s)://` 或 `data:image/...;base64,`
+ *     （用户侧不校验协议，会把 `javascript:` 之类原样存下；管理台入口更严）。
+ *   - 至少给一项；原因必填；审计记**改动前后**的昵称与"是否改了头像"（内容截断，避免审计膨胀）。
+ *   - **不吊销会话**：昵称/头像可逆、不涉及访问凭据，为它把人踢下线不成比例。
+ *   - 权限 `admin.users.manage`（账号治理族），并已登记进高危限流名单。
+ */
+router.patch('/:id/profile', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '处置原因必填（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const hasNickname = body.nickname !== undefined && body.nickname !== null;
+    const clearAvatar = body.clearAvatar === true;
+    const hasAvatarUrl = typeof body.avatarUrl === 'string' && body.avatarUrl.trim() !== '';
+    if (!hasNickname && !clearAvatar && !hasAvatarUrl) {
+      return res.status(400).json({
+        code: 4000,
+        message: 'nickname / avatarUrl / clearAvatar 至少给一项（否则没有任何改动）',
+      });
+    }
+
+    let cleanNickname = null; // null = 不改
+    if (hasNickname) {
+      const raw = String(body.nickname).trim();
+      if (!raw) {
+        return res.status(400).json({
+          code: 4000,
+          message: '昵称不能为空（空昵称在客户端会显示成空白）；要清除违规昵称请给一个中性替代名，如「用户4821」',
+        });
+      }
+      const check = validateNickname(raw);
+      if (!check.valid) {
+        return res.status(400).json({
+          code: 4000,
+          message: `昵称不合法：不超过 50 字、且不能包含 < > " ' &`,
+        });
+      }
+      cleanNickname = sanitizeString(raw);
+    }
+
+    let cleanAvatar = null; // null = 不改；'' = 清空
+    if (clearAvatar) {
+      cleanAvatar = '';
+    } else if (hasAvatarUrl) {
+      const value = String(body.avatarUrl).trim();
+      if (value.length > 2000) {
+        return res.status(400).json({ code: 4000, message: '头像内容过长（≤2000 字符）' });
+      }
+      const acceptable =
+        /^https?:\/\//i.test(value) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(value);
+      if (!acceptable) {
+        return res.status(400).json({
+          code: 4000,
+          message: '头像只接受 http(s) 链接或 data:image/...;base64, 形式',
+        });
+      }
+      cleanAvatar = value;
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    const params = [user.id];
+    const sets = [];
+    if (cleanNickname !== null) {
+      params.push(cleanNickname);
+      sets.push(`nickname = $${params.length}`);
+    }
+    if (cleanAvatar !== null) {
+      params.push(cleanAvatar);
+      sets.push(`avatar_url = $${params.length}`);
+    }
+    sets.push('updated_at = NOW()');
+
+    await pool.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $1`, params);
+
+    // ★必须清缓存：GET /profile 走 Redis 缓存（TTL 5 分钟），清库不会让用户看到新昵称
+    try {
+      await clearUserCache(user.id);
+    } catch (cacheErr) {
+      logger.warn('[admin/users] clearUserCache failed (ignored)', {
+        targetUserId: user.id,
+        error: cacheErr?.message,
+      });
+    }
+
+    const clip = (value, max = 60) => {
+      const s = value == null ? '' : String(value);
+      return s.length > max ? `${s.slice(0, max)}…` : s;
+    };
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.profile_moderation',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        reason,
+        nicknameFrom: clip(user.nickname),
+        nicknameTo: cleanNickname === null ? '(未改动)' : clip(cleanNickname),
+        avatarChanged: cleanAvatar !== null,
+        avatarCleared: clearAvatar,
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    // 用户可见的内容被改了，告知一声（否则最典型的追问就是"我昵称怎么变了"）
+    try {
+      await sendNotification(user.id, {
+        notificationType: 'security_notice',
+        title: '你的资料已被管理员调整',
+        body: '你的昵称或头像因违反社区规范已被管理员调整。如有疑问请联系客服。',
+        data: { fields: cleanNickname !== null ? ['nickname'] : [], avatar: cleanAvatar !== null },
+      });
+    } catch (notifyErr) {
+      logger.warn('[admin/users] profile moderation notify failed (ignored)', {
+        targetUserId: user.id,
+        error: notifyErr?.message,
+      });
+    }
+
+    logger.info('[admin/users] profile moderated', {
+      targetUserId: user.id,
+      nicknameChanged: cleanNickname !== null,
+      avatarChanged: cleanAvatar !== null,
+      operator: req.user?.userId,
+    });
+
+    const refreshed = await fetchUserById(user.id);
+    return res.json({
+      code: 0,
+      data: mapUserRow(refreshed || user),
+      message: cleanNickname !== null && cleanAvatar !== null
+        ? '昵称与头像已处置'
+        : cleanNickname !== null
+          ? '昵称已处置'
+          : clearAvatar
+            ? '头像已清空'
+            : '头像已更新',
+    });
+  } catch (err) {
+    logger.error('[admin/users] profile moderation failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '资料处置失败' });
   }
 });
 

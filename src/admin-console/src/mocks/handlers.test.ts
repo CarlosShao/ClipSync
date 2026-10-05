@@ -1007,6 +1007,48 @@ describe('POST /api/admin/users/:id/trial（人工开通/重置试用）', () =>
   });
 });
 
+describe('PATCH /api/admin/users/:id/profile（违规昵称/头像处置）', () => {
+  test('改昵称：更新内存 + 审计记改动前后', async () => {
+    const user = mockUsers[0]!;
+    const from = user.nickname;
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await patch<{ nickname: string }>(`/api/admin/users/${user.id}/profile`, {
+        nickname: '合规昵称',
+        reason: '昵称违规',
+      }),
+    );
+
+    expect(data.nickname).toBe('合规昵称');
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.profile_moderation');
+    expect(mockAuditLogs[0]?.details).toContain(from);
+    expect(mockAuditLogs[0]?.details).toContain('合规昵称');
+  });
+
+  test('校验：一项不给 → 400；空昵称 → 400（给出中性替代名建议）；javascript: 头像 → 400', async () => {
+    const id = mockUsers[0]!.id;
+    expect((await patch(`/api/admin/users/${id}/profile`, { reason: 'x' })).status).toBe(400);
+
+    const empty = await patch(`/api/admin/users/${id}/profile`, { nickname: '  ', reason: 'x' });
+    expect(empty.status).toBe(400);
+    expect(expectFail(empty).message).toContain('用户4821');
+
+    expect(
+      (
+        await patch(`/api/admin/users/${id}/profile`, {
+          avatarUrl: 'javascript:alert(1)',
+          reason: 'x',
+        })
+      ).status,
+    ).toBe(400);
+    expect((await patch('/api/admin/users/usr_nope/profile', { nickname: 'x', reason: 'y' })).status).toBe(
+      404,
+    );
+  });
+});
+
 describe('POST /api/admin/users/:id/reset-password（代重置密码）', () => {
   test('返回一次性临时密码 + 写审计（且审计里不含密码）', async () => {
     const user = mockUsers[0]!;

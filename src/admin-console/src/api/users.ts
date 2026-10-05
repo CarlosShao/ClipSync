@@ -48,6 +48,22 @@ export function deleteUser(
 }
 
 /**
+ * 2026-10-05 补：违规昵称 / 头像处置。
+ *
+ * 服务端口径：三项至少给一项；昵称非空且 ≤50 字、不含 `< > " ' &`（与用户侧同一
+ * `validateNickname`），落库前 `sanitizeString`（形态与用户侧一致）；
+ * 头像只接受 `http(s)://` 或 `data:image/...;base64,`；原因必填；
+ * 审计 `admin.user.profile_moderation`；**并清 Redis 用户缓存**
+ *（`GET /profile` 有 5 分钟缓存，不清的话用户仍看到旧昵称）。
+ */
+export function moderateUserProfile(
+  id: string,
+  payload: { nickname?: string; avatarUrl?: string; clearAvatar?: boolean; reason: string }
+): Promise<AdminUser> {
+  return apiPatch<AdminUser>(`/admin/users/${id}/profile`, payload);
+}
+
+/**
  * 2026-10-05 补：人工开通 / 重置试用。
  *
  * 用户侧 `POST /api/subscriptions/trial` 有一条**终身一次**闸（库里只要有任一

@@ -10,6 +10,7 @@ import {
   forceLogoutUser,
   getUserDetail,
   grantUserTrial,
+  moderateUserProfile,
   notifyUser,
   rebindUserIdentity,
   resetUserPassword,
@@ -19,6 +20,7 @@ import {
 import { grantSubscription } from '@/api/subscriptions';
 import { AssignRoleModal } from '@/components/AssignRoleModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
+import { ModerateProfileModal } from '@/components/ModerateProfileModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
 import { RebindModal } from '@/components/RebindModal';
 import { ResetPasswordModal } from '@/components/ResetPasswordModal';
@@ -93,6 +95,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [rebindOpen, setRebindOpen] = useState(false);
   // 2026-10-05：人工开通/重置试用（用户侧试用是终身一次）
   const [trialOpen, setTrialOpen] = useState(false);
+  // 2026-10-05：违规昵称/头像处置
+  const [moderateOpen, setModerateOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -238,6 +242,31 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
       void queryClient.invalidateQueries({ queryKey: ['subscriptions'] });
       void message.success(`已为 ${updated.nickname || '该用户'} 开通试用`);
       setTrialOpen(false);
+    },
+  });
+
+  /** 2026-10-05：违规昵称/头像处置（服务端会清 Redis 用户缓存，否则用户 5 分钟内仍看旧值） */
+  const moderateMutation = useMutation({
+    mutationFn: (payload: {
+      id: string;
+      nickname?: string;
+      avatarUrl?: string;
+      clearAvatar?: boolean;
+      reason: string;
+    }) =>
+      moderateUserProfile(payload.id, {
+        nickname: payload.nickname,
+        avatarUrl: payload.avatarUrl,
+        clearAvatar: payload.clearAvatar,
+        reason: payload.reason,
+      }),
+    onSuccess: (_updated, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      void message.success(
+        variables.clearAvatar ? '头像已清空，资料其余部分未改动' : '资料已处置'
+      );
+      setModerateOpen(false);
     },
   });
 
@@ -459,6 +488,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* 2026-10-05：违规昵称/头像处置（此前只能停用整个账号或改库） */}
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button disabled={!canManage} onClick={() => setModerateOpen(true)}>
+                处置昵称/头像
+              </Button>
+            </span>
+          </Tooltip>
           {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
           <Tooltip title={canManage ? '' : '缺少权限'}>
             <span>
@@ -654,6 +691,15 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           confirmLoading={trialMutation.isPending}
           onCancel={() => setTrialOpen(false)}
           onConfirm={(payload) => trialMutation.mutateAsync({ id: user.id, ...payload })}
+        />
+
+        <ModerateProfileModal
+          open={moderateOpen}
+          userLabel={user.nickname || user.phone || ''}
+          currentNickname={user.nickname}
+          confirmLoading={moderateMutation.isPending}
+          onCancel={() => setModerateOpen(false)}
+          onConfirm={(payload) => moderateMutation.mutateAsync({ id: user.id, ...payload })}
         />
       </>
     );
