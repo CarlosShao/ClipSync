@@ -953,3 +953,37 @@ describe('POST /api/admin/users/:id/reset-2fa（重置两步验证，端点早�
     expect((await post('/api/admin/users/usr_nope/reset-2fa', {})).status).toBe(404);
   });
 });
+
+describe('POST /api/admin/users/:id/reset-password（代重置密码）', () => {
+  test('返回一次性临时密码 + 写审计（且审计里不含密码）', async () => {
+    const user = mockUsers[0]!;
+    const auditBefore = mockAuditLogs.length;
+
+    const { data } = expectOk(
+      await post<{ temporaryPassword: string; sessionsRevoked: number }>(
+        `/api/admin/users/${user.id}/reset-password`,
+        { reason: '手机丢失' },
+      ),
+    );
+
+    // 格式与真实一致（8 字符 base64url），便于验收时对照
+    expect(data.temporaryPassword).toMatch(/^[A-Za-z0-9_-]{8}$/);
+    expect(data.sessionsRevoked).toBeGreaterThan(0);
+    expect(mockAuditLogs.length).toBe(auditBefore + 1);
+    expect(mockAuditLogs[0]?.action).toBe('admin.user.reset_password');
+    // ★审计绝不能成为凭据的第二份副本
+    expect(mockAuditLogs[0]?.details).not.toContain(data.temporaryPassword);
+    expect(mockAuditLogs[0]?.details).toContain('手机丢失');
+  });
+
+  test('缺原因 → 400；用户不存在 → 404', async () => {
+    const user = mockUsers[0]!;
+    expect((await post(`/api/admin/users/${user.id}/reset-password`, {})).status).toBe(400);
+    expect(
+      (await post(`/api/admin/users/${user.id}/reset-password`, { reason: '  ' })).status,
+    ).toBe(400);
+    expect(
+      (await post('/api/admin/users/usr_nope/reset-password', { reason: 'x' })).status,
+    ).toBe(404);
+  });
+});

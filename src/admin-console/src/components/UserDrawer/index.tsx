@@ -10,6 +10,7 @@ import {
   forceLogoutUser,
   getUserDetail,
   notifyUser,
+  resetUserPassword,
   resetUserTwoFactor,
   updateUserStatus,
 } from '@/api/users';
@@ -17,6 +18,7 @@ import { grantSubscription } from '@/api/subscriptions';
 import { AssignRoleModal } from '@/components/AssignRoleModal';
 import { ConfirmReasonModal } from '@/components/ConfirmReasonModal';
 import { NotifyUserModal, type NotifyType } from '@/components/NotifyUserModal';
+import { ResetPasswordModal } from '@/components/ResetPasswordModal';
 import { GrantSubscriptionModal } from '@/pages/subscriptions/GrantSubscriptionModal';
 import { StatusTag } from '@/components/StatusTag';
 import { planLabel, planTone } from '@/components/StatusTag/mappers';
@@ -81,6 +83,8 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
   const [notifyOpen, setNotifyOpen] = useState(false);
   // 2026-10-05：分配角色（端点早有、此前无 UI）
   const [assignRoleOpen, setAssignRoleOpen] = useState(false);
+  // 2026-10-05：代重置密码（用户收不到验证码时的唯一救援路径）
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   // AF-13：每次抽屉打开只自动弹出一次赠期弹窗（用户手动关掉后不反复打扰）
   const autoGrantDoneRef = useRef(false);
 
@@ -191,6 +195,18 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['users'] });
       void message.success('两步验证已重置，用户需重新绑定');
+    },
+  });
+
+  /**
+   * 2026-10-05：代重置密码。**不在这里 toast 密码** —— 交给弹窗当场展示
+   *（服务端只在响应里给一次，toast 一闪而过等于逼运营抄屏）。
+   */
+  const resetPasswordMutation = useMutation({
+    mutationFn: (payload: { id: string; reason: string }) =>
+      resetUserPassword(payload.id, { reason: payload.reason }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
     },
   });
 
@@ -368,6 +384,14 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
               </Button>
             </span>
           </Tooltip>
+          {/* 2026-10-05：代重置密码（用户收不到验证码时的唯一救援路径） */}
+          <Tooltip title={canManage ? '' : '缺少权限'}>
+            <span>
+              <Button disabled={!canManage} onClick={() => setResetPasswordOpen(true)}>
+                重置密码
+              </Button>
+            </span>
+          </Tooltip>
           {/* 2026-10-05：重置两步验证（用户换手机丢了 TOTP 时的唯一解救入口） */}
           <Tooltip title={canManage ? '' : '缺少权限'}>
             <span>
@@ -538,6 +562,13 @@ export function UserDrawer({ open, userId, onClose, autoOpenGrant }: UserDrawerP
           onConfirm={(roleId, reason) =>
             assignRoleMutation.mutateAsync({ id: user.id, roleId, reason })
           }
+        />
+
+        <ResetPasswordModal
+          open={resetPasswordOpen}
+          userLabel={user.nickname || user.phone || ''}
+          onCancel={() => setResetPasswordOpen(false)}
+          onConfirm={(reason) => resetPasswordMutation.mutateAsync({ id: user.id, reason })}
         />
       </>
     );

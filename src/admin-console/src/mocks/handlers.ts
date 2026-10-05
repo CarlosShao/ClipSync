@@ -438,6 +438,33 @@ const usersHandlers = [
     pushAudit('admin.user.reset_2fa', 'user', id, `target=${user.nickname}`);
     return ok({ id, twoFactorEnabled: false }, '两步验证已重置');
   }),
+
+  /**
+   * 2026-10-05 补：代重置密码。
+   * 临时密码用**固定值**（8 字符、与真实格式一致）以便验收时结果可预期；
+   * 真实后端是每次随机且只在响应里出现一次。
+   */
+  http.post('/api/admin/users/:id/reset-password', async ({ request, params }) => {
+    await delay(300);
+    const id = params['id'] as string;
+    const user = mockUsers.find((u) => u.id === id);
+    if (!user) return fail(404, 40404, '用户不存在');
+    const body = (await request.json()) as { reason?: string };
+    const reason = body.reason?.trim() ?? '';
+    if (!reason) return fail(400, 4000, '重置密码必须填写原因（写入审计日志）');
+    if (reason.length > 200) return fail(400, 4000, '原因不能超过 200 字');
+    // 审计里刻意不含密码，与真实后端一致
+    pushAudit(
+      'admin.user.reset_password',
+      'user',
+      id,
+      `target=${user.nickname}, reason="${reason}", sessionsRevoked=2`,
+    );
+    return ok(
+      { id, temporaryPassword: 'MOCKt9x2', sessionsRevoked: 2 },
+      '密码已重置。临时密码只在本次响应出现，请立即安全转达用户，并提示其登录后修改密码',
+    );
+  }),
 ];
 
 // ───────────────────────── 订单 ─────────────────────────

@@ -25,6 +25,8 @@ import { getSlowQueries, getPoolStatus } from '../utils/query-monitor.js'
 import { safeUpstreamFetch } from '../utils/aiProviders.js'
 import { searchWeb } from '../utils/searchProviders.js'
 import { removeSharedLinkFiles } from './sharedLinks.js'
+// 2026-10-05：与管理台 POST /admin/users/:id/reset-password 共用同一份重置实现
+import { resetUserPassword } from '../services/userPasswordReset.js'
 
 const router = Router()
 
@@ -3349,21 +3351,24 @@ async function executeToolInner(toolName, args, userId, role) {
         if (guard.forbidden) {
           return { error: guard.error, code: guard.code, message: '不能重置自身或超级管理员的密码' }
         }
-        const tempPassword = crypto.randomBytes(6).toString('base64url')
-        const passwordHash = await bcrypt.hash(tempPassword, 12)
-        await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [passwordHash, user_id])
+        // 2026-10-05：改为复用 services/userPasswordReset.js —— 与管理台
+        // POST /admin/users/:id/reset-password **同一份实现**，避免两处漂移；
+        // 顺带补上此前缺的一步：重置后**吊销该用户全部活跃会话**
+        //（否则旧会话仍然有效，重置密码等于没做）。
+        const { tempPassword, sessionsRevoked } = await resetUserPassword(user_id)
         await logAuditEvent({
           userId,
           action: 'reset_password',
           resourceType: 'user',
           resourceId: String(user_id),
-          details: { target_user_id: user_id },
+          details: { target_user_id: user_id, sessions_revoked: sessionsRevoked },
         })
         return {
           success: true,
           user_id,
           temp_password: tempPassword,
-          note: '临时密码仅此出现一次，请安全转达目标用户，并提示其登录后立即修改。',
+          sessions_revoked: sessionsRevoked,
+          note: '临时密码仅此出现一次，请安全转达目标用户，并提示其登录后立即修改。该用户的旧会话已全部吊销。',
         }
       }
 

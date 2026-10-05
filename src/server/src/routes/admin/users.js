@@ -9,6 +9,7 @@
 //     → PATCH  /api/admin/users/:id/role          分配角色   body { roleId, reason }（super_admin 角色不可授予）
 //     → POST   /api/admin/users/:id/force-logout  强制下线（吊销该用户全部会话）
 //     → POST   /api/admin/users/:id/reset-2fa     重置两步验证
+//     → POST   /api/admin/users/:id/reset-password 代重置密码（返回一次性临时密码，2026-10-05）
 //     → POST   /api/admin/users/:id/notify        对单个用户定向通知（权限是 announce.send，见下）
 //     → DELETE /api/admin/users/:id               删除账户（软删：is_active=false + deactivation_reason）
 //
@@ -16,6 +17,7 @@
 // 细粒度权限（043_admin_permission_catalog.sql 目录）：
 //   - GET  /users, /users/:id   → requirePerm('admin.users.view')
 //   - PATCH /status / force-logout / reset-2fa → requirePerm('admin.users.manage')
+//   - POST /reset-password      → requirePerm('admin.users.manage')（高危：直接换掉登录凭据）
 //   - POST /notify              → requirePerm('admin.announce.send')（对外触达类，刻意的：见该路由注释）
 //   - PATCH /role               → requirePerm('admin.roles.manage')（高危）
 //   - DELETE /users/:id         → requirePerm('admin.users.delete')（高危）
@@ -39,6 +41,7 @@ import { logAuditEvent } from '../../utils/audit.js';
 import { decryptField } from '../../utils/encryption.js';
 import { requirePerm } from '../../middleware/adminAuth.js';
 import { sendNotification, getOnlineDeviceCount } from '../../ws/server.js';
+import { resetUserPassword } from '../../services/userPasswordReset.js';
 
 const router = Router();
 
@@ -816,6 +819,84 @@ router.post('/:id/reset-2fa', requirePerm('admin.users.manage'), async (req, res
   } catch (err) {
     logger.error('[admin/users] reset 2fa failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '重置两步验证失败' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/reset-password  body { reason }
+ * 管理员代重置密码（2026-10-05 新增）—— 用户**手机+邮箱双失效**时的唯一救援路径。
+ *
+ * 为什么之前只能改库：`routes/admin/` 里没有任何 `password_hash` 写路径，而用户侧的自助重置
+ * 全都要验证码或旧密码。于是「收不到验证码」就等于**账号永久锁死**，客服没有任何办法。
+ *
+ * 口径：
+ *   - 临时密码**只在本次响应里出现一次**，绝不写审计、不写日志（调用方自行安全转达）；
+ *   - 同时**吊销该用户全部活跃会话**（否则旧会话还活着，重置等于没做）；
+ *   - 越级防护复用 targetLevelGuardError：不得重置**自己**或等级不低于自己的用户
+ *     （否则 admin 可以一步接管 super_admin 账号）；原因必填，写审计只记目标用户与原因，
+ *     **不记凭据**。
+ *
+ * 实现复用 `services/userPasswordReset.js` —— 与 AI 工具 `reset_user_password` 同一份代码
+ *（那份此前**没有**吊销会话，本次顺带补齐）。
+ */
+router.post('/:id/reset-password', requirePerm('admin.users.manage'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !UUID_RE.test(id)) {
+      return res.status(400).json({ code: 4000, message: '用户 ID 不合法' });
+    }
+
+    const body = req.body || {};
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      return res.status(400).json({ code: 4000, message: '重置密码必须填写原因（写入审计日志）' });
+    }
+    if (reason.length > 200) {
+      return res.status(400).json({ code: 4000, message: '原因不能超过 200 字' });
+    }
+
+    const user = await fetchUserById(id);
+    if (!user) {
+      return res.status(404).json({ code: 40404, message: '用户不存在' });
+    }
+
+    const guard = targetLevelGuardError(req, user);
+    if (guard) {
+      return res.status(guard.status).json(guard.body);
+    }
+
+    const { tempPassword, sessionsRevoked } = await resetUserPassword(user.id);
+
+    await logAuditEvent({
+      userId: req.user?.userId,
+      action: 'admin.user.reset_password',
+      resourceType: 'user',
+      resourceId: String(user.id),
+      details: {
+        targetUserId: user.id,
+        nickname: user.nickname || '',
+        reason,
+        sessionsRevoked,
+        // 刻意不写密码/哈希：审计要能看出"谁给谁重置了"，但绝不能成为凭据的第二份副本
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+
+    logger.info('[admin/users] password reset', {
+      targetUserId: user.id,
+      sessionsRevoked,
+      operator: req.user?.userId,
+    });
+
+    return res.json({
+      code: 0,
+      data: { id: user.id, temporaryPassword: tempPassword, sessionsRevoked },
+      message: '密码已重置。临时密码只在本次响应出现，请立即安全转达用户，并提示其登录后修改密码',
+    });
+  } catch (err) {
+    logger.error('[admin/users] reset password failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '重置密码失败' });
   }
 });
 

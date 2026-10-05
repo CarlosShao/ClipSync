@@ -48,6 +48,23 @@ export function deleteUser(
 }
 
 /**
+ * 2026-10-05 补：管理员代重置密码（用户手机+邮箱双失效时的**唯一救援路径**）。
+ *
+ * 返回的 `temporaryPassword` **只在本次响应出现一次** —— 服务端不写审计、不写日志、
+ * 也不再提供查询；UI 必须当场展示并提示运营立即转达，关掉就再也拿不到。
+ * 服务端同时会**吊销该用户全部活跃会话**（旧会话立刻失效，用户需重新登录）。
+ */
+export function resetUserPassword(
+  id: string,
+  payload: { reason: string }
+): Promise<{ id: string; temporaryPassword: string; sessionsRevoked: number }> {
+  return apiPost<{ id: string; temporaryPassword: string; sessionsRevoked: number }>(
+    `/admin/users/${id}/reset-password`,
+    payload
+  );
+}
+
+/**
  * 2026-10-05 补：分配角色（端点 `PATCH /admin/users/:id/role` 早就存在，此前**前端零调用** ——
  * 见 docs/audit/admin-console-db-only-gaps-2026-10-05.md）。
  * 后端两道闸：超管角色不可授予（403 40301）、不得授予等级不低于操作者的角色（403 40303）。

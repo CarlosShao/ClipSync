@@ -75,6 +75,9 @@ export const ADMIN_STRICT_WRITE_PATTERNS = [
   // 2026-10-05 新增：对单个用户定向通知是**对外触达**，限流是为了给"被拿来刷屏"设上限。
   // 注：/announcements（全体公告）反而**不在**本名单里 —— 见文档遗留项，未擅自改动既有口径。
   /^\/users\/[^/]+\/notify$/,
+  // 2026-10-05 新增：代重置密码会直接换掉登录凭据（并吊销该用户全部会话），
+  // 是管理台里仅次于退款的敏感写操作，必须限流。
+  /^\/users\/[^/]+\/reset-password$/,
 ];
 adminRouter.use((req, res, next) => {
   if ((req.method === 'POST' || req.method === 'DELETE') &&
