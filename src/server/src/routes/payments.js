@@ -62,6 +62,288 @@ function toFiniteAmount(value, fallback) {
 }
 
 /**
+ * 计价 + 折抵判定的**唯一入口**：`POST /create-order` 与 `POST /upgrade-quote` 共用。
+ *
+ * 为什么必须共用：抵扣明细要在用户点「升级」的那一刻就显示出来，而金额一旦存在两套算法，
+ * 迟早出现「试算显示 ¥19.89、实收 ¥19.90」这种谁也解释不清的差额，且差额方向不可控
+ * （少收=资损，多收=投诉）。共用本函数后两者在构造上不可能不一致，
+ * 另有 tests/upgrade-quote.test.js 逐字段钉死「试算 == 实收」。
+ *
+ * 只读：不建单、不写库、不写审计。副作用一律留在调用方。
+ *
+ * @returns {{ok:true, targetPlan:object, subscription:object|null, currentSubscription:object|null,
+ *            effectiveCycle:'monthly'|'yearly', listPrice:number, currency:string, amount:number,
+ *            proration:object|null, paidAmount:number|null, creditSource:'order'|'plan'|null}}
+ *        | {{ok:false, status:number, body:object}}  ← status/body 原样回给客户端，
+ *          保证与 create-order 的失败形状（404/400/409）完全一致
+ */
+async function resolveOrderPricing({ userId, subscriptionId, planId, billingCycle }) {
+  let targetPlan = null;
+  let subscription = null;
+
+  if (planId) {
+    const planResult = await pool.query(
+      `SELECT id, name, display_name, price_monthly, price_yearly
+         FROM subscription_plans
+        WHERE id = $1 AND is_active = true`,
+      [planId]
+    );
+    if (planResult.rows.length === 0) {
+      return { ok: false, status: 404, body: { error: 'Plan not found' } };
+    }
+    targetPlan = planResult.rows[0];
+  }
+
+  if (subscriptionId) {
+    const subscriptionResult = await pool.query(
+      `SELECT us.id, us.user_id, us.plan_id, us.billing_cycle,
+              us.current_period_start, us.current_period_end,
+              sp.name AS plan_name,
+              sp.display_name AS plan_display_name,
+              sp.price_monthly AS plan_price_monthly,
+              sp.price_yearly AS plan_price_yearly
+         FROM user_subscriptions us
+         JOIN subscription_plans sp ON us.plan_id = sp.id
+         WHERE us.id = $1 AND us.user_id = $2`,
+      [subscriptionId, userId]
+    );
+    if (subscriptionResult.rows.length === 0) {
+      return { ok: false, status: 404, body: { error: 'Subscription not found' } };
+    }
+    subscription = subscriptionResult.rows[0];
+    // 未显式指定 planId 时，目标套餐就是这条订阅当前的套餐
+    targetPlan = targetPlan || {
+      id: subscription.plan_id,
+      name: subscription.plan_name,
+      display_name: subscription.plan_display_name,
+      price_monthly: subscription.plan_price_monthly,
+      price_yearly: subscription.plan_price_yearly,
+    };
+  }
+
+  if (!targetPlan) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: 'Missing subscriptionId or planId parameter' },
+    };
+  }
+
+  // 计费周期：显式 planId 入口按请求参数；仅 subscriptionId 入口沿用该订阅自身周期
+  const effectiveCycle = planId
+    ? (billingCycle === 'yearly' ? 'yearly' : 'monthly')
+    : (subscription?.billing_cycle === 'yearly' ? 'yearly' : 'monthly');
+  const listPrice = roundToCent(
+    effectiveCycle === 'yearly' ? targetPlan.price_yearly : targetPlan.price_monthly
+  );
+  const currency = 'CNY';
+
+  // 套餐没配价（price_* 为 NULL，或 Free 这类 0 元套餐）：不能建 0 元订单——
+  // 支付宝会直接拒单，库里留下一条永远付不掉的 pending 单；Free 也不需要下单。
+  if (!(listPrice > 0)) {
+    logger.warn('[payments] plan price not configured, refusing to price order', {
+      userId,
+      planId: targetPlan.id,
+      billingCycle: effectiveCycle,
+    });
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: 'Plan price is not configured for the selected billing cycle',
+        code: 'PLAN_PRICE_MISSING',
+      },
+    };
+  }
+
+  // ── 升级差价折抵（任务板 #15）──
+  // 只认「status=active 且未到期」的订阅作为折抵依据：
+  //  - 已到期（哪怕状态还没被清扫任务改成 expired）不再有钱可折，按全价新订；
+  //  - 实付金额取该订阅最近一条已支付订单的金额（升级单本身是折抵后的价，
+  //    按实付折抵才不会把「上次的折扣」再折一遍），无支付订单时回退套餐标价
+  //    （mock/赠送/历史数据）。**creditSource 如实标出用的是哪一种**：赠期订阅
+  //    没有支付记录，明细里绝不能把「按标价折算」说成「你付过这笔钱」。
+  const currentResult = await pool.query(
+    `SELECT us.id, us.plan_id, us.billing_cycle,
+            us.current_period_start, us.current_period_end,
+            sp.name AS plan_name,
+            sp.price_monthly AS plan_price_monthly,
+            sp.price_yearly AS plan_price_yearly,
+            (SELECT po.amount
+               FROM payment_orders po
+              WHERE po.subscription_id = us.id AND po.status = 'paid'
+              ORDER BY po.paid_at DESC NULLS LAST
+              LIMIT 1) AS paid_order_amount
+       FROM user_subscriptions us
+       JOIN subscription_plans sp ON sp.id = us.plan_id
+      WHERE us.user_id = $1 AND us.status = 'active' AND us.current_period_end > NOW()
+      ORDER BY us.current_period_end DESC
+      LIMIT 1`,
+    [userId]
+  );
+  const currentSubscription = currentResult.rows[0] || null;
+
+  let amount = listPrice;
+  let proration = null;
+  let paidAmount = null;
+  let creditSource = null;
+
+  if (currentSubscription) {
+    const decision = decidePlanChange({
+      currentPlanId: currentSubscription.plan_id,
+      targetPlanId: targetPlan.id,
+      currentTierPrice: currentSubscription.plan_price_monthly,
+      targetTierPrice: targetPlan.price_monthly,
+    });
+
+    if (decision.kind === 'same') {
+      // 同套餐重复购买：既不折抵也不该再开一条，交给前端提示「已在该套餐」。
+      // 副作用：同套餐续费也因此被拦（#13 订阅入口治理的产品口径 —— 续费入口本期不提供，
+      // 到期后再订；履约侧仍保留"同套餐 active 则顺延周期"的兜底逻辑）。
+      logger.info('[payments] duplicate plan purchase blocked', {
+        userId,
+        planId: targetPlan.id,
+        subscriptionId: currentSubscription.id,
+      });
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          error: 'You are already subscribed to this plan',
+          code: 'ALREADY_SUBSCRIBED',
+          subscriptionId: currentSubscription.id,
+        },
+      };
+    }
+    if (decision.kind === 'downgrade') {
+      // 降档不做差价（低档位全额重购没有统一的公平口径），引导走客服/到期后重订
+      logger.info('[payments] downgrade purchase blocked', {
+        userId,
+        fromPlanId: currentSubscription.plan_id,
+        toPlanId: targetPlan.id,
+      });
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          error: 'Downgrade is not supported. Please wait for the current plan to expire, or contact support.',
+          code: 'DOWNGRADE_NOT_ALLOWED',
+        },
+      };
+    }
+
+    const hasPaidOrder = currentSubscription.paid_order_amount != null;
+    paidAmount = hasPaidOrder
+      ? currentSubscription.paid_order_amount
+      : currentSubscription.billing_cycle === 'yearly'
+        ? currentSubscription.plan_price_yearly
+        : currentSubscription.plan_price_monthly;
+    creditSource = hasPaidOrder ? 'order' : 'plan';
+
+    const base = computeProration({
+      paidAmount,
+      periodStart: currentSubscription.current_period_start,
+      periodEnd: currentSubscription.current_period_end,
+      newPrice: listPrice,
+    });
+    proration = {
+      originalPrice: base.originalPrice,
+      creditAmount: base.creditAmount,
+      finalAmount: base.finalAmount,
+      remainingDays: base.remainingDays,
+      cycleDays: base.cycleDays,
+      oldSubscriptionId: currentSubscription.id,
+      oldPlanId: currentSubscription.plan_id,
+      newPlanId: targetPlan.id,
+    };
+    // 订单实付金额：升级单用折抵后价，其余用套餐标价
+    amount = proration.finalAmount;
+  }
+
+  return {
+    ok: true,
+    targetPlan,
+    subscription,
+    currentSubscription,
+    effectiveCycle,
+    listPrice,
+    currency,
+    amount,
+    proration,
+    paidAmount,
+    creditSource,
+  };
+}
+
+/**
+ * POST /api/payments/upgrade-quote
+ * 升级折抵**试算**：只算钱、不建单、不写库。给桌面端在「点升级」那一刻渲染抵扣明细。
+ *
+ * body: { planId, subscriptionId?, billingCycle? = 'monthly' }
+ *
+ * 为什么不复用 create-order 拿明细：那样每次点开都要真造一条 pending 单，与 95s 过期、
+ * 24h 关单扫描、`enable_subscription` 关闭不建单三条语义都会打架。
+ *
+ * 金额口径与实收完全一致（同一个 resolveOrderPricing）。失败形状也一致：
+ * 404 Plan not found / 409 ALREADY_SUBSCRIBED / 409 DOWNGRADE_NOT_ALLOWED / 400 PLAN_PRICE_MISSING，
+ * 客户端因此可以拿同一套文案处理试算与下单。
+ *
+ * 响应里额外给明细所需的分解量：
+ *   paidAmount   当前套餐本期实付（或按套餐标价折算）金额
+ *   usedAmount   已使用金额 = paidAmount − creditAmount（与残值同一套线性口径）
+ *   creditSource 'order'=按实付折算 / 'plan'=该订阅无支付记录、按套餐标价折算
+ *   currentPeriodStart/End  当前有效期（客户端显示「当前有效期至」）
+ */
+router.post('/upgrade-quote', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { subscriptionId, planId, billingCycle = 'monthly' } = req.body || {};
+
+    if (!(await isFlagEnabled('enable_subscription'))) {
+      logger.warn('[payments] upgrade-quote blocked: enable_subscription disabled', { userId });
+      return subscriptionDisabled(res);
+    }
+
+    const pricing = await resolveOrderPricing({ userId, subscriptionId, planId, billingCycle });
+    if (!pricing.ok) {
+      return res.status(pricing.status).json(pricing.body);
+    }
+
+    const { proration, paidAmount, creditSource, currentSubscription } = pricing;
+    // usedAmount 只在有折抵（即有生效订阅且是升档）时才有意义
+    const usedAmount =
+      proration && paidAmount != null
+        ? roundToCent(Math.max(0, Number(paidAmount) - Number(proration.creditAmount)))
+        : null;
+
+    res.json({
+      quote: {
+        planId: pricing.targetPlan.id,
+        planName: pricing.targetPlan.name,
+        planDisplayName: pricing.targetPlan.display_name,
+        billingCycle: pricing.effectiveCycle,
+        currency: pricing.currency,
+        originalPrice: proration ? proration.originalPrice : pricing.listPrice,
+        creditAmount: proration ? proration.creditAmount : 0,
+        finalAmount: pricing.amount,
+        paidAmount,
+        usedAmount,
+        creditSource,
+        remainingDays: proration ? proration.remainingDays : null,
+        cycleDays: proration ? proration.cycleDays : null,
+        currentPeriodStart: currentSubscription ? currentSubscription.current_period_start : null,
+        currentPeriodEnd: currentSubscription ? currentSubscription.current_period_end : null,
+        oldSubscriptionId: proration ? proration.oldSubscriptionId : null,
+        oldPlanId: proration ? proration.oldPlanId : null,
+      },
+    });
+  } catch (err) {
+    logger.error('[payments] upgrade-quote failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to quote upgrade' });
+  }
+});
+
+/**
  * POST /api/payments/create-order
  * 创建支付订单；支付宝渠道返回收银台 URL 供前端 iframe 内嵌二维码。
  *
@@ -148,162 +430,13 @@ router.post('/create-order', authenticateToken, async (req, res) => {
     // subscription_plans 无 price/currency 列（只有 price_monthly/price_yearly），
     // 按计费周期取对应价格；币种统一 CNY（与 subscribe 路由口径一致）。
     //
-    // 两种下单入口，目标套餐的确定规则：
-    //   ① 只给 planId       → 目标套餐 = planId（新订 / 升级）
-    //   ② 只给 subscriptionId → 目标套餐 = 该订阅所属套餐（历史行为：按该订阅自身周期计价）
-    //   ③ 二者都给且不同     → 以 planId 为目标（升级单：subscriptionId 指向被取代的旧订阅）
-    let targetPlan = null;
-    let subscription = null;
-
-    if (planId) {
-      const planResult = await pool.query(
-        `SELECT id, name, display_name, price_monthly, price_yearly
-           FROM subscription_plans
-          WHERE id = $1 AND is_active = true`,
-        [planId]
-      );
-      if (planResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Plan not found' });
-      }
-      targetPlan = planResult.rows[0];
+    // 三种入口的确定规则见 resolveOrderPricing。取数与折抵算法与 /upgrade-quote
+    // **共用同一个函数**，试算与实收因此在构造上不可能不一致。
+    const pricing = await resolveOrderPricing({ userId, subscriptionId, planId, billingCycle });
+    if (!pricing.ok) {
+      return res.status(pricing.status).json(pricing.body);
     }
-
-    if (subscriptionId) {
-      const subscriptionResult = await pool.query(
-        `SELECT us.id, us.user_id, us.plan_id, us.billing_cycle,
-                us.current_period_start, us.current_period_end,
-                sp.name AS plan_name,
-                sp.display_name AS plan_display_name,
-                sp.price_monthly AS plan_price_monthly,
-                sp.price_yearly AS plan_price_yearly
-         FROM user_subscriptions us
-         JOIN subscription_plans sp ON us.plan_id = sp.id
-         WHERE us.id = $1 AND us.user_id = $2`,
-        [subscriptionId, userId]
-      );
-
-      if (subscriptionResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Subscription not found' });
-      }
-      subscription = subscriptionResult.rows[0];
-      // 未显式指定 planId 时，目标套餐就是这条订阅当前的套餐
-      targetPlan = targetPlan || {
-        id: subscription.plan_id,
-        name: subscription.plan_name,
-        display_name: subscription.plan_display_name,
-        price_monthly: subscription.plan_price_monthly,
-        price_yearly: subscription.plan_price_yearly,
-      };
-    }
-
-    // 计费周期：显式 planId 入口按请求参数；仅 subscriptionId 入口沿用该订阅自身周期
-    const effectiveCycle = planId
-      ? (billingCycle === 'yearly' ? 'yearly' : 'monthly')
-      : (subscription?.billing_cycle === 'yearly' ? 'yearly' : 'monthly');
-    const listPrice = roundToCent(
-      effectiveCycle === 'yearly' ? targetPlan.price_yearly : targetPlan.price_monthly
-    );
-    const currency = 'CNY';
-
-    // 套餐没配价（price_* 为 NULL，或 Free 这类 0 元套餐）：不能建 0 元订单——
-    // 支付宝会直接拒单，库里留下一条永远付不掉的 pending 单；Free 也不需要下单。
-    if (!(listPrice > 0)) {
-      logger.warn('[payments] plan price not configured, refusing to create order', {
-        userId,
-        planId: targetPlan.id,
-        billingCycle: effectiveCycle,
-      });
-      return res.status(400).json({
-        error: 'Plan price is not configured for the selected billing cycle',
-        code: 'PLAN_PRICE_MISSING',
-      });
-    }
-
-    // ── 升级差价折抵（任务板 #15）──
-    // 只认「status=active 且未到期」的订阅作为折抵依据：
-    //  - 已到期（哪怕状态还没被清扫任务改成 expired）不再有钱可折，按全价新订；
-    //  - 实付金额取该订阅最近一条已支付订单的金额（升级单本身是折抵后的价，
-    //    按实付折抵才不会把「上次的折扣」再折一遍），无支付订单时回退套餐标价
-    //    （mock/赠送/历史数据）。
-    const currentResult = await pool.query(
-      `SELECT us.id, us.plan_id, us.billing_cycle,
-              us.current_period_start, us.current_period_end,
-              sp.name AS plan_name,
-              sp.price_monthly AS plan_price_monthly,
-              COALESCE(
-                (SELECT po.amount
-                   FROM payment_orders po
-                  WHERE po.subscription_id = us.id AND po.status = 'paid'
-                  ORDER BY po.paid_at DESC NULLS LAST
-                  LIMIT 1),
-                CASE WHEN us.billing_cycle = 'yearly' THEN sp.price_yearly ELSE sp.price_monthly END
-              ) AS paid_amount
-         FROM user_subscriptions us
-         JOIN subscription_plans sp ON sp.id = us.plan_id
-        WHERE us.user_id = $1 AND us.status = 'active' AND us.current_period_end > NOW()
-        ORDER BY us.current_period_end DESC
-        LIMIT 1`,
-      [userId]
-    );
-    const currentSubscription = currentResult.rows[0] || null;
-
-    let proration = null;
-    if (currentSubscription) {
-      const decision = decidePlanChange({
-        currentPlanId: currentSubscription.plan_id,
-        targetPlanId: targetPlan.id,
-        currentTierPrice: currentSubscription.plan_price_monthly,
-        targetTierPrice: targetPlan.price_monthly,
-      });
-
-      if (decision.kind === 'same') {
-        // 同套餐重复购买：既不折抵也不该再开一条，交给前端提示「已在该套餐」。
-        // 副作用：同套餐续费也因此被拦（#13 订阅入口治理的产品口径 —— 续费入口本期不提供，
-        // 到期后再订；履约侧仍保留"同套餐 active 则顺延周期"的兜底逻辑）。
-        logger.info('[payments] duplicate plan purchase blocked', {
-          userId,
-          planId: targetPlan.id,
-          subscriptionId: currentSubscription.id,
-        });
-        return res.status(409).json({
-          error: 'You are already subscribed to this plan',
-          code: 'ALREADY_SUBSCRIBED',
-          subscriptionId: currentSubscription.id,
-        });
-      }
-      if (decision.kind === 'downgrade') {
-        // 降档不做差价（低档位全额重购没有统一的公平口径），引导走客服/到期后重订
-        logger.info('[payments] downgrade purchase blocked', {
-          userId,
-          fromPlanId: currentSubscription.plan_id,
-          toPlanId: targetPlan.id,
-        });
-        return res.status(409).json({
-          error: 'Downgrade is not supported. Please wait for the current plan to expire, or contact support.',
-          code: 'DOWNGRADE_NOT_ALLOWED',
-        });
-      }
-
-      const base = computeProration({
-        paidAmount: currentSubscription.paid_amount,
-        periodStart: currentSubscription.current_period_start,
-        periodEnd: currentSubscription.current_period_end,
-        newPrice: listPrice,
-      });
-      proration = {
-        originalPrice: base.originalPrice,
-        creditAmount: base.creditAmount,
-        finalAmount: base.finalAmount,
-        remainingDays: base.remainingDays,
-        cycleDays: base.cycleDays,
-        oldSubscriptionId: currentSubscription.id,
-        oldPlanId: currentSubscription.plan_id,
-        newPlanId: targetPlan.id,
-      };
-    }
-
-    // 订单实付金额：升级单用折抵后价，其余用套餐标价
-    const amount = proration ? proration.finalAmount : listPrice;
+    const { targetPlan, subscription, effectiveCycle, currency, amount, proration } = pricing;
 
     const orderNo = `ORD${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
     

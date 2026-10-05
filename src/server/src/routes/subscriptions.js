@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js';
 import { logAuditEvent, AUDIT_ACTIONS } from '../utils/audit.js';
 import { sendNotification } from '../ws/server.js';
 import { getPlanLimits, getUsedStorageBytes } from '../utils/planLimits.js';
+import { findSelfRefundAnchorOrderId } from '../services/refundPolicy.js';
 
 const router = Router();
 
@@ -57,6 +58,20 @@ router.get('/current', authenticateToken, async (req, res) => {
       getPlanLimits(userId),
       getUsedStorageBytes(userId),
     ]);
+
+    /**
+     * purchaseBacked：当前生效订阅是否有**真实已付订单**支撑。
+     *
+     * 客户端「申请退款」入口此前只判 `paidActive`，而它是拿**套餐目录价 > 0** 推出来的
+     * （useSubscriptionAccess.ts:182）—— 于是管理台**赠期**出来的订阅也会让入口亮起来，
+     * 而那种账号一分钱没付过，点开只有一堆不可退的单（2026-10-05 owner 实测反馈）。
+     *
+     * 判据直接复用自助退款的锚点查询（refundPolicy.findSelfRefundAnchorOrderId）：
+     * 这样「入口可见」与「服务端认为存在可退锚点」永远是同一个谓词，不会各算一套。
+     * 无 active 订阅 / 无已付订单 → false（锚点查询本身就返回 null）。
+     */
+    const refundAnchorOrderId = await findSelfRefundAnchorOrderId(userId);
+    const purchaseBacked = Boolean(refundAnchorOrderId);
     // 字节转 MB：向上取整到 0.1MB 精度（ceil(x*10)/10），展示余量偏保守；
     // usedBytes 为 null（用量查询失败）时 storageUsedMb 置 null，由前端显示未知
     const storageUsedMb = usedBytes != null
@@ -87,6 +102,8 @@ router.get('/current', authenticateToken, async (req, res) => {
       const freePlan = await pool.query('SELECT * FROM subscription_plans WHERE name = $1', ['Free']);
       return res.json({
         subscription: null,
+        // 没有生效订阅 ⇒ 不可能有可退锚点，入口必须收口（客户端不再只看 paidActive）
+        purchaseBacked,
         plan: freePlan.rows[0] ? {
           id: freePlan.rows[0].id,
           name: freePlan.rows[0].name,
@@ -116,6 +133,8 @@ router.get('/current', authenticateToken, async (req, res) => {
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
         trialEnd: subscription.trial_end,
       },
+      // 见上方说明：赠期/试用得到的订阅 paidActive 也为真，但一分钱没付过，不可自助退款
+      purchaseBacked,
       plan: {
         id: subscription.plan_id,
         name: subscription.plan_name,
