@@ -1077,6 +1077,20 @@ export default function SettingsPage() {
           form={channelForm}
           layout="vertical"
           requiredMark={false}
+          // ★ 端口决定 TLS 模式，必须联动（2026-10-07 修）：
+          //   465 = 隐式 TLS（连上即握手）⇒「SSL 直连」开
+          //   587/25/其它 = STARTTLS（先明文再升级）⇒「SSL 直连」关
+          // 不联动时运维很容易配出「587 + SSL 直连」：服务端按隐式 TLS 去连 587，对端回明文
+          // banner，报 `tls_validate_record_header:wrong version number` ——owner 2026-10-07
+          // 就在生产上踩了这个，报错完全看不懂。服务端已按端口双向纠正兜底
+          // （utils/email.js normalizeSmtpTls），这里从源头避免填错。
+          // 注：必须挂在 Form 的 onValuesChange 上——写在 Form.Item 子组件的 onChange 会被
+          // antd 注入的同名 prop 覆盖，静默失效。
+          onValuesChange={(changed) => {
+            if (changed && 'port' in changed) {
+              channelForm.setFieldValue('secure', Number(changed.port) === 465);
+            }
+          }}
           initialValues={{
             purpose: 'transactional',
             provider: 'smtp',
@@ -1121,9 +1135,15 @@ export default function SettingsPage() {
             <Input placeholder="如 smtp.qq.com" />
           </Form.Item>
           <Form.Item name="port" label="端口" rules={[{ required: true, message: '请输入端口' }]}>
+            {/* 改动端口会由 Form 的 onValuesChange 自动联动「SSL 直连」（见上方注释） */}
             <InputNumber min={1} max={65535} precision={0} style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item name="secure" label="SSL 直连" valuePropName="checked">
+          <Form.Item
+            name="secure"
+            label="SSL 直连"
+            valuePropName="checked"
+            extra="465 用 SSL 直连；587/25 用 STARTTLS（关闭本开关）。改动端口会自动切换"
+          >
             <Switch checkedChildren="SSL(465)" unCheckedChildren="STARTTLS(587)" />
           </Form.Item>
           <Form.Item name="username" label="用户名">
