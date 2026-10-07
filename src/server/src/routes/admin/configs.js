@@ -452,6 +452,38 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       return res.status(400).json({ code: 40002, message: 'log_level 仅允许 debug / info / warn / error' });
     }
 
+    // 2026-10-07：凭据类键的"粘贴体检"（owner 生产实测踩坑两次，故从写入侧堵住）
+    //   ① 把 AccessKeyId 和 AccessKeySecret 一起粘进 Secret 框（阿里云控制台复制整块）
+    //      ⇒ 服务端拿 55 位整串去签名 ⇒ 阿里云 `SignatureDoesNotMatch`，报错完全看不懂；
+    //   ② 粘进来带空格/换行 ⇒ 同样只表现为签名不匹配。
+    // 该输入框是"留空 = 保持不变"语义，所以**改错了用户看不出来**（会以为改成功了）
+    // ⇒ 必须在写入时明确拒绝，并说清怎么改。
+    if ((key === 'sms_access_key_secret' || key === 'smtp_pass') && /\s/.test(valueStr)) {
+      return res.status(400).json({
+        code: 40002,
+        message: `${meta.name || key} 不能包含空格或换行 —— 请只粘贴凭据值本身（不要把上一行的 ID 一起复制进来）`,
+      });
+    }
+    if (key === 'sms_access_key_secret') {
+      try {
+        const { rows } = await pool.query(
+          "SELECT config_value FROM system_configs WHERE config_key = 'sms_access_key_id'"
+        );
+        let aki = rows[0]?.config_value;
+        if (aki && typeof aki === 'object') aki = aki.value ?? '';
+        aki = String(aki ?? '').trim();
+        if (aki && (valueStr === aki || valueStr.includes(aki))) {
+          return res.status(400).json({
+            code: 40002,
+            message:
+              '这串里含有 AccessKeyId —— 你把「AccessKeyId」和「AccessKeySecret」一起粘进来了。请只粘贴 AccessKeySecret 本身（阿里云为 30 位）',
+          });
+        }
+      } catch {
+        /* 体检是增强不是门控：查询失败不阻断写入 */
+      }
+    }
+
     // CO-30：smtp_pass 落库前加密（AES-256-GCM），其余键原样写入
     // A4：sms_access_key_secret 同口径加密（sms.js 发送前 decryptField 解密）
     // 搜索全局 Key 同口径加密（web_search 执行前 decrypt 解密；与 aiSettings 用户 key 同加密体系）

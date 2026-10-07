@@ -161,6 +161,55 @@ describe('PATCH /api/admin/configs/:key —— 更新系统参数', () => {
     });
   }
 
+  it('凭据体检①：Secret 含空格/换行 ⇒ 400 并说明（owner 生产实测的坑）', async () => {
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.manage' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await request(buildApp())
+      .patch('/api/admin/configs/sms_access_key_secret')
+      .send({ value: 'LTAI5tAqqjWZeeSdBuhfNUL\nabcdefghijklmnopqrstuvwxyz1234' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('空格或换行');
+    // 没有落库
+    expect(pool.query.mock.calls.some(([sql]) => sql.includes('UPDATE system_configs'))).toBe(false);
+  });
+
+  it('凭据体检②：Secret 里夹带了 AccessKeyId ⇒ 400 且提示"只粘 Secret"', async () => {
+    pool.query.mockImplementation(async (sql) => {
+      if (sql.includes('perm_key')) return { rows: [{ perm_key: 'admin.configs.manage' }], rowCount: 1 };
+      if (sql.includes('sms_access_key_id')) {
+        return { rows: [{ config_value: 'LTAI5tAqqjWZeeSdBuhfNUL' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await request(buildApp())
+      .patch('/api/admin/configs/sms_access_key_secret')
+      .send({ value: 'LTAI5tAqqjWZeeSdBuhfNUL' + 'a'.repeat(30) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('只粘贴 AccessKeySecret');
+  });
+
+  it('凭据体检③：正常的 30 位 Secret 放行（不误伤）', async () => {
+    mockUpdateOk({
+      config_key: 'sms_access_key_secret',
+      config_value: '已配置',
+      description: '短信 AccessKeySecret（加密存储）',
+      updated_at: new Date('2026-10-07T12:00:00Z'),
+    });
+
+    const res = await request(buildApp())
+      .patch('/api/admin/configs/sms_access_key_secret')
+      .send({ value: 'a'.repeat(30) });
+
+    expect(res.status).toBe(200);
+    expect(res.body.code).toBe(0);
+  });
+
   it('合法更新：JSONB 写入 + updated_by 记录修改人 + 审计 admin.config.update', async () => {
     mockUpdateOk({
       config_key: 'ai_max_tokens',
