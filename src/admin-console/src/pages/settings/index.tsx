@@ -133,20 +133,26 @@ function isRateLimitKey(key: string): boolean {
 }
 
 /** 数字键（InputNumber min=1）：其余键为布尔/字符串，不参与必填校验 */
+/**
+ * 数字键（渲染 InputNumber + 必填）—— **白名单**：默认按字符串处理。
+ *
+ * 2026-10-07 改：原实现是**黑名单**（`key !== 'log_level' && !key.startsWith('smtp_') && …`
+ * ⇒ 其余一律当数字）。于是新加的 `sentry_dsn` 被误判成数字键：渲染成数字输入框、还带
+ * `required: '取值不能为空'` ⇒ **DSN 根本填不进去、点保存必报错**（owner 实测：表单报
+ * 「取值不能为空」而不发请求）。新键默认"字符串、可留空"更安全——需要数字渲染的键显式登记。
+ */
+const NUMERIC_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  'ai_max_tokens',
+  'audit_log_retention_days',
+  'backup_retention_days',
+  'max_collection_depth',
+  'refund_review_business_days',
+  'refund_self_window_days',
+  'session_timeout_minutes',
+  ...RATE_LIMIT_KEYS,
+]);
 function isNumericConfigKey(key: string): boolean {
-  return (
-    key !== 'ai_default_provider' &&
-    key !== 'log_level' &&
-    key !== 'menu_overrides' &&
-    key !== 'rate_limit_disabled' &&
-    !key.startsWith('smtp_') &&
-    // 字符串域键（068/A4 短信、运维地址/发布源、联网搜索）：非数字，允许留空
-    !key.startsWith('sms_') &&
-    !key.startsWith('ai_search_') &&
-    !key.endsWith('_url') &&
-    key !== 'storage_cleanup_enabled' &&
-    key !== 'release_download_base_url'
-  );
+  return NUMERIC_CONFIG_KEYS.has(key);
 }
 
 /** 按键分支校验规则：数字键必填；menu_overrides 须为合法 JSON（服务端深合并消费）；SMTP 键与 log_level 允许为空 */
@@ -435,6 +441,12 @@ export default function SettingsPage() {
         'release_download_base_url',
       ],
     },
+    // 086：错误追踪（Sentry）**独立成卡** —— 它是一整套"外部可观测服务"的接入凭据，
+    // 与「运维」卡里的 URL 类参数不是一回事；混进兜底卡会导致"能看不能存"（owner 2026-10-07 反馈）
+    {
+      title: '错误追踪',
+      keys: ['sentry_dsn'],
+    },
     // 短信验证码（068/A4）：独立成卡——它是完整的发码链路配置（服务商 + 凭据 + 签名 + 模板），
     // 与邮件通道卡对等的独立外部服务，不应混入运维兜底
     {
@@ -598,7 +610,15 @@ export default function SettingsPage() {
       }
       return <Input style={{ maxWidth: 260 }} />;
     }
-    return <InputNumber style={{ width: 260 }} min={1} precision={0} />;
+    // 兜底：**数字键才用 InputNumber，其余一律字符串输入框**。
+    // 2026-10-07 修：此前无条件返回 InputNumber（min=1）⇒ 新加的字符串键（如 sentry_dsn）
+    // 被渲染成数字框，URL 根本填不进去；配合 isNumericConfigKey 的必填校验还会报
+    // 「取值不能为空」。两处已同时改为白名单口径。
+    return isNumericConfigKey(key) ? (
+      <InputNumber style={{ width: 260 }} min={1} precision={0} />
+    ) : (
+      <Input style={{ maxWidth: 260 }} />
+    );
   };
 
   // AN-09：暂未接入的配置项（consumer 为空 = 改了不生效），用于「未接入」角标与顶部汇总
@@ -1033,12 +1053,42 @@ export default function SettingsPage() {
               </div>
             </Card>
           ) : null}
-          {/* 未归组键兜底（目录新增键忘记归类时不至于消失） */}
+          {/* 未归组键兜底（目录新增键忘记归类时不至于消失）
+              ⚠️ 必须有独立保存入口：此前这里只渲染参数、不给保存按钮，
+              于是"未归类的键"落到这里就是**能看不能存**（owner 2026-10-07 实测：
+              新加的 sentry_dsn 就是这样 —— 能填但存不了）。保存按本卡内的键提交。 */}
           {(() => {
             const grouped = new Set(PARAM_GROUPS.flatMap((g) => g.keys));
             const rest = systemConfigs.filter((c) => !grouped.has(c.key));
             if (rest.length === 0) return null;
-            return <Card title="其它">{rest.map(renderConfigItem)}</Card>;
+            return (
+              <Card
+                title="其它"
+                extra={
+                  <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
+                    <span>
+                      <Button
+                        type="primary"
+                        size="small"
+                        loading={savingGroup === '其它'}
+                        disabled={!canManageConfigs}
+                        onClick={() =>
+                          void saveConfigGroup(
+                            configForm,
+                            (s) => setSavingGroup(s ? '其它' : null),
+                            rest.map((c) => c.key)
+                          )
+                        }
+                      >
+                        保存（记入审计）
+                      </Button>
+                    </span>
+                  </Tooltip>
+                }
+              >
+                {rest.map(renderConfigItem)}
+              </Card>
+            );
           })()}
         </Form>
       </div>
