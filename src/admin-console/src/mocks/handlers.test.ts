@@ -1054,6 +1054,8 @@ describe('POST /api/admin/users/merge（合并重复账号）', () => {
     });
     expect(first.status).toBe(409);
     expect(expectFail(first).message).toContain('3 条');
+    // ★必须带 reason：客户端按它识别"内容计数闸"并切到第二步；缺了 mock 模式下第二步走不出来
+    expect(expectFail(first).reason).toBe('CLIP_COUNT_MISMATCH');
     // 什么都没发生
     expect(duplicate.nickname).toBe(dupNickBefore);
     expect(mockAuditLogs.length).toBe(auditBefore);

@@ -162,6 +162,8 @@ describe('DELETE /api/admin/devices/:id（强制解绑）', () => {
     expect(first.status).toBe(409);
     const err = expectFail(first);
     expect(err.message).toContain('远程下线');
+    // ★必须带 reason：客户端按它识别内容保护闸并切到第二步；缺了 mock 模式下第二步走不出来
+    expect(err.reason).toBe('CONTENT_WILL_BE_DELETED');
     expect(mockDevices.length).toBe(before); // 什么都没删
 
     // 第二步：带上条数 ⇒ 真删

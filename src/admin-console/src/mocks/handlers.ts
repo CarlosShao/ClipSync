@@ -668,10 +668,17 @@ const usersHandlers = [
 
     const movedClips = 3;
     if (body.confirmMovedClips !== movedClips) {
-      return fail(
-        409,
-        40906,
-        `被合并账号当前有 ${movedClips} 条剪贴板内容会被搬走，与你回传的条数不一致（可能刚同步进新内容）。请刷新后按新条数重新确认`,
+      // ⚠️ 必须带 reason：客户端的 MergeAccountModal 是按 `body.reason === 'CLIP_COUNT_MISMATCH'`
+      // 识别"内容计数闸"并切到第二步的。只给 {code,message} 的话，mock 模式下弹窗只会弹个
+      // 错误 toast、**第二步永远走不出来**（2026-10-07 在 mock 模式实测发现）。
+      return HttpResponse.json(
+        {
+          code: 40906,
+          reason: 'CLIP_COUNT_MISMATCH',
+          movedClips,
+          message: `被合并账号当前有 ${movedClips} 条剪贴板内容会被搬走，与你回传的条数不一致（可能刚同步进新内容）。请刷新后按新条数重新确认`,
+        },
+        { status: 409 },
       );
     }
 
@@ -1618,10 +1625,17 @@ const devicesHandlers = [
 
     const itemCount = 1;
     if (body.confirmItemCount !== itemCount) {
-      return fail(
-        409,
-        40906,
-        `解绑会连带删除该设备产生的 ${itemCount} 条剪贴板内容（外键 CASCADE，不可恢复）。确认后请带上 confirmItemCount: ${itemCount} 重试；若只想让它下线并保留内容，请改用「远程下线」`,
+      // ⚠️ 必须带 reason：客户端的 UnbindDeviceModal 是按
+      // `body.reason === 'CONTENT_WILL_BE_DELETED'` 识别内容保护闸并切到第二步的。
+      // 只给 {code,message} 会让 mock 模式下的**两步确认走不出来**（实测发现）。
+      return HttpResponse.json(
+        {
+          code: 40906,
+          reason: 'CONTENT_WILL_BE_DELETED',
+          itemCount,
+          message: `解绑会连带删除该设备产生的 ${itemCount} 条剪贴板内容（外键 CASCADE，不可恢复）。确认后请带上 confirmItemCount: ${itemCount} 重试；若只想让它下线并保留内容，请改用「远程下线」`,
+        },
+        { status: 409 },
       );
     }
 

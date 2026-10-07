@@ -21,6 +21,13 @@ export interface ApiResp<T> {
 export interface ApiErrorBody {
   code: number;
   message: string;
+  /**
+   * 部分 409 带**机器可读**的原因码，客户端据此做二次确认等分支：
+   * `CONTENT_WILL_BE_DELETED`（解绑设备会连带删内容）、`CLIP_COUNT_MISMATCH`（合并账号的内容计数闸）、
+   * `HAS_PAID_ORDER`、`INVOICE_VOID`、`ALREADY_SUBSCRIBED`、`NOTHING_TO_SHORTEN` 等。
+   * ⚠️ mock 层也必须带上它，否则 mock 模式下的多步确认走不出来（2026-10-07 实测）。
+   */
+  reason?: string;
 }
 
 export interface PageData<T> {
