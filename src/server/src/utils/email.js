@@ -185,6 +185,29 @@ function isChannelComplete(channel) {
  * 缓存 key 含全部连接参数（含解密后凭据）+ updated_at——管理台改通道配置即失效重建；
  * 密码为 email_channels 存的密文（legacy 伪通道除外，已是明文），发送前解密。
  */
+/**
+ * SMTP 的 TLS 模式**按端口归一化**（2026-10-07 修，owner 实测报错驱动）。
+ *
+ *   - 465            = **隐式 TLS**（连上立刻握手）        ⇒ secure:true
+ *   - 587 / 25 / 其它 = **STARTTLS**（先明文打招呼再升级）  ⇒ secure:false + requireTLS:true
+ *
+ * 为什么必须**双向**归一：此前只写了 `secure || port === 465`（单向兜底），于是
+ * "**端口 587 + 管理台勾了 SSL 直连**"会被当成隐式 TLS 去连 587 —— 对端回的是明文
+ * SMTP banner，OpenSSL 报 `tls_validate_record_header:wrong version number`
+ * （正是 owner 在管理台「发送测试邮件」看到的报错）。运维在表单勾错一格就得到这种
+ * 看不懂的 SSL 报错，所以按端口纠正的同时留 warn，便于回溯是谁配错的。
+ *
+ * @returns {{secure: boolean, requireTLS: boolean, corrected: boolean}}
+ *   corrected=true 表示"配置与端口不一致、已纠正"（调用方据此告警）
+ */
+export function normalizeSmtpTls(port, secure) {
+  const p = Number(port) || 587;
+  if (p === 465) {
+    return { secure: true, requireTLS: false, corrected: secure === false || secure == null };
+  }
+  return { secure: false, requireTLS: true, corrected: secure === true };
+}
+
 async function getTransporterForChannel(channel) {
   // email_channels.password 落库为 AES-256-GCM 密文（iv:authTag:ciphertext），
   // 发送前必须解密——否则会把密文当授权码送给 SMTP，得到 535 Login Fail。
@@ -207,10 +230,22 @@ async function getTransporterForChannel(channel) {
     return cached.transporter;
   }
 
+  const tls = normalizeSmtpTls(channel.port, channel.secure);
+  if (tls.corrected) {
+    logger.warn('[email] SMTP TLS 模式与端口不匹配，已按端口纠正', {
+      channelId: channel.id,
+      host: channel.host,
+      port: channel.port,
+      configuredSecure: channel.secure,
+      usingSecure: tls.secure,
+    });
+  }
+
   const transporter = nodemailer.createTransport({
     host: channel.host,
     port: channel.port,
-    secure: channel.secure || channel.port === 465,
+    secure: tls.secure,
+    requireTLS: tls.requireTLS,
     auth: {
       user: channel.username,
       pass,
