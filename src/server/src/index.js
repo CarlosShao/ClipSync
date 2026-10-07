@@ -31,6 +31,8 @@ import mediaRoutes from './routes/media.js';
 import storageRoutes from './routes/storage.js';
 // D1：存储后端初始化（local / s3-MinIO），启动期显式调用
 import { initStorage } from './utils/storage.js';
+// 错误追踪（迁移 086：配置在 system_configs.sentry_dsn，管理台可填；未配置则全程 no-op）
+import { initSentry, captureError, flushSentry } from './utils/sentry.js';
 import syncRoutes from './routes/sync.js';
 import wsRoutes from './routes/ws.js';
 import authRefreshRoutes from './routes/auth-refresh.js';
@@ -609,6 +611,11 @@ app.use((err, req, res, next) => {
 
   // 其他错误
   const statusCode = err.statusCode || 500;
+  // 只上报服务端错误（5xx）；4xx 是客户端用法问题，进来会淹没真实故障。
+  // 未配置 Sentry 时 captureError 是 no-op。
+  if (statusCode >= 500) {
+    captureError(err, { path: req.path, method: req.method, statusCode, requestId: req.requestId ?? req.id });
+  }
   res.status(statusCode).json({
     error: config.nodeEnv === 'production' ? 'Internal server error' : err.message,
   });
@@ -647,6 +654,18 @@ if (!isClusteredPrimary) {
     } catch (err) {
       logger.error('[migration] Database migration failed:', { error: err.message, stack: err.stack });
       process.exit(1);
+    }
+
+    // ============================================
+    // 错误追踪初始化（迁移 086 的 system_configs.sentry_dsn）：
+    // 放在**迁移之后、存储初始化之前** —— 这样后面 initStorage 之类的启动期故障也能被上报。
+    // 未配置 DSN 时不加载 SDK、本调用为 no-op；任何失败都只 warn，绝不阻断启动。
+    // 局限：cluster worker 不走本分支（它们不跑迁移），故多进程部署下追踪只在 primary 生效。
+    // ============================================
+    try {
+      await initSentry();
+    } catch (err) {
+      logger.warn('[sentry] 初始化异常，已忽略', { error: err.message });
     }
 
     // ============================================
@@ -839,13 +858,16 @@ process.on('uncaughtException', (err) => {
     message: err.message,
     stack: err.stack,
   });
-  gracefulShutdown('uncaughtException');
+  // 先把事件交给追踪再关停：flush 自带超时，绝不因追踪而卡住退出
+  captureError(err, { scope: 'uncaughtException' });
+  flushSentry(2000).finally(() => gracefulShutdown('uncaughtException'));
 });
 
 process.on('unhandledRejection', (reason) => {
   logger.error('Unhandled Rejection', {
     reason: reason?.toString() || reason,
   });
+  captureError(reason, { scope: 'unhandledRejection' });
 });
 
 export { app, server };

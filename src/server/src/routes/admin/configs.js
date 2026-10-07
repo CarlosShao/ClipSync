@@ -55,6 +55,8 @@ import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js'
 // A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）；
 // 另引入发送能力，供「发送测试短信」接口真实下发（不受 NODE_ENV 限制）
 import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode } from '../../utils/sms.js';
+// 错误追踪（迁移 086）：保存 sentry_dsn 后失效缓存并即时重初始化（填完即生效，不必重启容器）
+import { invalidateSentryConfigCache, initSentry } from '../../utils/sentry.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
 import { isValidPhone } from '../../validation/validator.js';
 
@@ -274,6 +276,14 @@ const CONFIG_CATALOG = [
     description: '验证码模板 ID（阿里云 SMS_xxxx / 腾讯云模板 ID），模板变量为 code',
     consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
   },
+  // —— 错误追踪（086）：未填 = 不启用（no-op），填了即生效且不需重启 ——
+  {
+    key: 'sentry_dsn',
+    name: 'Sentry DSN',
+    description:
+      '留空=不启用错误追踪。填 https://<key>@o<org>.ingest.sentry.io/<project> 后，服务端未捕获异常与 5xx 会上报；已强制关闭 PII 采集（不送请求体/Cookie/手机号邮箱/剪贴板内容）。也可填自托管 GlitchTip 的 DSN',
+    consumer: 'src/server/src/utils/sentry.js（getSentryDsn 读取；index.js 启动期 init + 5xx 与未捕获异常 captureError）',
+  },
   // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
   {
     key: 'release_download_base_url',
@@ -490,6 +500,13 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     // A4：短信配置写库后失效 sms 5s 缓存（下次发码直连库读取，改完即时生效）
     if (SMS_CONFIG_KEYS.has(key)) {
       invalidateSmsConfigCache();
+    }
+
+    // 086：Sentry DSN 写库后失效缓存并即时重初始化（填完即生效，不用重启容器；
+    // 未填/清空时 initSentry 不加载 SDK ⇒ 回到 no-op）
+    if (key === 'sentry_dsn') {
+      invalidateSentryConfigCache();
+      void initSentry();
     }
 
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
