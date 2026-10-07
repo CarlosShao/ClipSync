@@ -70,12 +70,18 @@
 
 **运维约定（防复发）**：新建/重建环境后，按本节逐项补配置；`backup-prod` 的 dump 会带上这两张表，**重建前**先确认能回填。
 
-### 2.2 🟡 P1 Sentry 错误追踪
+### 2.2 🟡 P1 Sentry 错误追踪 —— **代码侧已接线（2026-10-07），只差你填 DSN**
 
-- **现状**：`SENTRY_DSN` 只出现在 `src/server/.env.example`，**代码零读取** → 你注册了也不会有效果
-- **谁做**：你注册（https://sentry.io/signup/ → 建 Node.js project → 复制 DSN）；**我接线**（按本仓库约定新增 `sentry_dsn` 运行时可配置项、管理台可填、未配置 no-op、`beforeSend` 脱敏不送 PII）
+- **现状**：接线已完成并部署（分支 `b1f5aa59`、生产 `2f4511b`+`08abcda`，迁移 **086** 已应用）。
+  配置项 `sentry_dsn` 已在管理台「系统参数」目录里，**留空 = 不启用（全程 no-op）**
+- **谁做**：你注册 https://sentry.io/signup/ → 建 **Node.js** project → 复制 DSN
+  （形如 `https://<key>@o<org>.ingest.sentry.io/<project>`）→ **管理台 → 系统参数 → Sentry DSN → 保存**
+  （保存即失效缓存并重初始化，**不用重启容器**）
+- **上报范围**：未捕获异常、unhandledRejection、**仅 5xx**（4xx 不上报，避免淹没真实故障）
+- **隐私**：`sendDefaultPii:false` + `tracesSampleRate:0` + `beforeSend` 剔除请求体 / Cookie /
+  Authorization / 含 phone|token|code 的 query / 手机号邮箱密钥剪贴板字段 / 整个 user 段（有 15 例测试钉住）
 - **怎么验**：填完保存 → 发一条测试错误 → Sentry Issues 出现该事件
-- **备选**：网络不稳可换自托管 **GlitchTip**（同 DSN 协议）
+- **备选**：网络不稳可换自托管 **GlitchTip**（同 DSN 协议，直接填它的 DSN 即可）
 
 ### 2.3 🟡 P1 CAPTCHA 人机验证
 
