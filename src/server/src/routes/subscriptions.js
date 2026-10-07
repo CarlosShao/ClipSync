@@ -10,6 +10,18 @@ import { findSelfRefundAnchorOrderId } from '../services/refundPolicy.js';
 const router = Router();
 
 /**
+ * planLimits 给的是**字节**（maxFileSizeBytes / maxStorageBytes），而 `plan` 契约下发的是 **MB**
+ * （见 `/subscriptions/current` 与 `/plans`）。这里做一次还原，保证「单用户配额覆盖」生效时
+ * 下发的 MB 与上传闸实际使用的阈值**同源**。
+ *
+ * null（覆盖为"不限"）原样透传：客户端 `usePlanLimits.normalizeLimit` 把 null/非正数归一为
+ * Infinity（不限），这正是它注释里写的"如 admin 的不限字段"。
+ */
+function mbFromBytes(bytes) {
+  return bytes == null ? null : bytes / (1024 * 1024);
+}
+
+/**
  * GET /api/subscriptions/plans
  * 获取当前可用套餐列表
  */
@@ -112,8 +124,11 @@ router.get('/current', authenticateToken, async (req, res) => {
           billingCycle: 'month',
           maxDevices: freePlan.rows[0].max_devices,
           maxClipboardItems: freePlan.rows[0].max_clipboard_items,
-          maxFileSizeMb: freePlan.rows[0].max_file_size_mb,
-          maxStorageMb: freePlan.rows[0].max_storage_mb,
+          // 2026-10-07：与下面两个「*PerClip / *Days」同一来源（planLimits），不能再取套餐列 ——
+          // 「单用户配额覆盖」（迁移 084）改了容量/单文件上限时，取套餐列会让**上传闸按覆盖放行、
+          // 界面却显示套餐原值**。⑨ 之前不存在单用户覆盖，所以这处脱节显不出来。
+          maxFileSizeMb: mbFromBytes(planLimits.maxFileSizeBytes),
+          maxStorageMb: mbFromBytes(planLimits.maxStorageBytes),
           maxFilesPerClip: planLimits.maxFilesPerClip,
           fileRetentionDays: planLimits.fileRetentionDays,
           storageUsedMb,
@@ -143,8 +158,10 @@ router.get('/current', authenticateToken, async (req, res) => {
         billingCycle: 'month',
         maxDevices: subscription.max_devices,
         maxClipboardItems: subscription.max_clipboard_items,
-        maxFileSizeMb: subscription.max_file_size_mb,
-        maxStorageMb: subscription.max_storage_mb,
+        // 同上一分支：这两个字段必须走 planLimits（覆盖感知），否则单用户配额覆盖会让
+        // 「上传已放行、界面还显示套餐原值」
+        maxFileSizeMb: mbFromBytes(planLimits.maxFileSizeBytes),
+        maxStorageMb: mbFromBytes(planLimits.maxStorageBytes),
         maxFilesPerClip: planLimits.maxFilesPerClip,
         fileRetentionDays: planLimits.fileRetentionDays,
         storageUsedMb,
