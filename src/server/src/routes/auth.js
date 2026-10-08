@@ -15,6 +15,8 @@ import { EMAILS } from '../../../shared/domains.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
+// 088 人机验证：发码前门控（默认未启用 ⇒ 零行为变化）
+import { captchaGate } from '../utils/turnstile.js';
 import { logger } from '../utils/logger.js';
 import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
 import { CHALLENGE_TOKEN_TYPE } from '../middleware/auth.js';
@@ -238,7 +240,7 @@ async function mergeDuplicateAccounts(canonicalUserId, canonicalUser) {
 // A4：固定码 888888 已移除——生产环境任何人输 888888 可登录任意手机号。
 // 与 auth-verify.js 的 /send-code 保持一致行为：生产环境随机码 + 真实短信下发，
 // 未配置短信返回 503 而非静默降级为固定码。
-router.post('/send-code', sendCodeLimiter, async (req, res) => {
+router.post('/send-code', sendCodeLimiter, captchaGate, async (req, res) => {
   try {
     const { phone } = req.body;
 

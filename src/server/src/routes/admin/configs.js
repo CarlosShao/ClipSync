@@ -57,6 +57,8 @@ import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js'
 import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode, querySmsDelivery } from '../../utils/sms.js';
 // 错误追踪（迁移 086/087）：保存 sentry_dsn / sentry_api_token 后失效缓存并即时重初始化
 import { invalidateSentryConfigCache, initSentry, fetchSentryIssues, invalidateSentryApiTokenCache } from '../../utils/sentry.js';
+// 人机验证（迁移 088）：保存 turnstile_* 后失效缓存（下次发码即用新配置）
+import { invalidateTurnstileConfigCache } from '../../utils/turnstile.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
 import { isValidPhone } from '../../validation/validator.js';
 
@@ -291,6 +293,26 @@ const CONFIG_CATALOG = [
       '加密存储；用于在管理台读取错误列表。Sentry → Settings → Auth Tokens 生成，scope 需 project:read + event:read；留空则「最近错误」列表不可用（不影响错误上报）',
     consumer: 'src/server/src/utils/sentry.js（getSentryApiToken / fetchSentryIssues；GET /admin/configs/sentry/issues）',
   },
+  // —— 人机验证（088，Cloudflare Turnstile）：默认关，填 key 不生效、开开关才生效 ——
+  {
+    key: 'turnstile_site_key',
+    name: 'Turnstile Site Key',
+    description: 'Cloudflare Turnstile 的 Site Key（公开值，前端渲染人机验证组件用）',
+    consumer: 'src/server/src/utils/turnstile.js（getTurnstileConfig 读取；前端 widget 使用）',
+  },
+  {
+    key: 'turnstile_secret_key',
+    name: 'Turnstile Secret Key',
+    description: '加密存储；服务端校验用。⚠️ 只填 key 不生效——还需打开「人机验证开关」',
+    consumer: 'src/server/src/utils/turnstile.js（verifyTurnstile 调 Cloudflare siteverify）',
+  },
+  {
+    key: 'turnstile_enabled',
+    name: '人机验证开关',
+    description:
+      '⚠️ 打开前必须确认桌面端/移动端也已挂上 widget：发码接口是各端共用的，打开后没带 token 的客户端将无法发码登录。密钥不全时按未启用处理',
+    consumer: 'src/server/src/utils/turnstile.js（gateCaptcha；routes/auth-verify.js / auth.js 发码前门控）',
+  },
   // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
   {
     key: 'release_download_base_url',
@@ -382,7 +404,8 @@ function mapConfigRow(meta, row) {
     meta.key === 'smtp_pass' ||
     meta.key === 'sms_access_key_secret' ||
     meta.key === 'ai_search_api_key_encrypted' ||
-    meta.key === 'sentry_api_token'
+    meta.key === 'sentry_api_token' ||
+    meta.key === 'turnstile_secret_key'
   ) {
     value = value ? '已配置' : '未配置';
   }
@@ -503,7 +526,8 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       key === 'smtp_pass' ||
       key === 'sms_access_key_secret' ||
       key === 'ai_search_api_key_encrypted' ||
-      key === 'sentry_api_token'
+      key === 'sentry_api_token' ||
+      key === 'turnstile_secret_key'
         ? encryptField(valueStr)
         : valueStr;
 
@@ -561,10 +585,18 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       invalidateSentryApiTokenCache();
     }
 
+    // 088：人机验证三个键写库后失效缓存（下次发码即用新配置；开关默认 false 时零影响）
+    if (key.startsWith('turnstile_')) {
+      invalidateTurnstileConfigCache();
+    }
+
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
     // smtp_pass / sms_access_key_secret 不落明文——审计流水常驻库中，只记录「已更新」占位符）
     const auditValue =
-      key === 'smtp_pass' || key === 'sms_access_key_secret' || key === 'sentry_api_token'
+      key === 'smtp_pass' ||
+      key === 'sms_access_key_secret' ||
+      key === 'sentry_api_token' ||
+      key === 'turnstile_secret_key'
         ? '***'
         : valueStr;
     await logAuditEvent({

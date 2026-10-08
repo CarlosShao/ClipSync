@@ -135,6 +135,10 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'sentry_dsn',
       // 087：错误列表集成用的 API Token（加密落库），utils/sentry.js 消费
       'sentry_api_token',
+      // 088：人机验证（Turnstile）——site/secret/开关，utils/turnstile.js 消费
+      'turnstile_site_key',
+      'turnstile_secret_key',
+      'turnstile_enabled',
       // 067（GH-01）：更新包下载地址来源，routes/app.js 经 releaseArtifacts.js 消费
       'release_download_base_url',
       // 069（D1）：对象存储控制台地址，admin/ops.js probeObjectStorage 消费

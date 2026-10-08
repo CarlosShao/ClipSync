@@ -17,6 +17,8 @@ import {
   postOpsCleanup,
 } from '@/api/ops';
 import { ALIPAY_BROKEN_TITLE, ALIPAY_OK_TITLE, alipayProblemList } from './alipayStatus';
+// 087：最近错误（Sentry）——数据表，归运维监控（配置在「系统设置 → 错误追踪」）
+import { getSentryIssues } from '@/api/configs';
 import { ApiError } from '@/api/client';
 import { queryKeys } from '@/queryKeys';
 import { hasPerm } from '@/utils/permissions';
@@ -277,6 +279,17 @@ export default function OpsPage() {
     queryKey: queryKeys.opsStorage(),
     queryFn: getOpsStorage,
     refetchInterval: 60_000,
+  });
+
+  // ── 087 最近错误（Sentry）：只读数据表，60s 轮询 ──
+  // 为什么不放在「系统设置」：那是**配置**（DSN / API Token）的地方；错误列表是**运行数据**，
+  // 与活跃告警/慢查询/备份同属运维监控（owner 2026-10-08 指出，已搬过来）。
+  // retry:false：缺凭证是配置问题，重试无意义；错误卡片如实说明"缺什么"，不显示空表假装没有错误。
+  const sentryIssuesQuery = useQuery({
+    queryKey: ['sentry-issues'],
+    queryFn: () => getSentryIssues({ limit: 20 }),
+    refetchInterval: 60_000,
+    retry: false,
   });
 
   /**
@@ -711,6 +724,78 @@ export default function OpsPage() {
                 dataSource={alertsData.items}
                 pagination={false}
                 locale={{ emptyText: '当前无活跃告警' }}
+              />
+            )}
+          </Card>
+
+          {/* 087：最近错误（Sentry）—— 只读数据表。
+              配置入口在「系统设置 → 错误追踪」（DSN + API Token）；缺凭证时如实说明缺什么。
+              owner 2026-10-08 反馈："这玩意就是个数据表格，不该在系统设置里" ⇒ 搬到运维监控。 */}
+          <Card
+            size="small"
+            title="最近错误（Sentry）"
+            className={styles.spanAll}
+            extra={
+              <Button
+                size="small"
+                loading={sentryIssuesQuery.isFetching}
+                onClick={() => void sentryIssuesQuery.refetch()}
+              >
+                刷新
+              </Button>
+            }
+          >
+            {sentryIssuesQuery.isError ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  (sentryIssuesQuery.error as Error)?.message ||
+                  '读取失败：请检查 系统设置 → 错误追踪 的 Sentry DSN 与 API Token'
+                }
+              />
+            ) : sentryIssuesQuery.isLoading ? (
+              <Spin size="small" />
+            ) : (sentryIssuesQuery.data?.records?.length ?? 0) === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有未解决的错误" />
+            ) : (
+              <Table
+                size="small"
+                rowKey={(r) => r.id || r.shortId || String(r.title)}
+                pagination={false}
+                dataSource={sentryIssuesQuery.data?.records ?? []}
+                columns={[
+                  {
+                    title: '级别',
+                    dataIndex: 'level',
+                    width: 92,
+                    render: (v: string | null) => (
+                      <Tag color={v === 'error' || v === 'fatal' ? 'error' : v === 'warning' ? 'warning' : 'default'}>
+                        {v || '—'}
+                      </Tag>
+                    ),
+                  },
+                  { title: '次数', dataIndex: 'count', width: 72 },
+                  {
+                    title: '最近发生',
+                    dataIndex: 'lastSeen',
+                    width: 170,
+                    render: (v: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '—'),
+                  },
+                  {
+                    title: '错误',
+                    dataIndex: 'title',
+                    ellipsis: true,
+                    render: (v: string | null, r) =>
+                      r.permalink ? (
+                        <a href={r.permalink} target="_blank" rel="noreferrer">
+                          {v}
+                        </a>
+                      ) : (
+                        v
+                      ),
+                  },
+                  { title: '位置', dataIndex: 'culprit', ellipsis: true },
+                ]}
               />
             )}
           </Card>

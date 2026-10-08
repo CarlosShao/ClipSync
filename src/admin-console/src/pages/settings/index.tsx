@@ -28,7 +28,6 @@ import {
   sendAnnouncement,
   testSms,
   querySmsDelivery,
-  getSentryIssues,
   withdrawAnnouncement,
   type SmsDeliveryResult,
 } from '@/api/configs';
@@ -386,15 +385,6 @@ export default function SettingsPage() {
   const [smsDeliveryData, setSmsDeliveryData] = useState<SmsDeliveryResult | null>(null);
   const [smsDeliveryForm] = Form.useForm<{ phone: string; date?: string }>();
 
-  // 087：Sentry 错误列表（需 sentry_api_token —— DSN 只够上报）。
-  // retry:false：缺凭证时服务端给 4090 + 可执行提示，重试无意义。
-  const sentryIssuesQuery = useQuery({
-    queryKey: ['sentry-issues'],
-    queryFn: () => getSentryIssues({ limit: 20 }),
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
-
   const loadSmsDelivery = async (values: { phone: string; date?: string }) => {
     setSmsDeliveryLoading(true);
     try {
@@ -485,6 +475,12 @@ export default function SettingsPage() {
       title: '错误追踪',
       keys: ['sentry_dsn', 'sentry_api_token'],
     },
+    // 088：人机验证（Cloudflare Turnstile）**独立成卡** —— 它是安全门控，与"运维 URL 参数"不是一回事；
+    // 开关默认关（打开前必须确认桌面端/移动端也挂上 widget，否则客户端发码会被拦）
+    {
+      title: '人机验证（CAPTCHA）',
+      keys: ['turnstile_site_key', 'turnstile_secret_key', 'turnstile_enabled'],
+    },
     // 短信验证码（068/A4）：独立成卡——它是完整的发码链路配置（服务商 + 凭据 + 签名 + 模板），
     // 与邮件通道卡对等的独立外部服务，不应混入运维兜底
     {
@@ -510,7 +506,8 @@ export default function SettingsPage() {
         config.key === 'smtp_pass' ||
         config.key === 'sms_access_key_secret' ||
         config.key === 'ai_search_api_key_encrypted' ||
-        config.key === 'sentry_api_token'
+        config.key === 'sentry_api_token' ||
+        config.key === 'turnstile_secret_key'
       ) {
         // 服务端脱敏回显（已配置/未配置）不回填输入框：留空 = 保持不变，避免把脱敏串当新密码提交
         // （sms_access_key_secret 与 smtp_pass 同为加密落库 + 脱敏回显键，068/A4；搜索 key 同口径）
@@ -610,6 +607,28 @@ export default function SettingsPage() {
         />
       );
     }
+    if (key === 'turnstile_secret_key') {
+      // 088：Turnstile Secret Key（加密落库、脱敏回显）——同口径
+      return (
+        <Input.Password
+          style={{ maxWidth: 320 }}
+          placeholder="留空保持不变（Cloudflare Turnstile → Secret Key）"
+          autoComplete="new-password"
+        />
+      );
+    }
+    if (key === 'turnstile_enabled') {
+      // 088：总开关。用显式下拉而不是裸文本框，避免填出 "True"/"1" 这种不可解析值
+      return (
+        <Select
+          style={{ maxWidth: 260 }}
+          options={[
+            { value: 'false', label: '关闭（默认，所有客户端不受影响）' },
+            { value: 'true', label: '开启（⚠️ 客户端未挂 widget 时将无法发码登录）' },
+          ]}
+        />
+      );
+    }
     if (key === 'log_level') {
       return <Select style={{ maxWidth: 260 }} options={LOG_LEVEL_OPTIONS} />;
     }
@@ -700,7 +719,8 @@ export default function SettingsPage() {
         config.key === 'smtp_pass' ||
         config.key === 'sms_access_key_secret' ||
         config.key === 'ai_search_api_key_encrypted' ||
-        config.key === 'sentry_api_token'
+        config.key === 'sentry_api_token' ||
+        config.key === 'turnstile_secret_key'
           ? `${config.description ?? ''}（当前：${config.value}）`
           : config.description
       }
@@ -1114,76 +1134,6 @@ export default function SettingsPage() {
               </Card>
             );
           })}
-          {/* 087：错误追踪 —— **最近错误列表**（在后台内看，不用切 sentry.io）。
-              数据走 Sentry API（需 `sentry_api_token`；DSN 只够上报）。
-              缺凭证时服务端返回 4090 + 可执行提示，这里如实显示，不显示空表假装"没有错误"。 */}
-          <Card
-            title="最近错误（Sentry）"
-            extra={
-              <Button
-                size="small"
-                loading={sentryIssuesQuery.isFetching}
-                onClick={() => void sentryIssuesQuery.refetch()}
-              >
-                刷新
-              </Button>
-            }
-          >
-            {sentryIssuesQuery.isError ? (
-              <Alert
-                type="warning"
-                showIcon
-                message="读取错误列表失败"
-                description={
-                  (sentryIssuesQuery.error as Error)?.message ||
-                  '请检查「错误追踪」卡里的 Sentry DSN 与 Sentry API Token'
-                }
-              />
-            ) : (sentryIssuesQuery.data?.records?.length ?? 0) === 0 && !sentryIssuesQuery.isLoading ? (
-              <Alert type="success" showIcon message="当前没有未解决的错误" />
-            ) : (
-              <Table
-                size="small"
-                rowKey={(r) => r.id || r.shortId || String(r.title)}
-                loading={sentryIssuesQuery.isLoading}
-                pagination={false}
-                dataSource={sentryIssuesQuery.data?.records ?? []}
-                columns={[
-                  {
-                    title: '级别',
-                    dataIndex: 'level',
-                    width: 92,
-                    render: (v: string | null) => (
-                      <Tag color={v === 'error' || v === 'fatal' ? 'error' : v === 'warning' ? 'warning' : 'default'}>
-                        {v || '—'}
-                      </Tag>
-                    ),
-                  },
-                  { title: '次数', dataIndex: 'count', width: 72 },
-                  {
-                    title: '最近发生',
-                    dataIndex: 'lastSeen',
-                    width: 170,
-                    render: (v: string | null) => (v ? new Date(v).toLocaleString() : '—'),
-                  },
-                  {
-                    title: '错误',
-                    dataIndex: 'title',
-                    ellipsis: true,
-                    render: (v: string | null, r) =>
-                      r.permalink ? (
-                        <a href={r.permalink} target="_blank" rel="noreferrer">
-                          {v}
-                        </a>
-                      ) : (
-                        v
-                      ),
-                  },
-                  { title: '位置', dataIndex: 'culprit', ellipsis: true },
-                ]}
-              />
-            )}
-          </Card>
           {/* 第三方登录预留口（用户要求防遗忘）：仅占位声明，不做任何配置项——
               OAuth 功能立项前配置不会生效，避免出现"填了没反应"的空头支票。
               功能立项后本卡替换为 GitHub/微信/Apple 的 client_id/密钥/回调域配置。 */}

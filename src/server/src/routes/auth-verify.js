@@ -8,6 +8,8 @@ import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middle
 import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
+// 088 人机验证：发码前门控（默认未启用 ⇒ 零行为变化；见 utils/turnstile.js 顶部说明）
+import { captchaGate } from '../utils/turnstile.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
@@ -47,7 +49,7 @@ async function createSessionAndGenerateToken(user, req) {
 // 是文档 external-dependency-audit 第 1 节「脏状态」第 1 条。
 // 现行为：生产环境强制随机码 + 真实短信下发；未配置短信时返回 503 明确报错，
 // 绝不静默降级为固定码（那等于保留后门）。非生产环境允许固定码便于本地开发。
-router.post('/send-code', sendCodeLimiter, async (req, res) => {
+router.post('/send-code', sendCodeLimiter, captchaGate, async (req, res) => {
   try {
     const { phone } = req.body;
 
@@ -343,7 +345,7 @@ router.post('/verify-email-code', loginFailedLimiter, async (req, res) => {
 });
 
 // 发送 PIN 重置验证码（手机号）
-router.post('/send-reset-pin-code', sendCodeLimiter, async (req, res) => {
+router.post('/send-reset-pin-code', sendCodeLimiter, captchaGate, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Phone number is required' });
