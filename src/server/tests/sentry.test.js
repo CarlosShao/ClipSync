@@ -152,11 +152,15 @@ describe('scrubEvent：PII 一律剔除', () => {
 });
 
 describe('未配置时：captureError 必须是静默 no-op', () => {
-  it('返回 false、不抛错、isSentryEnabled 为 false', () => {
+  it('返回 false、不抛错、惰性 init 后仍为未启用', async () => {
+    queryMock.mockResolvedValue({ rows: [] }); // 库里没配 DSN
     expect(isSentryEnabled()).toBe(false);
     expect(() => captureError(new Error('x'), { path: '/a' })).not.toThrow();
     expect(captureError(new Error('x'))).toBe(false);
     expect(captureError('字符串原因')).toBe(false);
     expect(captureError(null)).toBe(false);
+    // captureError 会顺手发起一次惰性 init：等它跑完，确认不会因为没配置而变成"已启用"
+    await new Promise((r) => setTimeout(r, 30));
+    expect(isSentryEnabled()).toBe(false);
   });
 });
