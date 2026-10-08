@@ -1193,6 +1193,25 @@ export const mockConfigs: SystemConfig[] = [
     consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
     updatedAt: '2026-09-15 10:00',
   },
+  // —— 086/087：错误追踪（DSN + 读列表用的 API Token）——
+  {
+    key: 'sentry_dsn',
+    name: 'Sentry DSN',
+    value: '',
+    description:
+      '留空=不启用错误追踪。填 https://<key>@o<org>.ingest.sentry.io/<project> 后，服务端未捕获异常与 5xx 会上报；已强制关闭 PII 采集',
+    consumer: 'src/server/src/utils/sentry.js（getSentryDsn 读取）',
+    updatedAt: '2026-10-07 10:00',
+  },
+  {
+    key: 'sentry_api_token',
+    name: 'Sentry API Token',
+    value: '未配置',
+    description:
+      '加密存储；用于在管理台读取错误列表。Sentry → Settings → Auth Tokens 生成，scope 需 project:read + event:read',
+    consumer: 'src/server/src/utils/sentry.js（getSentryApiToken / fetchSentryIssues）',
+    updatedAt: '2026-10-08 10:00',
+  },
   // —— 069（D1）：对象存储控制台地址 ——
   {
     key: 'minio_console_url',

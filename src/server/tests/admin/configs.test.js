@@ -133,6 +133,8 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'sms_template_code',
       // 086：错误追踪 DSN（留空=不启用），utils/sentry.js 消费
       'sentry_dsn',
+      // 087：错误列表集成用的 API Token（加密落库），utils/sentry.js 消费
+      'sentry_api_token',
       // 067（GH-01）：更新包下载地址来源，routes/app.js 经 releaseArtifacts.js 消费
       'release_download_base_url',
       // 069（D1）：对象存储控制台地址，admin/ops.js probeObjectStorage 消费

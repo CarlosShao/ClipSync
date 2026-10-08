@@ -55,8 +55,8 @@ import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js'
 // A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）；
 // 另引入发送能力，供「发送测试短信」接口真实下发（不受 NODE_ENV 限制）
 import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode, querySmsDelivery } from '../../utils/sms.js';
-// 错误追踪（迁移 086）：保存 sentry_dsn 后失效缓存并即时重初始化（填完即生效，不必重启容器）
-import { invalidateSentryConfigCache, initSentry } from '../../utils/sentry.js';
+// 错误追踪（迁移 086/087）：保存 sentry_dsn / sentry_api_token 后失效缓存并即时重初始化
+import { invalidateSentryConfigCache, initSentry, fetchSentryIssues, invalidateSentryApiTokenCache } from '../../utils/sentry.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
 import { isValidPhone } from '../../validation/validator.js';
 
@@ -276,13 +276,20 @@ const CONFIG_CATALOG = [
     description: '验证码模板 ID（阿里云 SMS_xxxx / 腾讯云模板 ID），模板变量为 code',
     consumer: 'src/server/src/utils/sms.js（sendViaAliyun / sendViaTencent）',
   },
-  // —— 错误追踪（086）：未填 = 不启用（no-op），填了即生效且不需重启 ——
+  // —— 错误追踪（086/087）：未填 = 不启用（no-op），填了即生效且不需重启 ——
   {
     key: 'sentry_dsn',
     name: 'Sentry DSN',
     description:
       '留空=不启用错误追踪。填 https://<key>@o<org>.ingest.sentry.io/<project> 后，服务端未捕获异常与 5xx 会上报；已强制关闭 PII 采集（不送请求体/Cookie/手机号邮箱/剪贴板内容）。也可填自托管 GlitchTip 的 DSN',
-    consumer: 'src/server/src/utils/sentry.js（getSentryDsn 读取；index.js 启动期 init + 5xx 与未捕获异常 captureError）',
+    consumer: 'src/server/src/utils/sentry.js（getSentryDsn 读取；index.js 5xx 与未捕获异常 captureError）',
+  },
+  {
+    key: 'sentry_api_token',
+    name: 'Sentry API Token',
+    description:
+      '加密存储；用于在管理台读取错误列表。Sentry → Settings → Auth Tokens 生成，scope 需 project:read + event:read；留空则「最近错误」列表不可用（不影响错误上报）',
+    consumer: 'src/server/src/utils/sentry.js（getSentryApiToken / fetchSentryIssues；GET /admin/configs/sentry/issues）',
   },
   // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
   {
@@ -371,7 +378,12 @@ function mapConfigRow(meta, row) {
   // CO-30：smtp_pass 加密存储，任何读取路径（GET 列表 / PATCH 回显）只暴露配置状态，不回传密文
   // A4：sms_access_key_secret 同口径（短信 AccessKeySecret 亦为密文）
   // 搜索全局 Key 同口径（加密存储，读取只暴露状态）
-  if (meta.key === 'smtp_pass' || meta.key === 'sms_access_key_secret' || meta.key === 'ai_search_api_key_encrypted') {
+  if (
+    meta.key === 'smtp_pass' ||
+    meta.key === 'sms_access_key_secret' ||
+    meta.key === 'ai_search_api_key_encrypted' ||
+    meta.key === 'sentry_api_token'
+  ) {
     value = value ? '已配置' : '未配置';
   }
   return {
@@ -488,7 +500,10 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     // A4：sms_access_key_secret 同口径加密（sms.js 发送前 decryptField 解密）
     // 搜索全局 Key 同口径加密（web_search 执行前 decrypt 解密；与 aiSettings 用户 key 同加密体系）
     const valueToStore =
-      key === 'smtp_pass' || key === 'sms_access_key_secret' || key === 'ai_search_api_key_encrypted'
+      key === 'smtp_pass' ||
+      key === 'sms_access_key_secret' ||
+      key === 'ai_search_api_key_encrypted' ||
+      key === 'sentry_api_token'
         ? encryptField(valueStr)
         : valueStr;
 
@@ -541,10 +556,17 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       void initSentry();
     }
 
+    // 087：API Token 写库后失效缓存（下次拉错误列表直连库读取）
+    if (key === 'sentry_api_token') {
+      invalidateSentryApiTokenCache();
+    }
+
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
     // smtp_pass / sms_access_key_secret 不落明文——审计流水常驻库中，只记录「已更新」占位符）
     const auditValue =
-      key === 'smtp_pass' || key === 'sms_access_key_secret' ? '***' : valueStr;
+      key === 'smtp_pass' || key === 'sms_access_key_secret' || key === 'sentry_api_token'
+        ? '***'
+        : valueStr;
     await logAuditEvent({
       userId: req.user?.userId,
       action: 'admin.config.update',
@@ -731,6 +753,53 @@ router.get('/sms/delivery', requirePerm('admin.configs.manage'), async (req, res
   } catch (err) {
     logger.error('[admin/configs] sms delivery query failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '查询投递状态失败' });
+  }
+});
+
+/**
+ * GET /api/admin/configs/sentry/issues?limit=&query=
+ * 在后台内读 Sentry 的未解决 issue 列表（迁移 087 的 `sentry_api_token`）。
+ *
+ * 为什么需要：DSN 是**只写**凭据，要看错误必须登 sentry.io —— 运营排查线上问题时来回切。
+ * 本接口用 API Token 拉列表，并透出 `permalink`（点一下直达 Sentry 详情）。
+ * 权限：`admin.configs.view`（只读）。凭证缺失 / 自托管形状不支持时给**可执行**提示，不假装能查。
+ */
+router.get('/sentry/issues', requirePerm('admin.configs.view'), async (req, res) => {
+  try {
+    const limit = Number(req.query?.limit) || 20;
+    const query =
+      typeof req.query?.query === 'string' && req.query.query.trim()
+        ? req.query.query.trim()
+        : 'is:unresolved';
+
+    const result = await fetchSentryIssues({ limit, query });
+    if (!result.ok) {
+      const message =
+        result.reason === 'not_configured'
+          ? '未配置 Sentry DSN，错误追踪未启用'
+          : result.reason === 'no_api_token'
+            ? '未配置 Sentry API Token —— 仅有 DSN 只能上报，读取错误列表还需要 Token'
+            : result.reason === 'unsupported_dsn'
+              ? result.detail || '当前 DSN 形状不支持在后台内查询'
+              : result.reason === 'token_rejected'
+                ? 'Sentry API Token 被拒绝：检查是否过期、scope 是否含 project:read + event:read'
+                : `读取错误列表失败：${result.detail || result.reason}`;
+      return res.status(409).json({ code: 4090, message });
+    }
+
+    return res.json({
+      code: 0,
+      data: {
+        orgId: result.orgId,
+        projectId: result.projectId,
+        query,
+        records: result.records,
+      },
+      message: '已获取错误列表',
+    });
+  } catch (err) {
+    logger.error('[admin/configs] sentry issues failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '读取错误列表失败' });
   }
 });
 

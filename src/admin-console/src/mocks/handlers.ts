@@ -1327,6 +1327,35 @@ const configHandlers = [
       ],
     });
   }),
+  // 087：Sentry 错误列表（管理台内看错误，不用切 sentry.io）
+  // 未配 sentry_api_token ⇒ 按真实服务端语义返回 4090 + 可执行提示（不显示空表假装"没有错误"）
+  http.get('/api/admin/configs/sentry/issues', async () => {
+    await delay(200);
+    const token = mockConfigs.find((c) => c.key === 'sentry_api_token')?.value ?? '未配置';
+    if (!token || token === '未配置') {
+      return fail(409, 4090, '未配置 Sentry API Token —— 仅有 DSN 只能上报，读取错误列表还需要 Token');
+    }
+    return ok({
+      orgId: '4507123456',
+      projectId: '4507123456',
+      query: 'is:unresolved',
+      records: [
+        {
+          id: '1',
+          shortId: 'CLIPSYNC-1',
+          title: 'TypeError: cannot read properties of undefined (reading id)',
+          culprit: 'src/routes/orders.js in handler',
+          level: 'error',
+          count: 7,
+          userCount: 3,
+          firstSeen: '2026-10-07T10:00:00Z',
+          lastSeen: '2026-10-07T14:00:00Z',
+          permalink: 'https://sentry.io/organizations/acme/issues/1/',
+          status: 'unresolved',
+        },
+      ],
+    });
+  }),
 ];
 
 // ─────────────── AN-02：客户端策略下发 ───────────────

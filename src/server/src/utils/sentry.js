@@ -1,5 +1,6 @@
 import pool from '../db/pool.js';
 import { logger } from './logger.js';
+import { decryptField } from './encryption.js';
 
 /**
  * 错误追踪（Sentry）—— **运行时可配置，未配置则全程 no-op**。
@@ -176,9 +177,24 @@ export async function initSentry() {
   }
 }
 
-/** 上报异常。未启用 / SDK 出错时一律静默返回 false，绝不抛错。 */
+/** 是否已发起过惰性初始化（避免每次上报都重复 import） */
+let lazyInitStarted = false;/**
+ * 上报异常。未启用 / SDK 出错时一律静默返回 false，绝不抛错。
+ *
+ * 惰性初始化：若尚未启用，这里**顺手发起一次 `initSentry()`**（不 await）。这样调用方
+ * 只需要在错误现场调一下本函数，无需关心"启动期有没有 init 过"——生产 worktree 与分支
+ * 的启动块结构不一致时，这个设计能避免"接线漏了就不生效"。
+ * 代价：配置好 DSN 后**第一条**错误可能在 init 完成前丢失（第二条起正常），可接受。
+ */
 export function captureError(err, context) {
-  if (!sdk) return false;
+  if (!sdk) {
+    if (!lazyInitStarted) {
+      lazyInitStarted = true;
+      // fire-and-forget：失败只 warn（initSentry 内部已处理）
+      void initSentry().catch(() => {});
+    }
+    return false;
+  }
   try {
     const e = err instanceof Error ? err : new Error(String(err));
     sdk.captureException(e, context && typeof context === 'object' ? { extra: context } : undefined);
@@ -200,4 +216,142 @@ export async function flushSentry(timeoutMs = 2000) {
 
 export function isSentryEnabled() {
   return Boolean(sdk);
+}
+
+// ============================================================================
+// 管理台集成：读**错误列表**（迁移 087 的 sentry_api_token）
+//
+// 为什么要单独一个 token：DSN 是**只写**凭据（Sentry 设计如此，只够上报）；
+// 读 issue 必须用 API Token（scope `project:read` + `event:read`）。
+// 运营只需填两个值：`sentry_dsn`（机构/项目从 DSN 推导）+ `sentry_api_token`。
+// ============================================================================
+
+const SENTRY_API_KEYS = ['sentry_api_token'];
+let apiTokenCache = { token: undefined, at: 0 };
+
+/** 读 API Token（加密落库，读取解密；5s 缓存，管理台保存即失效） */
+export async function getSentryApiToken() {
+  const now = Date.now();
+  if (apiTokenCache.token !== undefined && now - apiTokenCache.at < SENTRY_TTL_MS) {
+    return apiTokenCache.token;
+  }
+  let raw = '';
+  try {
+    const { rows } = await pool.query(
+      'SELECT config_key, config_value FROM system_configs WHERE config_key = ANY($1)',
+      [SENTRY_API_KEYS]
+    );
+    for (const r of rows) {
+      if (r.config_key !== 'sentry_api_token') continue;
+      let v = r.config_value;
+      if (v && typeof v === 'object') v = v.value ?? '';
+      raw = toTrimmedString(v);
+    }
+  } catch (err) {
+    logger.warn('[sentry] 读取 sentry_api_token 失败', { error: err.message });
+    return apiTokenCache.token === undefined ? '' : apiTokenCache.token;
+  }
+  // 与 smtp_pass / sms_access_key_secret 同口径：密文落库 → 读取解密
+  const token = raw ? toTrimmedString(decryptField(raw)) : '';
+  apiTokenCache = { token, at: now };
+  return token;
+}
+
+export function invalidateSentryApiTokenCache() {
+  apiTokenCache = { token: undefined, at: 0 };
+}
+
+/**
+ * 从 sentry.io 的 DSN 推导 `{orgId, projectId, apiBase}`。
+ *
+ * DSN 形如 `https://<key>@o4507123456.ingest.sentry.io/4507123456`：
+ * 机构 id 就是 `o` 后面那段，项目 id 是末段 ⇒ **不必再让运营填 org/project**。
+ * 自托管（GlitchTip 等）的 DSN 形状不同 ⇒ 返回 null，由调用方明确报"不支持"，
+ * 不猜、不假装能查。
+ */
+export function parseSentryDsn(dsn) {
+  const m = toTrimmedString(dsn).match(/^(https?):\/\/[^@/\s]+@o(\d+)\.ingest\.([^/\s]+)\/(\d+)/);
+  if (!m) return null;
+  return { scheme: m[1], orgId: m[2], ingestHost: m[3], projectId: m[4], apiBase: `${m[1]}://sentry.io` };
+}
+
+/** 小工具：带超时的 fetch（Sentry 挂了也不能把管理台拖死） */
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 拉取未解决 issue 列表（管理台「最近错误」卡）。
+ *
+ * @returns {Promise<{ok:boolean, reason?:string, detail?:string, records?:Array}>}
+ *   records 每项：{ id, shortId, title, culprit, level, count, userCount,
+ *                  firstSeen, lastSeen, permalink, status }
+ *   permalink 直接用于"点进去看详情"（省得我们自己拼 URL）。
+ */
+export async function fetchSentryIssues({ limit = 20, query = 'is:unresolved' } = {}) {
+  const dsn = await getSentryDsn();
+  if (!dsn) return { ok: false, reason: 'not_configured' };
+  const token = await getSentryApiToken();
+  if (!token) return { ok: false, reason: 'no_api_token' };
+  const parsed = parseSentryDsn(dsn);
+  if (!parsed) {
+    return {
+      ok: false,
+      reason: 'unsupported_dsn',
+      detail: '当前 DSN 不是 sentry.io 形状（自托管需另配 org/project），暂不支持在后台内查询',
+    };
+  }
+
+  const n = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const url =
+    `${parsed.apiBase}/api/0/organizations/${parsed.orgId}/issues/` +
+    `?project=${parsed.projectId}&query=${encodeURIComponent(query)}&limit=${n}&sort=date`;
+
+  try {
+    const resp = await fetchWithTimeout(
+      url,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
+      8000
+    );
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      return {
+        ok: false,
+        reason: resp.status === 401 || resp.status === 403 ? 'token_rejected' : 'api_error',
+        detail: `HTTP ${resp.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
+      };
+    }
+    const body = await resp.json();
+    const list = Array.isArray(body) ? body : [];
+    return {
+      ok: true,
+      orgId: parsed.orgId,
+      projectId: parsed.projectId,
+      records: list.map((it) => ({
+        id: it?.id ?? null,
+        shortId: it?.shortId ?? null,
+        title: it?.title ?? null,
+        culprit: it?.culprit ?? null,
+        level: it?.level ?? null,
+        count: Number(it?.count ?? 0),
+        userCount: Number(it?.userCount ?? 0),
+        firstSeen: it?.firstSeen ?? null,
+        lastSeen: it?.lastSeen ?? null,
+        permalink: it?.permalink ?? null,
+        status: it?.status ?? null,
+      })),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err?.name === 'AbortError' ? 'timeout' : 'network_error',
+      detail: err?.message || String(err),
+    };
+  }
 }

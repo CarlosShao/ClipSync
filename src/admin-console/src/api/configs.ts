@@ -97,3 +97,43 @@ export function querySmsDelivery(phone: string, date?: string): Promise<SmsDeliv
   if (date) qs.set('date', date);
   return apiGet<SmsDeliveryResult>(`/admin/configs/sms/delivery?${qs.toString()}`);
 }
+
+/** Sentry issue 列表里的一条（服务端已裁剪成展示所需字段） */
+export interface SentryIssue {
+  id: string | null;
+  /** 人读编号，如 CLIPSYNC-1 */
+  shortId: string | null;
+  title: string | null;
+  /** 出错位置（文件/函数） */
+  culprit: string | null;
+  level: string | null;
+  count: number;
+  userCount: number;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  /** Sentry 详情页链接（服务端直接透出，省得前端拼 URL） */
+  permalink: string | null;
+  status: string | null;
+}
+
+export interface SentryIssuesResult {
+  orgId: string;
+  projectId: string;
+  query: string;
+  records: SentryIssue[];
+}
+
+/**
+ * 在后台内读 Sentry 的 issue 列表（迁移 087）。
+ *
+ * 需要 `sentry_api_token`：**DSN 是只写凭据**（只够上报），读列表必须用 API Token
+ * （Sentry → Settings → Auth Tokens，scope `project:read` + `event:read`）。
+ * 缺凭证时服务端返回 4090 + 可执行提示，这里不兜底、如实抛出。
+ */
+export function getSentryIssues(params?: { limit?: number; query?: string }): Promise<SentryIssuesResult> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.query) qs.set('query', params.query);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiGet<SentryIssuesResult>(`/admin/configs/sentry/issues${suffix}`);
+}

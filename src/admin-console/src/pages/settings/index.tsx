@@ -28,6 +28,7 @@ import {
   sendAnnouncement,
   testSms,
   querySmsDelivery,
+  getSentryIssues,
   withdrawAnnouncement,
   type SmsDeliveryResult,
 } from '@/api/configs';
@@ -385,6 +386,15 @@ export default function SettingsPage() {
   const [smsDeliveryData, setSmsDeliveryData] = useState<SmsDeliveryResult | null>(null);
   const [smsDeliveryForm] = Form.useForm<{ phone: string; date?: string }>();
 
+  // 087：Sentry 错误列表（需 sentry_api_token —— DSN 只够上报）。
+  // retry:false：缺凭证时服务端给 4090 + 可执行提示，重试无意义。
+  const sentryIssuesQuery = useQuery({
+    queryKey: ['sentry-issues'],
+    queryFn: () => getSentryIssues({ limit: 20 }),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
   const loadSmsDelivery = async (values: { phone: string; date?: string }) => {
     setSmsDeliveryLoading(true);
     try {
@@ -473,7 +483,7 @@ export default function SettingsPage() {
     // 与「运维」卡里的 URL 类参数不是一回事；混进兜底卡会导致"能看不能存"（owner 2026-10-07 反馈）
     {
       title: '错误追踪',
-      keys: ['sentry_dsn'],
+      keys: ['sentry_dsn', 'sentry_api_token'],
     },
     // 短信验证码（068/A4）：独立成卡——它是完整的发码链路配置（服务商 + 凭据 + 签名 + 模板），
     // 与邮件通道卡对等的独立外部服务，不应混入运维兜底
@@ -499,7 +509,8 @@ export default function SettingsPage() {
       if (
         config.key === 'smtp_pass' ||
         config.key === 'sms_access_key_secret' ||
-        config.key === 'ai_search_api_key_encrypted'
+        config.key === 'ai_search_api_key_encrypted' ||
+        config.key === 'sentry_api_token'
       ) {
         // 服务端脱敏回显（已配置/未配置）不回填输入框：留空 = 保持不变，避免把脱敏串当新密码提交
         // （sms_access_key_secret 与 smtp_pass 同为加密落库 + 脱敏回显键，068/A4；搜索 key 同口径）
@@ -584,6 +595,17 @@ export default function SettingsPage() {
         <Input.Password
           style={{ maxWidth: 260 }}
           placeholder="留空保持不变"
+          autoComplete="new-password"
+        />
+      );
+    }
+    if (key === 'sentry_api_token') {
+      // 087：Sentry API Token（加密落库、脱敏回显）——与 smtp_pass 同口径：
+      // 恒空起填、留空 = 保持不变；token 很长且是读凭据，用密码框避免肩窥/截图泄漏
+      return (
+        <Input.Password
+          style={{ maxWidth: 320 }}
+          placeholder="留空保持不变（Sentry → Settings → Auth Tokens）"
           autoComplete="new-password"
         />
       );
@@ -677,7 +699,8 @@ export default function SettingsPage() {
       extra={
         config.key === 'smtp_pass' ||
         config.key === 'sms_access_key_secret' ||
-        config.key === 'ai_search_api_key_encrypted'
+        config.key === 'ai_search_api_key_encrypted' ||
+        config.key === 'sentry_api_token'
           ? `${config.description ?? ''}（当前：${config.value}）`
           : config.description
       }
@@ -1091,6 +1114,76 @@ export default function SettingsPage() {
               </Card>
             );
           })}
+          {/* 087：错误追踪 —— **最近错误列表**（在后台内看，不用切 sentry.io）。
+              数据走 Sentry API（需 `sentry_api_token`；DSN 只够上报）。
+              缺凭证时服务端返回 4090 + 可执行提示，这里如实显示，不显示空表假装"没有错误"。 */}
+          <Card
+            title="最近错误（Sentry）"
+            extra={
+              <Button
+                size="small"
+                loading={sentryIssuesQuery.isFetching}
+                onClick={() => void sentryIssuesQuery.refetch()}
+              >
+                刷新
+              </Button>
+            }
+          >
+            {sentryIssuesQuery.isError ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="读取错误列表失败"
+                description={
+                  (sentryIssuesQuery.error as Error)?.message ||
+                  '请检查「错误追踪」卡里的 Sentry DSN 与 Sentry API Token'
+                }
+              />
+            ) : (sentryIssuesQuery.data?.records?.length ?? 0) === 0 && !sentryIssuesQuery.isLoading ? (
+              <Alert type="success" showIcon message="当前没有未解决的错误" />
+            ) : (
+              <Table
+                size="small"
+                rowKey={(r) => r.id || r.shortId || String(r.title)}
+                loading={sentryIssuesQuery.isLoading}
+                pagination={false}
+                dataSource={sentryIssuesQuery.data?.records ?? []}
+                columns={[
+                  {
+                    title: '级别',
+                    dataIndex: 'level',
+                    width: 92,
+                    render: (v: string | null) => (
+                      <Tag color={v === 'error' || v === 'fatal' ? 'error' : v === 'warning' ? 'warning' : 'default'}>
+                        {v || '—'}
+                      </Tag>
+                    ),
+                  },
+                  { title: '次数', dataIndex: 'count', width: 72 },
+                  {
+                    title: '最近发生',
+                    dataIndex: 'lastSeen',
+                    width: 170,
+                    render: (v: string | null) => (v ? new Date(v).toLocaleString() : '—'),
+                  },
+                  {
+                    title: '错误',
+                    dataIndex: 'title',
+                    ellipsis: true,
+                    render: (v: string | null, r) =>
+                      r.permalink ? (
+                        <a href={r.permalink} target="_blank" rel="noreferrer">
+                          {v}
+                        </a>
+                      ) : (
+                        v
+                      ),
+                  },
+                  { title: '位置', dataIndex: 'culprit', ellipsis: true },
+                ]}
+              />
+            )}
+          </Card>
           {/* 第三方登录预留口（用户要求防遗忘）：仅占位声明，不做任何配置项——
               OAuth 功能立项前配置不会生效，避免出现"填了没反应"的空头支票。
               功能立项后本卡替换为 GitHub/微信/Apple 的 client_id/密钥/回调域配置。 */}

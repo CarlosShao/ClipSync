@@ -744,6 +744,28 @@ describe('GET /api/admin/configs/sms/delivery（短信投递回执）', () => {
   });
 });
 
+describe('GET /api/admin/configs/sentry/issues（087 错误列表）', () => {
+  test('未配 sentry_api_token ⇒ 409/4090 且说明"DSN 只能上报"', async () => {
+    const resp = await get<{ records: unknown[] }>('/api/admin/configs/sentry/issues');
+    expect(resp.status).toBe(409);
+    expect(expectFail(resp).code).toBe(4090);
+    expect(expectFail(resp).message).toContain('只能上报');
+  });
+
+  test('配好 token 后返回 issue 列表（含 permalink）', async () => {
+    await patch('/api/admin/configs/sentry_api_token', { value: 'mock-token' });
+    const resp = await get<{
+      records: { shortId: string; count: number; permalink: string; level: string }[];
+    }>('/api/admin/configs/sentry/issues');
+    expect(resp.status).toBe(200);
+    const data = expectOk(resp).data;
+    expect(data.records[0]?.shortId).toBe('CLIPSYNC-1');
+    expect(data.records[0]?.count).toBe(7);
+    expect(data.records[0]?.level).toBe('error');
+    expect(data.records[0]?.permalink).toContain('sentry.io');
+  });
+});
+
 describe('角色权限写路径（T-A6）', () => {
   test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 31 项目录（RB-06/RB-11 扩充 + 065/AN-04 release 键）', async () => {
     const roles = expectOk(await get<Role[]>('/api/admin/roles')).data;
