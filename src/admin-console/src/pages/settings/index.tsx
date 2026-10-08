@@ -3,6 +3,7 @@ import {
   App as AntdApp,
   Button,
   Card,
+  Divider,
   Form,
   Input,
   InputNumber,
@@ -1145,18 +1146,12 @@ export default function SettingsPage() {
                   </div>
                 }
               >
-                {GROUP_SECTIONS[group.title]?.map((sec) => (
+                {GROUP_SECTIONS[group.title]?.map((sec, idx) => (
                   <div key={sec.label}>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 13,
-                        margin: '4px 0 10px',
-                        color: 'var(--text-2)',
-                      }}
-                    >
-                      {sec.label}
-                    </div>
+                    {/* 主流做法：带标题的分隔线（antd Divider orientation="left"）——
+                        首块不加分隔线，避免卡片标题下多出一条空线 ✗ */}
+                    {idx > 0 ? <Divider orientation="left" orientationMargin={0} /> : null}
+                    <div style={{ fontWeight: 600, fontSize: 14, margin: '0 0 12px' }}>{sec.label}</div>
                     {items.filter((c) => sec.keys.includes(c.key)).map(renderConfigItem)}
                   </div>
                 )) ?? items.map(renderConfigItem)}
