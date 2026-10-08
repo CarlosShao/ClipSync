@@ -64,3 +64,36 @@ export function testSms(
     { phone }
   );
 }
+
+/** 短信投递回执的一条记录。`sendStatus`：**1=等待回执 / 2=发送失败 / 3=发送成功** */
+export interface SmsDeliveryRecord {
+  sendDate: string | null;
+  receiveDate: string | null;
+  sendStatus: number;
+  /** 运营商回执码；失败时才有（如 `PORT_NOT_REGISTERED` = 号码未注册） */
+  errCode: string | null;
+  content: string | null;
+  templateCode: string | null;
+}
+
+export interface SmsDeliveryResult {
+  phone: string;
+  sendDate: string;
+  provider: string;
+  records: SmsDeliveryRecord[];
+}
+
+/**
+ * 查询某号码某天的**投递结果**（离"到底送达没有"最近的一手证据）。
+ *
+ * 为什么需要它：`/sms/test` 返回成功只代表**阿里云受理**；真正的送达结果在运营商回执里。
+ * 2026-10-07 实测：界面显示「发送成功」但手机收不到 —— 回执其实是
+ * `sendStatus:2 / errCode:PORT_NOT_REGISTERED`。没有这个查询，运营会把"受理"当成"送达"。
+ *
+ * @param date YYYYMMDD，缺省 = 北京时间今天
+ */
+export function querySmsDelivery(phone: string, date?: string): Promise<SmsDeliveryResult> {
+  const qs = new URLSearchParams({ phone });
+  if (date) qs.set('date', date);
+  return apiGet<SmsDeliveryResult>(`/admin/configs/sms/delivery?${qs.toString()}`);
+}

@@ -1,4 +1,5 @@
 import {
+  Alert,
   App as AntdApp,
   Button,
   Card,
@@ -8,8 +9,10 @@ import {
   Modal,
   Select,
   Switch,
+  Table,
   Tag,
   Tooltip,
+  Typography,
 } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,7 +27,9 @@ import {
   patchFlag,
   sendAnnouncement,
   testSms,
+  querySmsDelivery,
   withdrawAnnouncement,
+  type SmsDeliveryResult,
 } from '@/api/configs';
 // AN-16：邮件通道管理（多 SMTP 账号 + 按用途路由 + failover，替代原「邮件 (SMTP)」参数卡）
 import {
@@ -364,10 +369,33 @@ export default function SettingsPage() {
   const smsTestMutation = useMutation({
     mutationFn: (phone: string) => testSms(phone),
     onSuccess: (data) => {
-      void message.success(`测试短信已发送（${data.provider ?? '未知通道'}）`);
+      // ⚠️ 措辞刻意不写"已发送成功"：服务端返回的是**阿里云受理**，
+      // 真送达结果在运营商回执里（2026-10-07 实测：这里显示成功、手机收不到，
+      // 回执其实是 PORT_NOT_REGISTERED）。指引去查回执，别把"受理"读成"送达"。
+      void message.success(
+        `已提交运营商（requestId ${data.requestId ?? '未知'}）—— 是否真送达请点「查询投递状态」核对回执`
+      );
       setSmsTestOpen(false);
     },
   });
+
+  // 2026-10-07：短信**投递回执**查询（阿里云 QuerySendDetails）——回答"到底送达没有"
+  const [smsDeliveryOpen, setSmsDeliveryOpen] = useState(false);
+  const [smsDeliveryLoading, setSmsDeliveryLoading] = useState(false);
+  const [smsDeliveryData, setSmsDeliveryData] = useState<SmsDeliveryResult | null>(null);
+  const [smsDeliveryForm] = Form.useForm<{ phone: string; date?: string }>();
+
+  const loadSmsDelivery = async (values: { phone: string; date?: string }) => {
+    setSmsDeliveryLoading(true);
+    try {
+      setSmsDeliveryData(await querySmsDelivery(values.phone.trim(), values.date?.trim() || undefined));
+    } catch {
+      // 失败详情已由 api client 拦截器统一 toast；这里只清空结果，避免展示旧数据
+      setSmsDeliveryData(null);
+    } finally {
+      setSmsDeliveryLoading(false);
+    }
+  };
 
   /** 打开新增通道弹窗（Form initialValues 生效） */
   const openChannelModal = () => {
@@ -998,20 +1026,44 @@ export default function SettingsPage() {
                         测试邮件统一走「邮件通道」卡（openChannelTestModal，按通道发送） */}
                     {/* A4：短信验证码卡提供「发送测试短信」——服务端始终真实下发，配置后即可自测 */}
                     {group.title === '短信验证码' ? (
-                      <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
-                        <span>
-                          <Button
-                            size="small"
-                            disabled={!canManageConfigs}
-                            onClick={() => {
-                              smsTestForm.resetFields();
-                              setSmsTestOpen(true);
-                            }}
-                          >
-                            发送测试短信
-                          </Button>
-                        </span>
-                      </Tooltip>
+                      <>
+                        <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
+                          <span>
+                            <Button
+                              size="small"
+                              disabled={!canManageConfigs}
+                              onClick={() => {
+                                smsTestForm.resetFields();
+                                setSmsTestOpen(true);
+                              }}
+                            >
+                              发送测试短信
+                            </Button>
+                          </span>
+                        </Tooltip>
+                        {/* 2026-10-07：「已提交」≠「已送达」——回执要单独查 */}
+                        <Tooltip title="查运营商回执：1=等待回执 / 2=发送失败 / 3=发送成功">
+                          <span>
+                            <Button
+                              size="small"
+                              disabled={!canManageConfigs}
+                              onClick={() => {
+                                smsDeliveryForm.resetFields();
+                                if (smsTestForm.getFieldValue('phone')) {
+                                  smsDeliveryForm.setFieldValue(
+                                    'phone',
+                                    smsTestForm.getFieldValue('phone')
+                                  );
+                                }
+                                setSmsDeliveryData(null);
+                                setSmsDeliveryOpen(true);
+                              }}
+                            >
+                              查询投递状态
+                            </Button>
+                          </span>
+                        </Tooltip>
+                      </>
                     ) : null}
                     <Tooltip title={canManageConfigs ? '' : '缺少权限'}>
                       <span>
@@ -1291,6 +1343,98 @@ export default function SettingsPage() {
             <Input placeholder="例如 13800138000" autoComplete="off" />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 2026-10-07：短信**投递回执**查询。
+          背景：/sms/test 的成功只代表"阿里云受理"，真送达结果在运营商回执里 ——
+          owner 实测「界面显示发送成功但手机收不到」，回执是
+          `sendStatus:2 / errCode:PORT_NOT_REGISTERED`（号码未注册）。
+          没有这个弹窗，运营只能看到"受理成功"而误判为"送达"。 */}
+      <Modal
+        title="查询短信投递状态"
+        open={smsDeliveryOpen}
+        footer={null}
+        onCancel={() => setSmsDeliveryOpen(false)}
+        width={720}
+      >
+        <Form
+          form={smsDeliveryForm}
+          layout="inline"
+          style={{ marginBottom: 12, rowGap: 8 }}
+          onFinish={(values) => void loadSmsDelivery(values)}
+        >
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1[3-9]\d{9}$/, message: '请输入合法的中国大陆手机号' },
+            ]}
+          >
+            <Input placeholder="例如 13800138000" autoComplete="off" style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item
+            name="date"
+            label="日期"
+            extra="YYYYMMDD，留空=今天（北京时间）"
+            rules={[{ pattern: /^\d{8}$/, message: '格式应为 YYYYMMDD，如 20261007' }]}
+          >
+            <Input placeholder="留空=今天" autoComplete="off" style={{ width: 140 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={smsDeliveryLoading}>
+              查询
+            </Button>
+          </Form.Item>
+        </Form>
+
+        {smsDeliveryData ? (
+          smsDeliveryData.records.length === 0 ? (
+            <Alert
+              type="info"
+              showIcon
+              message="这一天没有该号码的发送记录"
+              description="确认手机号是否正确、日期是否是发送当天（北京时间）；记录通常在发送后几十秒到几分钟才可查。"
+            />
+          ) : (
+            <Table
+              size="small"
+              rowKey={(r) => `${r.sendDate}-${r.templateCode}-${r.sendStatus}`}
+              pagination={false}
+              dataSource={smsDeliveryData.records}
+              columns={[
+                { title: '发送时间', dataIndex: 'sendDate', width: 150 },
+                { title: '回执时间', dataIndex: 'receiveDate', width: 150 },
+                {
+                  title: '投递结果',
+                  dataIndex: 'sendStatus',
+                  width: 110,
+                  render: (v: number) =>
+                    v === 3 ? (
+                      <Tag color="success">3 发送成功</Tag>
+                    ) : v === 2 ? (
+                      <Tag color="error">2 发送失败</Tag>
+                    ) : (
+                      <Tag>1 等待回执</Tag>
+                    ),
+                },
+                {
+                  title: '运营商回执码',
+                  dataIndex: 'errCode',
+                  width: 180,
+                  render: (v: string | null) =>
+                    v ? <Typography.Text copyable>{v}</Typography.Text> : '—',
+                },
+                { title: '短信内容', dataIndex: 'content', ellipsis: true },
+              ]}
+            />
+          )
+        ) : (
+          <Typography.Text type="secondary">
+            填手机号后点「查询」——这里显示的是**运营商回执**：发送成功只代表阿里云受理，
+            回执才说明是否真的送达（例如 `PORT_NOT_REGISTERED` = 号码未注册）。
+          </Typography.Text>
+        )}
       </Modal>
 
       {/* AN-16：删除通道确认（原因必填，写入审计日志；与维护模式同一交互口径） */}

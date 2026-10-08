@@ -1290,8 +1290,42 @@ const configHandlers = [
     }
     return ok(
       { phone: body.phone ?? '', provider, requestId: `mock-${Date.now()}` },
-      '测试短信已发送'
+      '已提交运营商（requestId mock）—— 是否真送达请点「查询投递状态」核对回执'
     );
+  }),
+
+  // 2026-10-07：短信**投递回执**查询（阿里云 QuerySendDetails 的 mock 视图）
+  // 手机号含 "fail" 时回一条 sendStatus=2 + PORT_NOT_REGISTERED 的记录（复刻 owner 实测现场）
+  http.get('/api/admin/configs/sms/delivery', async ({ request }) => {
+    await delay(250);
+    const url = new URL(request.url);
+    const phone = (url.searchParams.get('phone') || '').trim();
+    const date = (url.searchParams.get('date') || '').trim();
+    if (!/^1[3-9]\d{9}$/.test(phone)) {
+      return fail(400, 40002, '手机号格式无效');
+    }
+    if (date && !/^\d{8}$/.test(date)) {
+      return fail(400, 40002, '日期格式应为 YYYYMMDD（如 20261007）');
+    }
+    const sendDate = date || '20261007';
+    // 复刻 owner 2026-10-07 的实测现场：这个号被运营商回执为「号码未注册」
+    // （不能像 /sms/test 那样用"含 fail 的号码"触发——本端点会先校验手机号格式）
+    const failed = phone === '13900139000';
+    return ok({
+      phone,
+      sendDate,
+      provider: 'aliyun',
+      records: [
+        {
+          sendDate: '2026-10-07 10:00:00',
+          receiveDate: '2026-10-07 10:00:31',
+          sendStatus: failed ? 2 : 3,
+          errCode: failed ? 'PORT_NOT_REGISTERED' : null,
+          content: '【ClipSync】您的验证码为：123456，请勿泄露于他人！',
+          templateCode: 'SMS_MOCK',
+        },
+      ],
+    });
   }),
 ];
 

@@ -230,6 +230,87 @@ async function sendViaTencent(config, phone, code) {
   return { requestId: resp?.RequestId };
 }
 
+/** 北京时间（Asia/Shanghai）的 YYYYMMDD —— 阿里云发送记录按该时区归档 */
+function beijingDateString(d = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (t) => parts.find((p) => p.type === t)?.value || '';
+  return `${get('year')}${get('month')}${get('day')}`;
+}
+
+/**
+ * 查询短信**投递结果**（阿里云 QuerySendDetails）。
+ *
+ * 为什么需要它：`SendSms` 返回 `Code:OK` 只代表**阿里云受理**，真正的送达结果由运营商在
+ * 回执里给出（通常几十秒到几分钟）。2026-10-07 owner 实测：管理台显示「发送成功」，
+ * 但手机收不到 —— 回执里是 `sendStatus:2 / errCode:PORT_NOT_REGISTERED`（号码未注册）。
+ * 把回执查询搬到管理台，运营才能区分「受理成功」与「真的送达」。
+ *
+ * @param {{ phone: string, sendDate?: string }} p sendDate 为 YYYYMMDD，缺省按北京时间今天
+ * @returns {Promise<{ok: boolean, reason?: string, provider?: string, records?: Array}>}
+ *   records 每项 { sendDate, receiveDate, sendStatus, errCode, content, templateCode }；
+ *   sendStatus 语义：**1=等待回执 / 2=发送失败 / 3=发送成功**
+ */
+export async function querySmsDelivery({ phone, sendDate } = {}) {
+  const target = toTrimmedString(phone);
+  if (!target) return { ok: false, reason: 'invalid_phone' };
+  const config = await getSmsConfig();
+  if (!config) return { ok: false, reason: 'not_configured' };
+  if (config.provider !== 'aliyun') {
+    // 腾讯云的回执要另走 PullSmsSendStatus（SendStatusSet 只在同步返回里给受理结果），
+    // 未实现就明确说不支持，不假装能查。
+    return { ok: false, reason: 'not_supported', provider: config.provider };
+  }
+  const date = toTrimmedString(sendDate) || beijingDateString();
+  try {
+    const mod = await import('@alicloud/dysmsapi20170525');
+    const Client = mod.default?.default ?? mod.default;
+    const QueryReq = mod.QuerySendDetailsRequest ?? mod.default?.QuerySendDetailsRequest;
+    if (typeof Client !== 'function' || typeof QueryReq !== 'function') {
+      return { ok: false, reason: 'sdk_unavailable', provider: 'aliyun' };
+    }
+    const client = new Client({
+      accessKeyId: config.sms_access_key_id,
+      accessKeySecret: toTrimmedString(decryptField(config.sms_access_key_secret)),
+      endpoint: 'dysmsapi.aliyuncs.com',
+    });
+    const resp = await client.querySendDetails(
+      new QueryReq({ phoneNumber: target, sendDate: date, pageSize: 20, currentPage: 1 })
+    );
+    const body = resp?.body || resp;
+    if (body?.code && body.code !== 'OK') {
+      return {
+        ok: false,
+        reason: 'query_failed',
+        provider: 'aliyun',
+        detail: `${body.code}: ${body.message || ''}`,
+      };
+    }
+    // ⚠️ 字段路径：SDK v4 回的是 body.smsSendDetailDTOs.smsSendDetailDTO（**不是** SmsSendDetailDTOs）
+    const raw =
+      body?.smsSendDetailDTOs?.smsSendDetailDTO ??
+      body?.SmsSendDetailDTOs?.SmsSendDetailDTO ??
+      [];
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const records = list.map((it) => ({
+      sendDate: it.sendDate ?? it.SendDate ?? null,
+      receiveDate: it.receiveDate ?? it.ReceiveDate ?? null,
+      sendStatus: Number(it.sendStatus ?? it.SendStatus ?? 0),
+      errCode: it.errCode ?? it.ErrCode ?? null,
+      content: it.content ?? it.Content ?? null,
+      templateCode: it.templateCode ?? it.TemplateCode ?? null,
+    }));
+    return { ok: true, provider: 'aliyun', sendDate: date, records };
+  } catch (err) {
+    logger.warn('[sms] 查询投递状态失败', { error: err.message, phone: target });
+    return { ok: false, reason: 'query_error', provider: 'aliyun', detail: err.message };
+  }
+}
+
 /** 供自检/契约测试：当前短信是否已配置（不泄露凭据） */
 export async function isSmsConfigured() {
   const config = await getSmsConfig();

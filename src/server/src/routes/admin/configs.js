@@ -54,7 +54,7 @@ import { invalidateAiRuntimeConfigCache } from '../../utils/aiRuntimeConfig.js';
 import { invalidateReleaseArtifactCache } from '../../utils/releaseArtifacts.js';
 // A4：sms_* 写库后失效短信配置缓存（管理台改完 ≤5s 生效）；
 // 另引入发送能力，供「发送测试短信」接口真实下发（不受 NODE_ENV 限制）
-import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode } from '../../utils/sms.js';
+import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode, querySmsDelivery } from '../../utils/sms.js';
 // 错误追踪（迁移 086）：保存 sentry_dsn 后失效缓存并即时重初始化（填完即生效，不必重启容器）
 import { invalidateSentryConfigCache, initSentry } from '../../utils/sentry.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
@@ -676,7 +676,10 @@ router.post('/sms/test', requirePerm('admin.configs.manage'), async (req, res) =
     return res.json({
       code: 0,
       data: { phone, provider: result.provider || null, requestId: result.requestId || null },
-      message: '测试短信已发送',
+      // ⚠️ 措辞刻意不写"已发送成功"：SendSms 的 OK 只代表**阿里云受理**，
+      // 真送达结果由运营商回执决定（2026-10-07 owner 实测：这里显示成功、手机收不到，
+      // 回执其实是 PORT_NOT_REGISTERED）。指引运营去查回执，别把"受理"读成"送达"。
+      message: `已提交运营商（requestId ${result.requestId || '未知'}）—— 这是"阿里云受理"，是否真送达请点「查询投递状态」核对回执`,
     });
   } catch (err) {
     logger.error('[admin/configs] sms test failed', { error: err.message });
@@ -684,8 +687,54 @@ router.post('/sms/test', requirePerm('admin.configs.manage'), async (req, res) =
   }
 });
 
-// ───────────────────────── 功能开关 ─────────────────────────
+/**
+ * GET /api/admin/configs/sms/delivery?phone=&date=YYYYMMDD
+ * 查询某号码某天的**投递结果**（阿里云回执）。
+ *
+ * 与 /sms/test 的区别（这正是 owner 2026-10-07 踩的坑）：/sms/test 只证明"阿里云受理"，
+ * 本接口回答"到底送达没有" —— `sendStatus`: **1=等待回执 / 2=发送失败 / 3=发送成功**，
+ * 失败时带运营商回执码（如 `PORT_NOT_REGISTERED` = 号码未注册）。
+ * 权限与配置写路径一致（admin.configs.manage）；只读，不写审计。
+ */
+router.get('/sms/delivery', requirePerm('admin.configs.manage'), async (req, res) => {
+  try {
+    const phone = typeof req.query?.phone === 'string' ? req.query.phone.trim() : '';
+    if (!phone || !isValidPhone(phone)) {
+      return res.status(400).json({ code: 40002, message: '手机号格式无效' });
+    }
+    const date = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
+    if (date && !/^\d{8}$/.test(date)) {
+      return res.status(400).json({ code: 40002, message: '日期格式应为 YYYYMMDD（如 20261007）' });
+    }
 
+    const result = await querySmsDelivery({ phone, sendDate: date || undefined });
+    if (!result.ok) {
+      const message =
+        result.reason === 'not_configured'
+          ? '未配置短信服务，请先填写服务商与凭据'
+          : result.reason === 'not_supported'
+            ? `当前服务商（${result.provider || '未知'}）暂不支持查询投递状态`
+            : `查询投递状态失败：${result.detail || result.reason || '未知错误'}`;
+      return res.status(409).json({ code: 4090, message });
+    }
+
+    return res.json({
+      code: 0,
+      data: {
+        phone,
+        sendDate: result.sendDate,
+        provider: result.provider,
+        records: result.records,
+      },
+      message: '投递状态已查询',
+    });
+  } catch (err) {
+    logger.error('[admin/configs] sms delivery query failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '查询投递状态失败' });
+  }
+});
+
+// ───────────────────────── 功能开关 ─────────────────────────
 const flagsRouter = Router();
 
 /**

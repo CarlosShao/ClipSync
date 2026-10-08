@@ -686,6 +686,62 @@ describe('POST /api/admin/configs/sms/test（A4 测试短信）', () => {
     expect(resp.status).toBe(500);
     expect(expectFail(resp).code).toBe(5000);
   });
+
+  test('成功文案是"已提交运营商"，不得写成"已发送"（防止把受理读成送达）', async () => {
+    await patch('/api/admin/configs/sms_provider', { value: 'aliyun' });
+    await patch('/api/admin/configs/sms_access_key_secret', { value: 'mock-secret' });
+    const resp = await post<{ phone: string }>('/api/admin/configs/sms/test', {
+      phone: '13800138000',
+    });
+    expect(resp.status).toBe(200);
+    expect(expectOk(resp).message).toContain('已提交运营商');
+    expect(expectOk(resp).message).not.toContain('已发送成功');
+  });
+});
+
+describe('GET /api/admin/configs/sms/delivery（短信投递回执）', () => {
+  test('正常查询返回运营商回执（sendStatus / errCode / 内容）', async () => {
+    const resp = await get<{
+      phone: string;
+      sendDate: string;
+      provider: string;
+      records: { sendStatus: number; errCode: string | null; templateCode: string }[];
+    }>('/api/admin/configs/sms/delivery?phone=13800138000');
+
+    expect(resp.status).toBe(200);
+    const data = expectOk(resp).data;
+    expect(data.phone).toBe('13800138000');
+    expect(data.provider).toBe('aliyun');
+    expect(data.sendDate).toBe('20261007');
+    expect(data.records[0]?.sendStatus).toBe(3);
+    expect(data.records[0]?.errCode).toBeNull();
+  });
+
+  test('显式 date 透传 + 特定号码复刻 owner 现场（sendStatus=2 / PORT_NOT_REGISTERED）', async () => {
+    const okResp = await get<{ sendDate: string }>(
+      '/api/admin/configs/sms/delivery?phone=13800138000&date=20261006'
+    );
+    expect(okResp.status).toBe(200);
+    expect(expectOk(okResp).data.sendDate).toBe('20261006');
+
+    // 13900139000 = mock 里约定的"运营商回执失败"号码（格式合法，先过校验）
+    const failResp = await get<{ records: { sendStatus: number; errCode: string }[] }>(
+      '/api/admin/configs/sms/delivery?phone=13900139000'
+    );
+    expect(failResp.status).toBe(200);
+    expect(expectOk(failResp).data.records[0]?.sendStatus).toBe(2);
+    expect(expectOk(failResp).data.records[0]?.errCode).toBe('PORT_NOT_REGISTERED');
+  });
+
+  test('手机号非法 ⇒ 400；日期格式错 ⇒ 400', async () => {
+    const badPhone = await get('/api/admin/configs/sms/delivery?phone=12345');
+    expect(badPhone.status).toBe(400);
+    expect(expectFail(badPhone).code).toBe(40002);
+
+    const badDate = await get('/api/admin/configs/sms/delivery?phone=13800138000&date=2026-10-07');
+    expect(badDate.status).toBe(400);
+    expect(expectFail(badDate).message).toContain('YYYYMMDD');
+  });
 });
 
 describe('角色权限写路径（T-A6）', () => {
