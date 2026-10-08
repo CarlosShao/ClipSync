@@ -440,6 +440,16 @@ export default function SettingsPage() {
   ).filter((c): c is SystemConfig => Boolean(c));
   const systemConfigs = editableConfigs.filter((c) => !isRateLimitKey(c.key));
 
+  // 089：有些分组内部还要再分**小类**（owner 2026-10-08：第三方登录按 provider 分，
+  // 别把 GitHub/Microsoft 平铺在一起；以后加微信/Google 各自一块）。
+  // 注意：保存仍然是**整卡一个按钮**（group.keys 覆盖全部子类，避免多按钮各存一半）。
+  const GROUP_SECTIONS: Record<string, { label: string; keys: string[] }[]> = {
+    '第三方登录（OAuth）': [
+      { label: 'GitHub', keys: ['oauth_github_client_id'] },
+      { label: 'Microsoft', keys: ['oauth_microsoft_client_id', 'oauth_microsoft_tenant'] },
+    ],
+  };
+
   // 系统参数分组（UI 归组；服务端 CONFIG_CATALOG 为键的事实来源，未归组键走「其它」兜底）
   // AN-16：原「邮件 (SMTP)」组已迁出——改由上方独立的「邮件通道」卡管理
   const PARAM_GROUPS: { title: string; keys: string[] }[] = [
@@ -1135,24 +1145,28 @@ export default function SettingsPage() {
                   </div>
                 }
               >
-                {items.map(renderConfigItem)}
+                {GROUP_SECTIONS[group.title]?.map((sec) => (
+                  <div key={sec.label}>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: 13,
+                        margin: '4px 0 10px',
+                        color: 'var(--text-2)',
+                      }}
+                    >
+                      {sec.label}
+                    </div>
+                    {items.filter((c) => sec.keys.includes(c.key)).map(renderConfigItem)}
+                  </div>
+                )) ?? items.map(renderConfigItem)}
               </Card>
             );
           })}
-          {/* 第三方登录预留口（用户要求防遗忘）：仅占位声明，不做任何配置项——
-              OAuth 功能立项前配置不会生效，避免出现"填了没反应"的空头支票。
-              功能立项后本卡替换为 GitHub/微信/Apple 的 client_id/密钥/回调域配置。 */}
-          {/* AN-16：smtp_* 已移出表单，改用原始 configs 判断（保持该占位卡原样显示） */}
-          {configs?.some((c) => c.key === 'smtp_host') ? (
-            <Card title="第三方登录" extra={<Tag>规划中 · 未实现</Tag>}>
-              <div style={{ color: 'var(--text-3)', fontSize: 12, lineHeight: 1.9 }}>
-                预留位：GitHub / 微信 / Apple 等第三方 OAuth 登录的接入配置（client_id / 密钥 /
-                回调域） 将在功能立项实现后在此处提供。
-                <br />
-                当前尚未对接任何第三方登录——登录页对应按钮为「敬请期待」占位，此卡仅作功能备忘。
-              </div>
-            </Card>
-          ) : null}
+          {/* 089：第三方登录的**真实配置卡**已由上面的 PARAM_GROUPS 渲染（「第三方登录（OAuth）」）。
+              此前这里另有一张标题同为「第三方登录」的占位卡（写着「规划中 · 未实现」）——
+              功能落地后它已过时，且**与真实卡撞名造成"重复配置项"的观感** ⇒ 2026-10-08 删除（owner 反馈）。
+              注：这次改用编辑器精确替换，不再用行拼接脚本（上一次脚本匹配错行误删 342 行）。 */}
           {/* 未归组键兜底（目录新增键忘记归类时不至于消失）
               ⚠️ 必须有独立保存入口：此前这里只渲染参数、不给保存按钮，
               于是"未归类的键"落到这里就是**能看不能存**（owner 2026-10-07 实测：
