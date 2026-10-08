@@ -59,6 +59,8 @@ import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode, queryS
 import { invalidateSentryConfigCache, initSentry, fetchSentryIssues, invalidateSentryApiTokenCache } from '../../utils/sentry.js';
 // 人机验证（迁移 088）：保存 turnstile_* 后失效缓存（下次发码即用新配置）
 import { invalidateTurnstileConfigCache } from '../../utils/turnstile.js';
+// 第三方登录（迁移 089）：保存 oauth_* 后失效缓存（下次发起设备码流即用新 Client ID）
+import { invalidateOAuthConfigCache } from '../../services/oauthDevice.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
 import { isValidPhone } from '../../validation/validator.js';
 
@@ -312,6 +314,27 @@ const CONFIG_CATALOG = [
     description:
       '⚠️ 打开前必须确认桌面端/移动端也已挂上 widget：发码接口是各端共用的，打开后没带 token 的客户端将无法发码登录。密钥不全时按未启用处理',
     consumer: 'src/server/src/utils/turnstile.js（gateCaptcha；routes/auth-verify.js / auth.js 发码前门控）',
+  },
+  // —— 第三方登录（089，设备码流：GitHub / Microsoft）：留空 = 该入口不可用 ——
+  {
+    key: 'oauth_github_client_id',
+    name: 'GitHub Client ID',
+    description:
+      'GitHub OAuth App 的 Client ID（需在 App 设置里勾选 Enable Device Flow）。设备码流**不需要** Client Secret；留空则登录页不显示 GitHub 入口',
+    consumer: 'src/server/src/services/oauthDevice.js（startDeviceFlow / pollDeviceFlow）',
+  },
+  {
+    key: 'oauth_microsoft_client_id',
+    name: 'Microsoft 客户端 ID',
+    description:
+      'Entra 应用的「应用程序(客户端) ID」（public client，无需 secret；需在 Authentication 里把 Allow public client flows 设为 Yes）；留空则不显示 Microsoft 入口',
+    consumer: 'src/server/src/services/oauthDevice.js（startDeviceFlow / pollDeviceFlow）',
+  },
+  {
+    key: 'oauth_microsoft_tenant',
+    name: 'Microsoft 租户',
+    description: 'Entra 租户 ID 或域名；仅允许本组织账号时填租户 ID，多租户填 common（默认）',
+    consumer: 'src/server/src/services/oauthDevice.js（拼设备码/令牌端点）',
   },
   // —— 发布（067，GH-01：更新包下载地址来源，routes/app.js /update.json 消费）——
   {
@@ -588,6 +611,11 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     // 088：人机验证三个键写库后失效缓存（下次发码即用新配置；开关默认 false 时零影响）
     if (key.startsWith('turnstile_')) {
       invalidateTurnstileConfigCache();
+    }
+
+    // 089：第三方登录配置写库后失效缓存（下次发起设备码流即用新 Client ID）
+    if (key.startsWith('oauth_')) {
+      invalidateOAuthConfigCache();
     }
 
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；

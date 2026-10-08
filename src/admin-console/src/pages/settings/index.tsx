@@ -481,6 +481,11 @@ export default function SettingsPage() {
       title: '人机验证（CAPTCHA）',
       keys: ['turnstile_site_key', 'turnstile_secret_key', 'turnstile_enabled'],
     },
+    // 089：第三方登录（设备码流）—— 两个 Client ID + Entra 租户；留空 = 登录页不显示该入口
+    {
+      title: '第三方登录（OAuth）',
+      keys: ['oauth_github_client_id', 'oauth_microsoft_client_id', 'oauth_microsoft_tenant'],
+    },
     // 短信验证码（068/A4）：独立成卡——它是完整的发码链路配置（服务商 + 凭据 + 签名 + 模板），
     // 与邮件通道卡对等的独立外部服务，不应混入运维兜底
     {

@@ -139,6 +139,10 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'turnstile_site_key',
       'turnstile_secret_key',
       'turnstile_enabled',
+      // 089：第三方登录（设备码流）——两个 Client ID + Entra 租户，services/oauthDevice.js 消费
+      'oauth_github_client_id',
+      'oauth_microsoft_client_id',
+      'oauth_microsoft_tenant',
       // 067（GH-01）：更新包下载地址来源，routes/app.js 经 releaseArtifacts.js 消费
       'release_download_base_url',
       // 069（D1）：对象存储控制台地址，admin/ops.js probeObjectStorage 消费
