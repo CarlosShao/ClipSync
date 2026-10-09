@@ -48,7 +48,6 @@ async function onOAuthAuthorized(payload: { token: string; refreshToken?: string
 }
 
 onMounted(loadOAuthProviders)
-import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon, ArrowLeft, X, Languages } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import Input from '@/components/ui/input/Input.vue'
@@ -194,6 +193,62 @@ const setPwdValid = computed(
     setPwdNew.value === setPwdConfirm.value,
 )
 
+// ===== 088 人机验证（Cloudflare Turnstile）=====
+// 服务端开关默认关、且密钥不齐全时也算未启用 ⇒ 这里 loadCaptcha 什么都不会渲染，
+// 发码请求行为与今天完全一致。开关打开后：渲染组件 → sendCode 带上 turnstileToken。
+const captchaEnabled = ref(false)
+const turnstileToken = ref('')
+let captchaRendered = false
+
+async function loadCaptcha() {
+  try {
+    const res = await api('GET', '/api/auth/captcha-config')
+    if (!res.ok || !res.data?.enabled || !res.data?.siteKey) return
+    captchaEnabled.value = true
+
+    // 只注入一次脚本（显式渲染模式）
+    if (!document.querySelector('script[data-clipsync-turnstile]')) {
+      await new Promise<void>((resolve) => {
+        const s = document.createElement('script')
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+        s.async = true
+        s.defer = true
+        s.setAttribute('data-clipsync-turnstile', '1')
+        s.onload = () => resolve()
+        s.onerror = () => resolve() // 拉不到脚本就当未启用，不能把发码卡死
+        document.head.appendChild(s)
+      })
+    }
+
+    await nextTick()
+    const w = window as unknown as {
+      turnstile?: { render: (el: HTMLElement, o: Record<string, unknown>) => string }
+    }
+    const anchor = document.getElementById('send-code-btn')
+    if (!w.turnstile || !anchor || captchaRendered) return
+    const box = document.createElement('div')
+    box.style.marginTop = '8px'
+    anchor.parentElement?.appendChild(box)
+    w.turnstile.render(box, {
+      sitekey: res.data.siteKey,
+      callback: (token: string) => {
+        turnstileToken.value = token
+      },
+      'expired-callback': () => {
+        turnstileToken.value = ''
+      },
+      'error-callback': () => {
+        turnstileToken.value = ''
+      },
+    })
+    captchaRendered = true
+  } catch {
+    /* 任何异常都按未启用处理：服务端未启用时门控也放行 */
+  }
+}
+
+onMounted(loadCaptcha)
+
 // ===== Send verification code =====
 async function sendCode() {
   const phone =
@@ -209,7 +264,17 @@ async function sendCode() {
   }
   isSendingCode.value = true
   try {
-    await tauri.sendVerificationCode(phone)
+    // 089 起改为 JS 直连（Rust 那条 send_verification_code 只是 POST {phone} 的薄封装，
+    // 行为等价）：这样开启人机验证后能把 turnstileToken 一并带上。
+    const res = await api('POST', '/api/auth/send-code', {
+      phone,
+      ...(turnstileToken.value ? { turnstileToken: turnstileToken.value } : {}),
+    })
+    if (!res.ok) {
+      toast.show(res.error || '验证码发送失败，请稍后重试', 'error')
+      isSendingCode.value = false
+      return
+    }
     toast.show(t('auth_code_sent'), 'success')
     codeCountdown.value = 60
     countdownTimer = setInterval(() => {
