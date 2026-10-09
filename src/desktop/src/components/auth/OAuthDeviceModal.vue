@@ -141,8 +141,15 @@ async function copyCode() {
 }
 
 function openAuthPage() {
-  // 用户也能自己在浏览器里打开；这里给出快捷入口（webview 内 window.open 会走系统浏览器）
-  if (verificationUri.value) window.open(verificationUri.value, '_blank')
+  if (!verificationUri.value) return
+  // ⚠️ Tauri 的 webview 里 window.open 是**空操作**（旧注释以为它会走系统浏览器，实测点了没反应），
+  // 必须走 Rust 的 open_url（lib/tauri.openUrl，内部有 http/https 白名单校验）。
+  import('@/lib/tauri')
+    .then(({ openUrl }) => openUrl(verificationUri.value))
+    .catch((e) => {
+      console.error('[OAuth] open auth page failed:', e)
+      toast.show('打不开浏览器，请手动复制下方链接', 'error')
+    })
 }
 
 watch(

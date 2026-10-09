@@ -835,7 +835,10 @@ function sortLabel(): string {
 }
 function openLink(item: ClipItem) {
   try {
-    window.open(item.content, '_blank')
+    // ⚠️ 与 revealFileFolder 同因：Tauri webview 里 window.open 是空操作，必须走 Rust 的 open_url
+    import('@/lib/tauri')
+      .then(({ openUrl }) => openUrl(item.content))
+      .catch((e) => console.error('[Favorites] open link failed:', e))
   } catch {
     /* */
   }
