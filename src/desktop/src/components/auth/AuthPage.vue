@@ -7,6 +7,47 @@ import { useSonner } from '@/composables/useSonner'
 import { useTheme } from '@/composables/useTheme'
 import { api, prefetchCsrf, storeRefreshToken } from '@/api/client'
 import { verify2FALogin } from '@/api/auth'
+// 089：第三方登录（设备码流）—— 显示哪些入口由服务端 /api/auth/oauth/providers 决定
+// （未配置的 provider 不显示按钮，避免"点了没反应"的空头支票）
+import OAuthDeviceModal from '@/components/auth/OAuthDeviceModal.vue'
+
+const oauthOpen = ref(false)
+const oauthProvider = ref<'github' | 'microsoft'>('github')
+const oauthProviders = ref<{ provider: string; name: string; configured: boolean }[]>([])
+const oauthProviderName = computed(
+  () => oauthProviders.value.find((x) => x.provider === oauthProvider.value)?.name || oauthProvider.value
+)
+
+function oauthConfigured(p: string) {
+  return oauthProviders.value.some((x) => x.provider === p && x.configured)
+}
+
+async function loadOAuthProviders() {
+  try {
+    const res = await api('GET', '/api/auth/oauth/providers')
+    oauthProviders.value = res.ok ? res.data?.providers || [] : []
+  } catch {
+    oauthProviders.value = []
+  }
+}
+
+function openOAuth(p: 'github' | 'microsoft') {
+  oauthProvider.value = p
+  oauthOpen.value = true
+}
+
+/** 授权成功：复用验证码登录的落地逻辑（token / user_id / localStorage / refreshToken / CSRF / 跳转） */
+async function onOAuthAuthorized(payload: { token: string; refreshToken?: string; user?: unknown }) {
+  oauthOpen.value = false
+  configStore.config.token = payload.token
+  localStorage.setItem('clipsync-token', payload.token)
+  storeRefreshToken(payload.refreshToken)
+  await prefetchCsrf()
+  toast.show(t('login_success'), 'success')
+  window.location.href = '/app/clipboard'
+}
+
+onMounted(loadOAuthProviders)
 import * as tauri from '@/lib/tauri'
 import { Eye, EyeOff, Sun, Moon, ArrowLeft, X, Languages } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
@@ -764,37 +805,45 @@ const isRegisterView = computed(() => authView.value === 'register')
               <span>{{ t('login_or_continue') }}</span>
             </div>
             <div class="auth-social">
-              <button class="social-btn" title="WeChat" @click="toast.show(t('toast_signup_soon'), 'info')">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"
-                  />
-                  <path
-                    d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"
-                  />
-                </svg>
-              </button>
-              <button class="social-btn" title="Apple" @click="toast.show(t('toast_signup_soon'), 'info')">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"
-                  />
-                </svg>
-              </button>
-              <button class="social-btn" title="GitHub" @click="toast.show(t('toast_signup_soon'), 'info')">
+              <!-- 089：只显示**服务端已配置**的 provider（/oauth/providers 决定）。
+                   WeChat / Apple / WeCom 三个空占位（点了只弹"敬请期待"）已移除；
+                   账号与备案齐了再按同样方式加回来。 -->
+              <button
+                v-if="oauthConfigured('github')"
+                class="social-btn"
+                title="GitHub 登录"
+                @click="openOAuth('github')"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path
                     d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                   />
                 </svg>
               </button>
-              <button class="social-btn" title="WeCom" @click="toast.show(t('toast_signup_soon'), 'info')">
+              <button
+                v-if="oauthConfigured('microsoft')"
+                class="social-btn"
+                title="Microsoft 登录"
+                @click="openOAuth('microsoft')"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                    d="M3 3h8.5v8.5H3V3zm9.5 0H21v8.5h-8.5V3zM3 12.5h8.5V21H3v-8.5zm9.5 0H21V21h-8.5v-8.5z"
                   />
                 </svg>
               </button>
+              <span
+                v-if="!oauthConfigured('github') && !oauthConfigured('microsoft')"
+                style="font-size: 12px; color: var(--text-3, #999)"
+                >第三方登录暂未开放</span
+              >
+              <OAuthDeviceModal
+                :open="oauthOpen"
+                :provider="oauthProvider"
+                :provider-name="oauthProviderName"
+                @close="oauthOpen = false"
+                @authorized="onOAuthAuthorized"
+              />
             </div>
           </div>
 
@@ -1003,30 +1052,38 @@ const isRegisterView = computed(() => authView.value === 'register')
               <span>{{ t('reg_or_social') }}</span>
             </div>
             <div class="auth-social">
-              <button class="social-btn" title="WeChat" @click="toast.show(t('toast_signup_soon'), 'info')">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M8.5 12c.8 0 1.5-.7 1.5-1.5S9.3 9 8.5 9 7 9.7 7 10.5 7.7 12 8.5 12zM15 12c.8 0 1.5-.7 1.5-1.5S15.8 9 15 9s-1.5.7-1.5 1.5.7 1.5 1.5 1.5z"
-                  />
-                  <path
-                    d="M19.5 10.2c0-3.4-3.6-6.2-8-6.2s-8 2.8-8 6.2c0 3.1 2.8 5.7 6.6 6.2.3.1.7.2.8.5l.3 1.2c.1.3.3.5.6.5s.5-.2.6-.5l.3-1.2c.1-.3.5-.4.8-.5C16.7 15.9 19.5 13.3 19.5 10.2z"
-                  />
-                </svg>
-              </button>
-              <button class="social-btn" title="Apple" @click="toast.show(t('toast_signup_soon'), 'info')">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                  <path
-                    d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"
-                  />
-                </svg>
-              </button>
-              <button class="social-btn" title="GitHub" @click="toast.show(t('toast_signup_soon'), 'info')">
+              <!-- 089：注册页同登录页——只显示已配置的 provider；三个空占位已移除 -->
+              <button
+                v-if="oauthConfigured('github')"
+                class="social-btn"
+                title="GitHub 注册/登录"
+                @click="openOAuth('github')"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                   <path
                     d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                   />
                 </svg>
               </button>
+              <button
+                v-if="oauthConfigured('microsoft')"
+                class="social-btn"
+                title="Microsoft 注册/登录"
+                @click="openOAuth('microsoft')"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M3 3h8.5v8.5H3V3zm9.5 0H21v8.5h-8.5V3zM3 12.5h8.5V21H3v-8.5zm9.5 0H21V21h-8.5v-8.5z"
+                  />
+                </svg>
+              </button>
+              <OAuthDeviceModal
+                :open="oauthOpen"
+                :provider="oauthProvider"
+                :provider-name="oauthProviderName"
+                @close="oauthOpen = false"
+                @authorized="onOAuthAuthorized"
+              />
             </div>
             <div class="auth-switch">
               {{ t('reg_has_account') }}
