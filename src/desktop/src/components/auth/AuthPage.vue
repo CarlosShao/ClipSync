@@ -55,6 +55,7 @@ import Checkbox from '@/components/ui/checkbox/Checkbox.vue'
 import Waves from '@/components/fx/Waves.vue'
 import DecryptedText from '@/components/fx/DecryptedText.vue'
 import StarBorder from '@/components/fx/StarBorder.vue'
+import TurnstileWidget from '@/components/auth/TurnstileWidget.vue'
 
 defineOptions({ name: 'AuthPage' })
 const emit = defineEmits<{ (e: 'login-success'): void }>()
@@ -194,60 +195,16 @@ const setPwdValid = computed(
 )
 
 // ===== 088 人机验证（Cloudflare Turnstile）=====
-// 服务端开关默认关、且密钥不齐全时也算未启用 ⇒ 这里 loadCaptcha 什么都不会渲染，
-// 发码请求行为与今天完全一致。开关打开后：渲染组件 → sendCode 带上 turnstileToken。
+// 开关默认关、密钥不齐也算未启用 ⇒ 挂件什么都不渲染，发码行为与接入前完全一致。
+// 渲染/取 token 都在 TurnstileWidget 里（每个发码行一个实例）；这里只保存状态。
 const captchaEnabled = ref(false)
 const turnstileToken = ref('')
-let captchaRendered = false
-
-async function loadCaptcha() {
-  try {
-    const res = await api('GET', '/api/auth/captcha-config')
-    if (!res.ok || !res.data?.enabled || !res.data?.siteKey) return
-    captchaEnabled.value = true
-
-    // 只注入一次脚本（显式渲染模式）
-    if (!document.querySelector('script[data-clipsync-turnstile]')) {
-      await new Promise<void>((resolve) => {
-        const s = document.createElement('script')
-        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
-        s.async = true
-        s.defer = true
-        s.setAttribute('data-clipsync-turnstile', '1')
-        s.onload = () => resolve()
-        s.onerror = () => resolve() // 拉不到脚本就当未启用，不能把发码卡死
-        document.head.appendChild(s)
-      })
-    }
-
-    await nextTick()
-    const w = window as unknown as {
-      turnstile?: { render: (el: HTMLElement, o: Record<string, unknown>) => string }
-    }
-    const anchor = document.getElementById('send-code-btn')
-    if (!w.turnstile || !anchor || captchaRendered) return
-    const box = document.createElement('div')
-    box.style.marginTop = '8px'
-    anchor.parentElement?.appendChild(box)
-    w.turnstile.render(box, {
-      sitekey: res.data.siteKey,
-      callback: (token: string) => {
-        turnstileToken.value = token
-      },
-      'expired-callback': () => {
-        turnstileToken.value = ''
-      },
-      'error-callback': () => {
-        turnstileToken.value = ''
-      },
-    })
-    captchaRendered = true
-  } catch {
-    /* 任何异常都按未启用处理：服务端未启用时门控也放行 */
-  }
+function onCaptchaToken(t: string) {
+  turnstileToken.value = t
 }
-
-onMounted(loadCaptcha)
+function onCaptchaEnabled(v: boolean) {
+  captchaEnabled.value = v
+}
 
 // ===== Send verification code =====
 async function sendCode() {
@@ -260,6 +217,11 @@ async function sendCode() {
   if (!phone || !PHONE_RE.test(phone)) {
     toast.show(t('val_phone_format'), 'error')
     shakeById('send-code-btn')
+    return
+  }
+  // 服务端要求人机验证、但 token 还没到手：先提示，别发一个注定 400 的请求
+  if (captchaEnabled.value && !turnstileToken.value) {
+    toast.show(t('captcha_required'), 'error')
     return
   }
   isSendingCode.value = true
@@ -787,6 +749,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
+                <TurnstileWidget @token="onCaptchaToken" @enabled="onCaptchaEnabled" />
               </div>
               <div class="form-options">
                 <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
@@ -1021,6 +984,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
+                <TurnstileWidget @token="onCaptchaToken" @enabled="onCaptchaEnabled" />
                 <div v-if="fieldErrors.regCode" class="field-error">{{ fieldErrors.regCode }}</div>
               </div>
               <div class="form-group">

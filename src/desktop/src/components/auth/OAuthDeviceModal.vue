@@ -191,7 +191,7 @@ onUnmounted(clearTimers)
           <button class="oauth-copy" title="复制" @click="copyCode"><Copy :size="14" /></button>
         </div>
         <p class="oauth-hint">
-          3）完成后**本窗口会自动登录**，不用回到这里操作。
+          3）完成后<strong>本窗口会自动登录</strong>，不用回到这里操作。
           <span v-if="secondsLeft > 0">（{{ Math.floor(secondsLeft / 60) }}:{{ String(secondsLeft % 60).padStart(2, '0') }} 内有效）</span>
         </p>
         <Button class="oauth-btn" @click="openAuthPage">

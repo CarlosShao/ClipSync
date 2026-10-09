@@ -679,6 +679,7 @@
   "auth_code_sent_to": "验证码已发送至 {phone}",
   "code_resend": "{s}秒后重新发送",
   "val_phone_format": "请输入有效的11位手机号",
+  "captcha_required": "请先完成下方人机验证",
   "batch_none": "未选择任何项目",
   "batch_deleted": "已删除 {n} 项",
   "batch_favorite_btn": "收藏",

@@ -387,6 +387,7 @@
   "fp_send_code": "Send Reset Code",
   "fp_reset_btn": "Reset Password",
   "val_phone_format": "Please enter a valid 11-digit phone number",
+  "captcha_required": "Please complete the human verification below first",
   "auth_code_sent": "Verification code sent!",
   "auth_need_phone": "Please enter phone number",
   "auth_need_both": "Please enter phone and verification code",
