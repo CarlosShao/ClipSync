@@ -9,7 +9,7 @@ import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
 // 088 人机验证：发码前门控（默认未启用 ⇒ 零行为变化；见 utils/turnstile.js 顶部说明）
-import { captchaGate } from '../utils/turnstile.js';
+import { captchaGate, getTurnstileConfig } from '../utils/turnstile.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
@@ -43,6 +43,22 @@ async function createSessionAndGenerateToken(user, req) {
 
   return { token, sessionId, refreshToken };
 }
+
+/**
+ * GET /api/auth/captcha-config —— 公开端点，供各端判断要不要渲染人机验证组件。
+ * 只回 `{ enabled, siteKey }`：**siteKey 是公开值**，secret 永不出库（见 utils/turnstile.js）。
+ * enabled 只有在「开关 true 且密钥齐全」时才为 true，所以各端按它渲染即可，不需要各自判断半配状态。
+ */
+router.get('/captcha-config', async (_req, res) => {
+  try {
+    const cfg = await getTurnstileConfig();
+    return res.json({ enabled: cfg.enabled, siteKey: cfg.enabled ? cfg.siteKey : '' });
+  } catch (err) {
+    logger.error('[captcha-config] failed', { error: err.message });
+    // 读不到配置时按"未启用"返回：客户端不渲染组件，发码照旧（未启用时门控也放行）
+    return res.json({ enabled: false, siteKey: '' });
+  }
+});
 
 // 发送验证码（手机）
 // A4：固定码 888888 已移除——生产环境任何人输 888888 可登录任意手机号，
