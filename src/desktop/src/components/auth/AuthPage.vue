@@ -14,6 +14,8 @@ import OAuthDeviceModal from '@/components/auth/OAuthDeviceModal.vue'
 const oauthOpen = ref(false)
 const oauthProvider = ref<'github' | 'microsoft'>('github')
 const oauthProviders = ref<{ provider: string; name: string; configured: boolean }[]>([])
+/** GitHub 的 client_id（公开值，服务端下发）——弹窗在本机跑设备码流要用它 */
+const oauthGithubClientId = ref('')
 const oauthProviderName = computed(
   () => oauthProviders.value.find((x) => x.provider === oauthProvider.value)?.name || oauthProvider.value
 )
@@ -26,8 +28,10 @@ async function loadOAuthProviders() {
   try {
     const res = await api('GET', '/api/auth/oauth/providers')
     oauthProviders.value = res.ok ? res.data?.providers || [] : []
+    oauthGithubClientId.value = res.ok ? String(res.data?.githubClientId || '') : ''
   } catch {
     oauthProviders.value = []
+    oauthGithubClientId.value = ''
   }
 }
 
@@ -869,6 +873,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                 :open="oauthOpen"
                 :provider="oauthProvider"
                 :provider-name="oauthProviderName"
+                :client-id="oauthGithubClientId"
                 @close="oauthOpen = false"
                 @authorized="onOAuthAuthorized"
               />
@@ -1110,6 +1115,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                 :open="oauthOpen"
                 :provider="oauthProvider"
                 :provider-name="oauthProviderName"
+                :client-id="oauthGithubClientId"
                 @close="oauthOpen = false"
                 @authorized="onOAuthAuthorized"
               />

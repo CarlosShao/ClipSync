@@ -1759,6 +1759,85 @@ function doCopy(){{
     Ok(())
 }
 
+// ===== 089-GitHub：设备码流的两步放到**本机**跑（2026-10-09）=====
+// 为什么不在服务端：生产服务器到 github.com 时通时不通（而 api.github.com 很稳），
+//   用户侧表现是「浏览器授权成功、桌面端一直等」或「发起失败：This operation was aborted」。
+// 为什么不在 webview 的 JS 里：GitHub 不回 CORS 头（实测无 access-control-allow-origin），
+//   浏览器会把响应直接拦掉；Rust 侧不受 CORS 限制。
+// 身份验证不在这里做：拿到的 access token 交回服务端，由它向 api.github.com 取资料定身份
+// （见 routes/auth-oauth.js 的 POST /api/auth/oauth/github/exchange）。
+const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+const GITHUB_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+const GITHUB_SCOPE: &str = "read:user user:email";
+
+fn github_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("初始化 HTTP 客户端失败: {}", e))
+}
+
+/// 第一步：要「用户码 + 设备码」。client_id 由前端从服务端 /providers 拿（公开值）。
+#[tauri::command]
+async fn github_device_code(client_id: String) -> Result<serde_json::Value, String> {
+    let client_id = client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err("GitHub Client ID 为空（管理台 → 系统设置 → 第三方登录）".to_string());
+    }
+    let client = github_http_client()?;
+    let resp = client
+        .post(GITHUB_DEVICE_CODE_URL)
+        .header("Accept", "application/json")
+        .form(&[("client_id", client_id.as_str()), ("scope", GITHUB_SCOPE)])
+        .send()
+        .await
+        .map_err(|e| format!("连接 GitHub 失败: {}", e))?;
+    let status = resp.status();
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("GitHub 响应解析失败: {}", e))?;
+    if !status.is_success() {
+        let detail = body
+            .get("error_description")
+            .or_else(|| body.get("error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("未知错误");
+        return Err(format!(
+            "GitHub 拒绝发起（HTTP {}）：{}",
+            status.as_u16(),
+            detail
+        ));
+    }
+    Ok(body)
+}
+
+/// 第二步（轮询）：换 access token。未授权时 GitHub 回 error=authorization_pending / slow_down，
+/// 原样透传给前端（由前端决定等待策略）；这里只把网络/解析异常变成错误。
+#[tauri::command]
+async fn github_device_token(
+    client_id: String,
+    device_code: String,
+) -> Result<serde_json::Value, String> {
+    let client = github_http_client()?;
+    let resp = client
+        .post(GITHUB_TOKEN_URL)
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", client_id.trim()),
+            ("device_code", device_code.trim()),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("连接 GitHub 失败: {}", e))?;
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("GitHub 响应解析失败: {}", e))?;
+    Ok(body)
+}
+
 /// 发送验证码。A1：地址不再硬编码 localhost:3001，改读用户配置的 server_url。
 #[tauri::command]
 async fn send_verification_code(
@@ -2176,6 +2255,8 @@ pub fn run() {
             install_update,
             login,
             send_verification_code,
+            github_device_code,
+            github_device_token,
             enable_autostart,
             disable_autostart,
             is_autostart_enabled,

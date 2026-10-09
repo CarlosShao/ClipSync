@@ -53,6 +53,13 @@ export const login = (phone: string, code: string) =>
   invoke<{ token: string; user: { id: string } }>('login', { phone, code })
 export const sendVerificationCode = (phone: string) => invoke('send_verification_code', { phone })
 
+// 089-GitHub：设备码流的两步在本机跑（服务端到 github.com 不稳；webview 的 JS 直连被 GitHub 的
+// CORS 拦掉）。返回 GitHub 的原始 JSON：未授权时是 {error:'authorization_pending'}，由调用方判读。
+export const githubDeviceCode = (clientId: string) =>
+  invoke<Record<string, unknown>>('github_device_code', { clientId })
+export const githubDeviceToken = (clientId: string, deviceCode: string) =>
+  invoke<Record<string, unknown>>('github_device_token', { clientId, deviceCode })
+
 // ===== App =====
 export const openUrl = (url: string) => invoke('open_url', { url })
 // A7：只做检查，不下载不安装。未配置 pubkey 时 Rust 会 reject（前端据此提示"更新服务未配置"）

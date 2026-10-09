@@ -17,6 +17,10 @@ import { X, Copy, ExternalLink } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { api } from '@/api/client'
 import { useSonner } from '@/composables/useSonner'
+import {
+  githubDeviceCode as tauriGithubDeviceCode,
+  githubDeviceToken as tauriGithubDeviceToken,
+} from '@/lib/tauri'
 
 const props = defineProps<{
   open: boolean
@@ -24,6 +28,8 @@ const props = defineProps<{
   provider: string
   /** 展示名（父组件按 /providers 给） */
   providerName?: string
+  /** GitHub 的 client_id（公开值，父组件从 /providers 拿）——本机跑设备码流要用它 */
+  clientId?: string
 }>()
 
 const emit = defineEmits<{
@@ -40,6 +46,8 @@ const verificationUri = ref('')
 const pollToken = ref('')
 const secondsLeft = ref(0)
 const errorText = ref('')
+/** GitHub 本机流程用：设备码（轮询密钥，只在本机内存里） */
+let ghDeviceCode = ''
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -55,14 +63,57 @@ function clearTimers() {
   }
 }
 
+/** 把「发起结果」铺到 UI 并启动倒计时 + 轮询（服务端链路与本机链路共用这段尾巴） */
+function armFlow(opts: {
+  code: string
+  uri: string
+  expiresIn: number
+  intervalSec: number
+  tick: () => void
+}) {
+  userCode.value = opts.code
+  verificationUri.value = opts.uri
+  secondsLeft.value = opts.expiresIn
+  countdownTimer = setInterval(() => {
+    secondsLeft.value = Math.max(secondsLeft.value - 1, 0)
+    if (secondsLeft.value === 0) fail('验证码已过期，请重新发起')
+  }, 1000)
+  pollTimer = setInterval(() => opts.tick(), Math.max(opts.intervalSec, 5) * 1000)
+}
+
 async function start() {
   clearTimers()
   errorText.value = ''
   userCode.value = ''
   verificationUri.value = ''
   pollToken.value = ''
+  ghDeviceCode = ''
   loading.value = true
   try {
+    if (props.provider === 'github') {
+      // GitHub 走**本机**设备码流：服务端到 github.com 时通时不通（用户侧表现「发起失败」或
+      // 授权后一直等），而 webview 的 JS 直连会被 GitHub 的 CORS 拦掉 ⇒ 两步都交给 Rust。
+      // 身份验证不在这里：拿到 access token 后交服务端（它向 api.github.com 取资料定身份）。
+      const data = await tauriGithubDeviceCode(props.clientId || '')
+      const code = String(data.user_code || '')
+      const deviceCode = String(data.device_code || '')
+      if (!code || !deviceCode) {
+        errorText.value = String(
+          data.error_description || data.error || '发起登录失败，请稍后重试'
+        )
+        return
+      }
+      ghDeviceCode = deviceCode
+      armFlow({
+        code,
+        uri: String(data.verification_uri || 'https://github.com/login/device'),
+        expiresIn: Number(data.expires_in) || 900,
+        intervalSec: Number(data.interval) || 5,
+        tick: () => void pollGithubLocal(),
+      })
+      return
+    }
+
     const res = await api('POST', `/api/auth/oauth/${props.provider}/start`, {})
     // ⚠️ api() 不解响应壳：start 回的是 { code, data:{ userCode… } }（与 /providers 的裸对象不同形），
     // 直接读 res.data.userCode 会永远 undefined，表现就是「一点就报发起失败」。
@@ -71,23 +122,61 @@ async function start() {
       errorText.value = res.error || (res.data?.message as string) || '发起登录失败，请稍后重试'
       return
     }
-    userCode.value = String(payload.userCode)
-    verificationUri.value = String(payload.verificationUri || '')
     pollToken.value = String(payload.pollToken || '')
-    const expiresIn = Number(payload.expiresIn) || 900
-    const interval = Math.max(Number(payload.interval) || 5, 5) * 1000
-
-    secondsLeft.value = expiresIn
-    countdownTimer = setInterval(() => {
-      secondsLeft.value = Math.max(secondsLeft.value - 1, 0)
-      if (secondsLeft.value === 0) fail('验证码已过期，请重新发起')
-    }, 1000)
-
-    pollTimer = setInterval(() => void poll(), interval)
+    armFlow({
+      code: String(payload.userCode),
+      uri: String(payload.verificationUri || ''),
+      expiresIn: Number(payload.expiresIn) || 900,
+      intervalSec: Number(payload.interval) || 5,
+      tick: () => void poll(),
+    })
   } catch (e) {
     errorText.value = String(e)
   } finally {
     loading.value = false
+  }
+}
+
+/** GitHub 本机轮询：Rust 去 github.com 换 token；到手后交服务端验证并签发本站会话 */
+async function pollGithubLocal() {
+  if (!ghDeviceCode) return
+  try {
+    const data = await tauriGithubDeviceToken(props.clientId || '', ghDeviceCode)
+    const token = typeof data.access_token === 'string' ? data.access_token : ''
+    if (token) {
+      clearTimers()
+      await exchangeGithubToken(token)
+      return
+    }
+    const err = String(data.error || '')
+    if (err === 'authorization_pending' || err === 'slow_down') return
+    if (err === 'expired_token') return fail('验证码已过期，请重新发起')
+    if (err === 'access_denied') return fail('你取消了授权')
+    fail(`授权失败：${String(data.error_description || err || '未知错误')}`)
+  } catch {
+    /* 单次抖动不致命：等下一轮，过期由倒计时兜住 */
+  }
+}
+
+/** 把 GitHub access token 交服务端换本站会话（服务端向 api.github.com 验证身份，不采信客户端自称） */
+async function exchangeGithubToken(accessToken: string) {
+  try {
+    const res = await api('POST', '/api/auth/oauth/github/exchange', { accessToken })
+    const payload = (res.data?.data ?? res.data) as Record<string, unknown> | undefined
+    if (!res.ok || !payload?.token) {
+      errorText.value =
+        (res.data as { message?: string } | undefined)?.message ||
+        res.error ||
+        '登录失败，请稍后重试'
+      return
+    }
+    emit('authorized', {
+      token: String(payload.token),
+      refreshToken: payload.refreshToken as string | undefined,
+      user: payload.user,
+    })
+  } catch (e) {
+    errorText.value = String(e)
   }
 }
 

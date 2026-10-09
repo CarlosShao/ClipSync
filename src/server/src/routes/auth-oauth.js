@@ -74,10 +74,99 @@ function assertProvider(req, res) {
 router.get('/providers', async (_req, res) => {
   try {
     const cfg = await getOAuthConfig();
-    return res.json({ providers: listProviders(cfg) });
+    // githubClientId 一并下发：**公开值**（OAuth 授权页 URL 里就带着它），
+    // 客户端要自己跑 GitHub 设备码流时必须用它（见下方 /github/exchange 的说明）
+    return res.json({ providers: listProviders(cfg), githubClientId: cfg.githubClientId || '' });
   } catch (err) {
     logger.error('[oauth] providers failed', { error: err.message });
     return res.status(500).json({ code: 5000, message: '读取第三方登录配置失败' });
+  }
+});
+
+/**
+ * POST /api/auth/oauth/github/exchange —— GitHub 的「客户端跑设备码流」收口。
+ *
+ * 为什么 GitHub 要单独走这条路（2026-10-09 实测）：
+ *   · 生产服务器到 github.com **时通时不通**（api.github.com 0.4s ✓，github.com 连续 6 次 8s 全超时）；
+ *   · 而设备码流的两步（/login/device/code、/login/oauth/access_token）只能在 github.com 上，
+ *     服务端发起 ⇒ 用户「浏览器授权成功、桌面端卡住」；
+ *   · 客户端 JS 直连也不行：GitHub 不回 `access-control-allow-origin` ⇒ 浏览器拦掉响应。
+ *   ⇒ 由桌面端的 Rust 层跑这两步（不受 CORS 限制、且用户网络能通 github.com），
+ *     再把 GitHub 的 access token 交给这里**由服务端去 api.github.com 验证身份**并签发本站会话。
+ *
+ * 安全口径：客户端传来的只是「待验证的凭证」，身份一律以服务端向 api.github.com 拿到的那份为准
+ * （绝不采信客户端自称的 github 用户 id / 邮箱）。
+ */
+router.post('/github/exchange', oauthPollLimiter, async (req, res) => {
+  try {
+    const accessToken =
+      typeof req.body?.accessToken === 'string' ? req.body.accessToken.trim() : '';
+    if (!accessToken || accessToken.length > 512) {
+      return res.status(400).json({ code: 40002, message: '缺少 accessToken' });
+    }
+
+    const profile = await fetchProviderProfile('github', accessToken);
+    if (!profile.ok) {
+      logger.warn('[oauth] github 客户端流取资料失败', { reason: profile.reason, detail: profile.detail });
+      return res
+        .status(409)
+        .json({ code: 4090, message: `获取 github 账号资料失败：${profile.detail || profile.reason}` });
+    }
+
+    const resolved = await resolveOrCreateUser('github', profile);
+    if (!resolved.ok) {
+      return res.status(409).json({ code: 4090, message: '关联账号失败，请改用手机号登录' });
+    }
+    const user = resolved.user;
+    if (user?.is_active === false) {
+      return res.status(403).json({ code: 40301, message: '账号已停用' });
+    }
+
+    const session = await issueSession(user, req);
+
+    await logAuditEvent({
+      userId: user.id,
+      action: 'oauth.login',
+      resourceType: 'user',
+      resourceId: user.id,
+      details: {
+        provider: 'github',
+        providerUserId: profile.providerUserId,
+        accountCreated: resolved.created,
+        linkedExisting: resolved.linkedExisting,
+        email: profile.email || undefined,
+        via: 'client_device_flow',
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers ? req.headers['user-agent'] : undefined,
+    });
+    logger.info('[oauth] 登录成功（客户端设备码流）', {
+      provider: 'github',
+      userId: user.id,
+      created: resolved.created,
+      linkedExisting: resolved.linkedExisting,
+    });
+
+    return res.json({
+      code: 0,
+      data: {
+        status: 'authorized',
+        token: session.token,
+        sessionId: session.sessionId,
+        refreshToken: session.refreshToken,
+        user: {
+          id: user.id,
+          phone: user.phone,
+          email: user.email || null,
+          nickname: user.nickname || null,
+        },
+        accountCreated: resolved.created,
+        linkedExisting: resolved.linkedExisting,
+      },
+    });
+  } catch (err) {
+    logger.error('[oauth] github exchange failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '登录失败，请稍后重试' });
   }
 });
 
