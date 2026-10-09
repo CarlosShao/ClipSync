@@ -124,6 +124,15 @@ router.post('/:provider/poll', oauthPollLimiter, async (req, res) => {
     if (!pollToken) return res.status(400).json({ code: 40002, message: '缺少 pollToken' });
 
     const polled = await pollDeviceFlow(provider, pollToken);
+    // 诊断（临时）：非 pending 中间态一律记下来（pending 由 services 侧记，含 userCode）
+    if (!polled.ok && polled.reason !== 'pending' && polled.reason !== 'slow_down') {
+      logger.warn('[oauth] poll 非 pending 结果', {
+        provider,
+        reason: polled.reason,
+        detail: polled.detail,
+      });
+    }
+    if (polled.ok) logger.info('[oauth] poll 已拿到 access token', { provider });
     if (!polled.ok) {
       // pending / slow_down 是**正常中间态**：用 200 + status 表达，避免前端把 4xx 当失败弹错
       if (polled.reason === 'pending' || polled.reason === 'slow_down') {
