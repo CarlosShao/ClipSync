@@ -64,15 +64,18 @@ async function start() {
   loading.value = true
   try {
     const res = await api('POST', `/api/auth/oauth/${props.provider}/start`, {})
-    if (!res.ok || !res.data?.userCode) {
-      errorText.value = res.error || '发起登录失败，请稍后重试'
+    // ⚠️ api() 不解响应壳：start 回的是 { code, data:{ userCode… } }（与 /providers 的裸对象不同形），
+    // 直接读 res.data.userCode 会永远 undefined，表现就是「一点就报发起失败」。
+    const payload = (res.data?.data ?? res.data) as Record<string, unknown> | undefined
+    if (!res.ok || !payload?.userCode) {
+      errorText.value = res.error || (res.data?.message as string) || '发起登录失败，请稍后重试'
       return
     }
-    userCode.value = res.data.userCode
-    verificationUri.value = res.data.verificationUri || ''
-    pollToken.value = res.data.pollToken || ''
-    const expiresIn = Number(res.data.expiresIn) || 900
-    const interval = Math.max(Number(res.data.interval) || 5, 5) * 1000
+    userCode.value = String(payload.userCode)
+    verificationUri.value = String(payload.verificationUri || '')
+    pollToken.value = String(payload.pollToken || '')
+    const expiresIn = Number(payload.expiresIn) || 900
+    const interval = Math.max(Number(payload.interval) || 5, 5) * 1000
 
     secondsLeft.value = expiresIn
     countdownTimer = setInterval(() => {
@@ -94,20 +97,32 @@ async function poll() {
     const res = await api('POST', `/api/auth/oauth/${props.provider}/poll`, {
       pollToken: pollToken.value,
     })
+    // 网络抖动（status 0）与限流（429）：等下一轮，过期由倒计时兜住
+    if (!res.ok && (res.status === 0 || res.status === 429)) return
+    if (!res.ok) {
+      // 409/403 是终止态（过期 / 用户拒绝 / 账号停用）：服务端给了可执行的中文原因，停轮询并展示。
+      // 旧实现一律 return ⇒ 用户点了「取消授权」还要空转到 15 分钟倒计时结束。
+      fail((res.data as { message?: string } | undefined)?.message || res.error || '授权失败，请重新发起')
+      return
+    }
+    // ⚠️ 同 start()：poll 也是 { code, data } 壳，直接读 res.data.status 会永远 undefined
+    const payload = (res.data?.data ?? res.data) as Record<string, unknown> | undefined
+    const status = payload?.status
     // pending / slow_down：正常等待，什么都不做
-    if (!res.ok) return
-    if (res.data?.status === 'pending' || res.data?.status === 'slow_down') return
-    if (res.data?.status === 'authorized' && res.data?.token) {
+    if (status === 'pending' || status === 'slow_down') return
+    if (status === 'authorized' && payload?.token) {
       clearTimers()
       emit('authorized', {
-        token: res.data.token,
-        refreshToken: res.data.refreshToken,
-        user: res.data.user,
+        token: String(payload.token),
+        refreshToken: payload.refreshToken as string | undefined,
+        user: payload.user,
       })
       return
     }
+    // 未知态（协议漂移）：停轮询并给出可执行下一步，别静默空转
+    fail('授权状态异常，请重新发起')
   } catch {
-    /* 单次轮询失败不致命：等下一个周期，过期由倒计时兜住 */
+    /* 单次轮询异常不致命：等下一个周期，过期由倒计时兜住 */
   }
 }
 
