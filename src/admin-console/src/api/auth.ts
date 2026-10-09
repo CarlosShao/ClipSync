@@ -1,4 +1,5 @@
-import { apiGet, apiPost } from '@/api/client';
+import axios from 'axios';
+import { API_BASE, apiGet, apiPost } from '@/api/client';
 import type { LoginResp, RefreshPayload, WhoamiResp } from '@/api/types';
 
 /**
@@ -50,9 +51,33 @@ export async function loginByPassword(payload: {
   return finalizeSession(real, payload.account.trim());
 }
 
-/** 发送登录验证码（dev 环境为 MVP 固定码，见后端 send-code） */
-export async function sendLoginCode(phone: string): Promise<void> {
-  await apiPost('/auth/send-code', { phone: phone.trim() });
+/** 发送登录验证码（dev 环境为 MVP 固定码，见后端 send-code）；开启人机验证后须带 token */
+export async function sendLoginCode(phone: string, turnstileToken?: string): Promise<void> {
+  await apiPost('/auth/send-code', {
+    phone: phone.trim(),
+    ...(turnstileToken ? { turnstileToken } : {}),
+  });
+}
+
+/**
+ * GET /auth/captcha-config —— 公开端点，各端据此决定要不要渲染人机验证组件。
+ * 刻意**不走 client**：这是登录页首屏的旁路信息，404（后端尚未升级）或断网都必须静默按
+ * 「未启用」处理——走拦截器会弹「资源不存在」的 toast，等于把错误挂到登录页上。
+ */
+export async function fetchCaptchaConfig(): Promise<{ enabled: boolean; siteKey: string }> {
+  try {
+    const resp = await axios.get<{ enabled?: boolean; siteKey?: string }>(
+      `${API_BASE}/auth/captcha-config`,
+      { timeout: 5000 }
+    );
+    const d = resp.data ?? {};
+    return {
+      enabled: d.enabled === true,
+      siteKey: typeof d.siteKey === 'string' ? d.siteKey.trim() : '',
+    };
+  } catch {
+    return { enabled: false, siteKey: '' };
+  }
 }
 
 /** 管理员登录 · 验证码方式 */

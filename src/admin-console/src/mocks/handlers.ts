@@ -152,6 +152,10 @@ const authHandlers = [
     );
   }),
 
+  // 088 人机验证：管理台按此决定要不要渲染 Turnstile 挂件。
+  // 真实端点回的是**裸对象**（无 {code,data} 壳，见 server/src/routes/auth-verify.js），mock 必须同形。
+  http.get('/api/auth/captcha-config', () => HttpResponse.json({ enabled: false, siteKey: '' })),
+
   http.post('/api/auth/send-code', async ({ request }) => {
     await delay(300);
     const body = (await request.json()) as { phone?: string };

@@ -766,6 +766,15 @@ describe('GET /api/admin/configs/sentry/issues（087 错误列表）', () => {
   });
 });
 
+describe('GET /api/auth/captcha-config（088 人机验证）', () => {
+  test('未启用时回裸对象 {enabled:false, siteKey:""}，登录页据此不渲染挂件', async () => {
+    const resp = await get<{ enabled: boolean; siteKey: string }>('/api/auth/captcha-config');
+    expect(resp.status).toBe(200);
+    // 真实端点是裸对象（无 code 壳）：客户端 fetchCaptchaConfig 直接读 enabled 字段
+    expect(resp.body).toEqual({ enabled: false, siteKey: '' });
+  });
+});
+
 describe('角色权限写路径（T-A6）', () => {
   test('GET /roles 返回 4 角色（含权限集合与人数），GET /permissions 返回 31 项目录（RB-06/RB-11 扩充 + 065/AN-04 release 键）', async () => {
     const roles = expectOk(await get<Role[]>('/api/admin/roles')).data;

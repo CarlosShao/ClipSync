@@ -1,9 +1,15 @@
-import { LockOutlined, SafetyCertificateOutlined, ClockCircleOutlined, MobileOutlined } from '@ant-design/icons';
+import {
+  LockOutlined,
+  SafetyCertificateOutlined,
+  ClockCircleOutlined,
+  MobileOutlined,
+} from '@ant-design/icons';
 import { Button, Form, Input, App as AntdApp, Segmented } from 'antd';
 import { Navigate, useNavigate } from 'react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { loginByCode, loginByPassword, sendLoginCode } from '@/api/auth';
+import { TurnstileWidget, type CaptchaState } from '@/components/TurnstileWidget';
 import { useAuthStore } from '@/stores/authStore';
 import type { LoginResp } from '@/api/types';
 import styles from '@/styles/login-brand.module.css';
@@ -36,11 +42,16 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<LoginMode>('code');
   const [countdown, setCountdown] = useState(0);
+  // 人机验证（088）：默认未启用 ⇒ 挂件不渲染、发码不带 token，与接入前一致
+  const [captcha, setCaptcha] = useState<CaptchaState>({ enabled: false, token: '' });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    },
+    []
+  );
 
   const onSuccess = (data: LoginResp) => {
     setAuth(data);
@@ -62,7 +73,7 @@ export default function LoginPage() {
   });
 
   const sendCodeMutation = useMutation({
-    mutationFn: (phone: string) => sendLoginCode(phone),
+    mutationFn: ({ phone, token }: { phone: string; token: string }) => sendLoginCode(phone, token),
     onSuccess: () => {
       void message.success('验证码已发送');
       setCountdown(60);
@@ -105,17 +116,20 @@ export default function LoginPage() {
         <div className={styles.card}>
           <div className={styles.brand}>
             <div className={styles.logoMark}>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 48 48"
-                fill="none"
-                aria-hidden
-              >
+              <svg width="16" height="16" viewBox="0 0 48 48" fill="none" aria-hidden>
                 <rect x="9.8" y="10.5" width="5" height="19" rx="2.5" fill="#fff" />
                 <rect x="33.2" y="18.5" width="5" height="19" rx="2.5" fill="#fff" />
                 <rect x="20.9" y="19.5" width="9" height="9" rx="2.6" fill="#fff" />
-                <line x1="16.4" y1="26" x2="18.6" y2="24.7" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" opacity=".55" />
+                <line
+                  x1="16.4"
+                  y1="26"
+                  x2="18.6"
+                  y2="24.7"
+                  stroke="#fff"
+                  strokeWidth="3.4"
+                  strokeLinecap="round"
+                  opacity=".55"
+                />
               </svg>
             </div>
             <b>ClipSync Admin</b>
@@ -172,7 +186,11 @@ export default function LoginPage() {
                   />
                 </Form.Item>
                 <div className={styles.otpBtnCell}>
-                  <Button className={styles.otpBtn} icon={<ClockCircleOutlined />} title="30 秒刷新" />
+                  <Button
+                    className={styles.otpBtn}
+                    icon={<ClockCircleOutlined />}
+                    title="30 秒刷新"
+                  />
                 </div>
               </div>
               <Button
@@ -232,18 +250,26 @@ export default function LoginPage() {
                     icon={<MobileOutlined />}
                     disabled={countdown > 0}
                     onClick={() => {
-                      const phone = (document.getElementById('login-phone-input') as HTMLInputElement | null)?.value ?? '';
+                      const phone =
+                        (document.getElementById('login-phone-input') as HTMLInputElement | null)
+                          ?.value ?? '';
                       if (!/^\d{11}$/.test(phone)) {
                         void message.warning('请先填写 11 位手机号');
                         return;
                       }
-                      sendCodeMutation.mutate(phone);
+                      // 服务端要求人机验证时，token 为空就先别发——否则只会换回一个 400
+                      if (captcha.enabled && !captcha.token) {
+                        void message.warning('请先完成下方人机验证');
+                        return;
+                      }
+                      sendCodeMutation.mutate({ phone, token: captcha.token });
                     }}
                   >
                     {countdown > 0 ? `${countdown}s` : '发送验证码'}
                   </Button>
                 </div>
               </div>
+              <TurnstileWidget onChange={setCaptcha} />
               <Button
                 className={styles.submit}
                 type="primary"
