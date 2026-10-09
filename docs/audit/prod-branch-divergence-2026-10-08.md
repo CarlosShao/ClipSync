@@ -98,3 +98,49 @@ docker exec clipsync-postgres-prod psql -U clipsync -d clipsync \
 ## 5. 变更记录
 - **2026-10-08**：首次审计（起因：同一天在同一功能上连踩 3 个"已修未上线"的坑）。
   更正：初判"迁移被追加内容导致漂移"错误 —— 实为迁移文件从未到过生产，且会自愈。
+- **2026-10-09 18:0x–18:2x：升级已执行**（详见 §6）。
+
+## 6. 升级执行记录（2026-10-09）
+
+**回滚点**：`c68b6c44e9409ad06f632cf752f02bdfcb60dc2a`（升级前生产 HEAD，35 个 backport 本地提交）。
+升级后 HEAD = `fe37b8e5`（`origin/test/admin-full-audit` tip）。
+
+**备份**（均在 `/root/preupgrade-20261009/`，已 gzip -t 校验）：
+`db.sql.gz`(40 KB) · `nginx.conf.live` · `clipsync.conf.live` · `admin-site-before.tgz`(911 KB) · `schema_migrations.txt`
+
+⚠️ **本次抓到的地雷（审计未覆盖）**：`nginx/conf.d/clipsync.conf` 与 `nginx/nginx.conf` 是**被 git 跟踪**的文件，
+而生产现场版与仓库版**不同** —— 仓库版是「多实例 HA 起草稿」（443 段全注释、upstream 指向 `clipsync-api-1/-2`），
+`git reset --hard` 会把生产配置换成起草稿 ⇒ **nginx 一旦重启就 443 不监听**（仓内文件头自带这条警告）。
+处置：升级前 `cp` 出现场版 → reset → 立刻拷回，校验和与升级前逐字一致（`b547ead4…` / `89100b57…`），
+`docker exec clipsync-nginx nginx -t` 通过。**这两文件现在 `git status` 显示为「本地修改」，属有意保留，不要 checkout。**
+根治（把现场版收进仓库、起草稿另存）见 §7 待办。
+
+**迁移预跑 vs 实际**（预跑用「全部文件 − 已登记键（含数字→文件名回填映射）」算差集）：
+预测 10 个 = 预期 8 个（075–083）+ 撞号治愈 2 个（`031_ai_provider_context_window.sql`、`031_image_hash.sql`）——
+**实际执行的恰好就是这 10 个**，零 42703/42P01；重启后再算 **PENDING=0**（下次启动不会再跑任何迁移）。
+库内落地核对：`user_sessions.updated_at`、`ai_providers.context_window`、`clipboard_items.image_hash`、
+`clipboard_items.content_diff`、`shared_links.file_key`、`ai_settings.{thinking_strength,memory_enabled,custom_system_prompt}`、
+新表 `feedback_tickets`/`ai_model_settings`/`oauth_identities`/`refund_requests` 全部存在。
+
+**服务端版本**：`ClipSync Server started version=0.3.0 env=production`（升级前为 0.1.x 线）。
+
+**冒烟**（共 19 项，全通过）：health · send-code 非法号码 400（不发短信）· 超管登录(367) · whoami(super_admin/100) ·
+退款审核列表 200（此前必 500）· 订单列表 200 · AI 设置 GET+PUT 200（此前 42703）· 分享链接 200 ·
+反馈 400 契约校验（079 生效）· 剪贴板列表(真实桌面路径 `/api/clipboard?page=1&limit=3`) 200 ·
+`/api/auth/me` `/api/subscriptions/current` `/api/devices` `/api/admin/sessions` 均 200 ·
+WS：`--http1.1` 带一次性 `csrf_token` 握手 **101 且无 rejected**（⚠️ 必须 http1.1：HTTP/2 下 Upgrade 语义被丢掉，
+会看到误导性的 404）· 管理台首页 200 · 官网 200。重启后错误日志仅 2 条预期项（`METRICS_TOKEN` 未配置告警、
+031 撞号提示）。
+
+**管理台静态站**：重建并部署 `index-Qy6hUeLO.js`（含 088 Turnstile 挂件、089 第三方登录分块、联调后端面板），
+线上 `admin.clipchain.top` 200 且引用新 chunk。
+
+**残留（不影响判定）**：`schema_migrations` 里 `079/081/082/083` 同时存在裸数字记录与文件名记录 —— 这 4 个迁移文件
+自身在 SQL 末尾 `INSERT INTO schema_migrations ('079')` 式自登记（已核：仅这 4 个文件含该语句）；下次重启时
+回填逻辑会清掉裸数字记录（已实测 PENDING=0，不会重跑）。
+
+## 7. 待办（本审计衍生）
+1. **nginx 配置收敛**（低风险但需人拍板）：把生产现场版收进仓库为唯一真相（起草稿改名/移入 docs），
+   否则每次 `git reset --hard`/`git checkout` 都要重新避雷一次。
+2. `src/admin-console` 的 `mocks/handlers.ts` 等文件在 HEAD 上不符合 prettier（dsh 期间引入），
+   `npm run lint` 报 5 个 `no-base-to-string` error（`String(body.name)` 可能产出 `[object Object]`，位于短信/邮件/Sentry 配置保存路径）。
