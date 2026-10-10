@@ -8,8 +8,8 @@ import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middle
 import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
-// 088 人机验证：发码前门控（默认未启用 ⇒ 零行为变化；见 utils/turnstile.js 顶部说明）
-import { captchaGate, getTurnstileConfig } from '../utils/turnstile.js';
+// 090 人机验证：provider 抽象（off / turnstile / self 自建滑块）——门控与出题都在 utils/captcha.js
+import { captchaGate, getCaptchaConfig, issueSliderChallenge } from '../utils/captcha.js';
 import { issueRefreshToken } from '../utils/refreshToken.js';
 import { isFlagEnabled } from '../utils/featureFlags.js';
 // AN-12：管理员安全策略（force_2fa_for_admin 登录强制点）
@@ -49,14 +49,34 @@ async function createSessionAndGenerateToken(user, req) {
  * 只回 `{ enabled, siteKey }`：**siteKey 是公开值**，secret 永不出库（见 utils/turnstile.js）。
  * enabled 只有在「开关 true 且密钥齐全」时才为 true，所以各端按它渲染即可，不需要各自判断半配状态。
  */
+/**
+ * GET /api/auth/captcha-challenge —— 自建滑块**出题**（provider=self 时有效）。
+ * 返回两张 PNG（背景含缺口 + 滑块）与签名 token：**缺口坐标只在 token 里**，返回体里没有
+ * ⇒ 脚本想自动通过就得做图像识别。挂 strictLimiter，防止被刷成免费图床。
+ */
+router.get('/captcha-challenge', strictLimiter, async (_req, res) => {
+  try {
+    const cfg = await getCaptchaConfig();
+    if (cfg.provider !== 'self') {
+      return res.status(409).json({ code: 4090, message: '当前未启用自建滑块验证' });
+    }
+    const c = await issueSliderChallenge();
+    return res.json({ code: 0, data: c, message: '请拖动滑块完成验证' });
+  } catch (err) {
+    logger.error('[captcha-challenge] failed', { error: err.message });
+    return res.status(500).json({ code: 5000, message: '获取验证题失败' });
+  }
+});
+
 router.get('/captcha-config', async (_req, res) => {
   try {
-    const cfg = await getTurnstileConfig();
-    return res.json({ enabled: cfg.enabled, siteKey: cfg.enabled ? cfg.siteKey : '' });
+    const cfg = await getCaptchaConfig();
+    // provider 一并透出：前端据此决定渲染 Turnstile 组件、自建滑块，还是什么都不渲染
+    return res.json({ provider: cfg.provider, enabled: cfg.enabled, siteKey: cfg.turnstileSiteKey || '' });
   } catch (err) {
     logger.error('[captcha-config] failed', { error: err.message });
     // 读不到配置时按"未启用"返回：客户端不渲染组件，发码照旧（未启用时门控也放行）
-    return res.json({ enabled: false, siteKey: '' });
+    return res.json({ provider: 'off', enabled: false, siteKey: '' });
   }
 });
 

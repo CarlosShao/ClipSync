@@ -445,6 +445,11 @@ export default function SettingsPage() {
   // 别把 GitHub/Microsoft 平铺在一起；以后加微信/Google 各自一块）。
   // 注意：保存仍然是**整卡一个按钮**（group.keys 覆盖全部子类，避免多按钮各存一半）。
   const GROUP_SECTIONS: Record<string, { label: string; keys: string[] }[]> = {
+    '人机验证（CAPTCHA）': [
+      { label: '验证方式', keys: ['captcha_provider'] },
+      { label: 'Cloudflare Turnstile（海外友好）', keys: ['turnstile_site_key', 'turnstile_secret_key'] },
+      { label: '自建滑块（免费·国内可达；无需配置项——出题与校验都在服务端）', keys: [] },
+    ],
     '第三方登录（OAuth）': [
       { label: 'GitHub', keys: ['oauth_github_client_id'] },
       { label: 'Microsoft', keys: ['oauth_microsoft_client_id', 'oauth_microsoft_tenant'] },
@@ -490,7 +495,8 @@ export default function SettingsPage() {
     // 开关默认关（打开前必须确认桌面端/移动端也挂上 widget，否则客户端发码会被拦）
     {
       title: '人机验证（CAPTCHA）',
-      keys: ['turnstile_site_key', 'turnstile_secret_key', 'turnstile_enabled'],
+      // 唯一开关 captcha_provider + 各 provider 自己的凭据（不再有 turnstile_enabled，避免重复项）
+      keys: ['captcha_provider', 'turnstile_site_key', 'turnstile_secret_key'],
     },
     // 089：第三方登录（设备码流）—— 两个 Client ID + Entra 租户；留空 = 登录页不显示该入口
     {
@@ -633,14 +639,15 @@ export default function SettingsPage() {
         />
       );
     }
-    if (key === 'turnstile_enabled') {
+    if (key === 'captcha_provider') {
       // 088：总开关。用显式下拉而不是裸文本框，避免填出 "True"/"1" 这种不可解析值
       return (
         <Select
           style={{ maxWidth: 260 }}
           options={[
-            { value: 'false', label: '关闭（默认，所有客户端不受影响）' },
-            { value: 'true', label: '开启（⚠️ 客户端未挂 widget 时将无法发码登录）' },
+            { value: 'off', label: '关闭（默认，所有客户端不受影响）' },
+            { value: 'turnstile', label: 'Cloudflare Turnstile（海外友好）' },
+            { value: 'self', label: '自建滑块（免费·国内可达）' },
           ]}
         />
       );

@@ -59,6 +59,9 @@ import { invalidateSmsConfigCache, sendVerificationCodeSms, generateCode, queryS
 import { invalidateSentryConfigCache, initSentry, fetchSentryIssues, invalidateSentryApiTokenCache } from '../../utils/sentry.js';
 // 人机验证（迁移 088）：保存 turnstile_* 后失效缓存（下次发码即用新配置）
 import { invalidateTurnstileConfigCache } from '../../utils/turnstile.js';
+// 090：provider 抽象层缓存（captcha_provider 变更后即时生效）
+import { invalidateCaptchaConfigCache } from '../../utils/captcha.js';
+// 090：provider 抽象层的缓存（captcha_provider 变更后即时生效）
 // 第三方登录（迁移 089）：保存 oauth_* 后失效缓存（下次发起设备码流即用新 Client ID）
 import { invalidateOAuthConfigCache } from '../../services/oauthDevice.js';
 // A4：测试短信手机号校验（与 /api/auth/send-code 同一校验口径）
@@ -295,7 +298,7 @@ const CONFIG_CATALOG = [
       '加密存储；用于在管理台读取错误列表。Sentry → Settings → Auth Tokens 生成，scope 需 project:read + event:read；留空则「最近错误」列表不可用（不影响错误上报）',
     consumer: 'src/server/src/utils/sentry.js（getSentryApiToken / fetchSentryIssues；GET /admin/configs/sentry/issues）',
   },
-  // —— 人机验证（088，Cloudflare Turnstile）：默认关，填 key 不生效、开开关才生效 ——
+  // —— 人机验证（088/090）：唯一开关是 captcha_provider；下面是各 provider 自己的凭据 ——
   {
     key: 'turnstile_site_key',
     name: 'Turnstile Site Key',
@@ -309,11 +312,11 @@ const CONFIG_CATALOG = [
     consumer: 'src/server/src/utils/turnstile.js（verifyTurnstile 调 Cloudflare siteverify）',
   },
   {
-    key: 'turnstile_enabled',
-    name: '人机验证开关',
+    key: 'captcha_provider',
+    name: '人机验证方式',
     description:
-      '⚠️ 打开前必须确认桌面端/移动端也已挂上 widget：发码接口是各端共用的，打开后没带 token 的客户端将无法发码登录。密钥不全时按未启用处理',
-    consumer: 'src/server/src/utils/turnstile.js（gateCaptcha；routes/auth-verify.js / auth.js 发码前门控）',
+      '唯一开关：off 关闭（默认）/ turnstile Cloudflare（海外友好）/ self 自建滑块（免费·国内可达·无需第三方凭据）。⚠️ 开启前请确认桌面端/移动端也已挂上组件，否则没带 token 的客户端会发不了码',
+    consumer: 'src/server/src/utils/captcha.js（captchaGate / checkCaptcha；routes/auth-verify.js / auth.js 三条发码路由）',
   },
   // —— 第三方登录（089，设备码流：GitHub / Microsoft）：留空 = 该入口不可用 ——
   {
@@ -609,8 +612,9 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
     }
 
     // 088：人机验证三个键写库后失效缓存（下次发码即用新配置；开关默认 false 时零影响）
-    if (key.startsWith('turnstile_')) {
+    if (key.startsWith('turnstile_') || key === 'captcha_provider') {
       invalidateTurnstileConfigCache();
+      invalidateCaptchaConfigCache();
     }
 
     // 089：第三方登录配置写库后失效缓存（下次发起设备码流即用新 Client ID）

@@ -16,7 +16,7 @@ import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
 // 088 人机验证：发码前门控（默认未启用 ⇒ 零行为变化）
-import { captchaGate } from '../utils/turnstile.js';
+import { captchaGate } from '../utils/captcha.js';
 import { logger } from '../utils/logger.js';
 import { isFlagEnabled, requireFlag } from '../utils/featureFlags.js';
 import { CHALLENGE_TOKEN_TYPE } from '../middleware/auth.js';
