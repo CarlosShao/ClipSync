@@ -16,6 +16,8 @@ import { ref, watch, onUnmounted } from 'vue'
 import { X, Copy, ExternalLink } from 'lucide-vue-next'
 import Button from '@/components/ui/button/Button.vue'
 import { api } from '@/api/client'
+// 用系统默认浏览器打开授权页（Tauri 命令 open_url），而不是让用户在 webview 里折腾
+import { openUrl } from '@/lib/tauri'
 import { useSonner } from '@/composables/useSonner'
 import {
   githubDeviceCode as tauriGithubDeviceCode,
@@ -50,6 +52,7 @@ const errorText = ref('')
 let ghDeviceCode = ''
 let pollCount = 0
 
+let autoOpenedAuthPage = false
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
@@ -81,6 +84,15 @@ function armFlow(opts: {
 }) {
   userCode.value = opts.code
   verificationUri.value = opts.uri
+  // 自动跳转系统默认浏览器（不用再点按钮）。两家参数名不同：微软 otc / GitHub user_code，
+  // 都带上 —— 不认的参数会被忽略，最坏情况就是用户自己手填（页面上仍显示验证码）。
+  if (verificationUri.value && !autoOpenedAuthPage) {
+    const sep = verificationUri.value.includes('?') ? '&' : '?'
+    verificationUri.value += `otc=&user_code=`
+    autoOpenedAuthPage = true
+    void openAuthPage()
+    void navigator.clipboard.writeText(userCode.value).catch(() => {})
+  }
   secondsLeft.value = opts.expiresIn
   let delayMs = Math.max(opts.intervalSec, 5) * 1000 + 1000
   countdownTimer = setInterval(() => {
@@ -320,10 +332,8 @@ onUnmounted(clearTimers)
           3）完成后<strong>本窗口会自动登录</strong>，不用回到这里操作。
           <span v-if="secondsLeft > 0">（{{ Math.floor(secondsLeft / 60) }}:{{ String(secondsLeft % 60).padStart(2, '0') }} 内有效）</span>
         </p>
-        <Button class="oauth-btn" @click="openAuthPage">
-          <ExternalLink :size="14" style="margin-right: 6px" />
-          打开 {{ providerName || provider }} 授权页
-        </Button>
+        <p class="oauth-auto">已自动用默认浏览器打开授权页，并把验证码复制到了剪贴板。</p>
+        <p class="oauth-uri"><a :href="verificationUri" target="_blank" rel="noreferrer">没打开？点这里手动打开授权页</a></p>
         <p class="oauth-uri">{{ verificationUri }}</p>
       </template>
     </div>
