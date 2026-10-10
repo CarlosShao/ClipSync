@@ -7,6 +7,7 @@ import { getFeatureFlags } from '../utils/featureFlags.js';
 import { getClientPolicies } from '../utils/clientPolicies.js';
 import { logger } from '../utils/logger.js';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
+import { isMaintenanceOn } from '../middleware/maintenance.js';
 // GH-01：下载地址解析（发布单 url > RELEASE_DOWNLOAD_BASE_URL > system_configs），
 // 取代此前的虚构域名占位回退。
 // ⚠️ 合并提示：原 `import { ORIGINS } from '../../../shared/domains.js'`（域名统一子代理所加）
@@ -15,6 +16,16 @@ import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { resolvePlatformDownload } from '../utils/releaseArtifacts.js';
 
 const router = Router();
+
+// GET /api/app/maintenance — 维护模式初始快照（CO-21；公开只读，桌面端启动时读一次，
+// 之后靠 WS `maintenance.updated` 推送更新——那条广播在 admin/configs.js 写库后发）。
+// ⚠️ 此前客户端有这个调用、服务端却没有这个路由 ⇒ 每次启动一个 404 + 维护横幅永远不出现。
+// 数据源与 middleware/maintenance.js 完全同一份（system_configs.maintenance_mode，5s 缓存）。
+router.get('/maintenance', async (_req, res) => {
+  const on = await isMaintenanceOn();
+  res.set('Cache-Control', 'public, max-age=15');
+  return res.json({ maintenance: on, updatedAt: new Date().toISOString() });
+});
 
 // GET /api/app/feature-flags — 面向客户端的功能开关快照（公开只读）。
 // 仅暴露面向客户端的 5 个开关键；客户端启动时拉取一次，并监听 WS `feature_flags.updated` 即时刷新。
