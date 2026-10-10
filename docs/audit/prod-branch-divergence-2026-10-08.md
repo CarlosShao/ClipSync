@@ -144,3 +144,9 @@ WS：`--http1.1` 带一次性 `csrf_token` 握手 **101 且无 rejected**（⚠�
    否则每次 `git reset --hard`/`git checkout` 都要重新避雷一次。
 2. `src/admin-console` 的 `mocks/handlers.ts` 等文件在 HEAD 上不符合 prettier（dsh 期间引入），
    `npm run lint` 报 5 个 `no-base-to-string` error（`String(body.name)` 可能产出 `[object Object]`，位于短信/邮件/Sentry 配置保存路径）。
+3. **`resolveOrCreateUser` 至今无测试**（089 的测试只覆盖 config/start/poll）。10-09 那个生产事故
+   （占位手机号超 `users.phone VARCHAR(20)` ⇒「浏览器授权成功、客户端报关联账号失败」）就是它漏掉的；
+   同类"值长度 / 约束"问题只有真库或严格 mock 才抓得住——补测试时要用 36 位 GUID 的 providerUserId。
+4. **临时诊断日志已从代码删除（提交未部署）**：10-09 排查期间加的 `[oauth] start ok` /
+   `authorization_pending` / `poll 非 pending 结果` 三处日志，随下一次 api-prod 部署生效；
+   生产当前跑的是带日志的版本（噪音 ≲12 行/分，仅在有进行中的设备码流时出现）。

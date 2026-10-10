@@ -155,15 +155,12 @@ export async function startDeviceFlow(provider, cfgInput) {
     }
     const expiresIn = Math.max(Number(data.expires_in) || 900, 60);
     const interval = Math.max(Number(data.interval) || 5, 5);
-    // 诊断（临时）：把发出的码记下来（code 是公开值，用户屏幕上就印着它）
-    logger.info('[oauth] start ok', { provider, userCode, interval, expiresIn });
     return {
       ok: true,
       provider,
       userCode,
       // ⚠️ device_code 绝不外发：加密成 opaque pollToken（见文件头说明）
-      // userCode 一并放进密文：只为诊断时能把「用户屏幕上的码」与「正在轮询的流」对上（不外发）
-      pollToken: encryptField(JSON.stringify({ provider, deviceCode, userCode, iat: Date.now() })),
+      pollToken: encryptField(JSON.stringify({ provider, deviceCode, iat: Date.now() })),
       verificationUri: toTrimmedString(data.verification_uri) || (provider === 'github' ? 'https://github.com/login/device' : ''),
       verificationUriComplete: toTrimmedString(data.verification_uri_complete) || null,
       expiresIn,
@@ -204,14 +201,6 @@ export async function pollDeviceFlow(provider, pollToken) {
     const accessToken = toTrimmedString(data.access_token);
     if (accessToken) return { ok: true, accessToken };
     const err = toTrimmedString(data.error);
-    // 诊断（临时）：provider 说还没授权时，把「它认识的 userCode」记下来，
-    // 好和用户屏幕上显示的码对齐（排查"浏览器已授权但服务端仍 pending"）
-    if (err === 'authorization_pending') {
-      logger.info('[oauth] provider 应答 authorization_pending', {
-        provider,
-        userCode: toTrimmedString(payload.userCode) || '(无)',
-      });
-    }
     // RFC 8628 标准错误码（GitHub 与 Entra 同名）
     if (err === 'authorization_pending') return { ok: false, reason: 'pending' };
     if (err === 'slow_down') return { ok: false, reason: 'slow_down' };
