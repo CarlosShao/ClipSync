@@ -84,11 +84,11 @@ function armFlow(opts: {
 }) {
   userCode.value = opts.code
   verificationUri.value = opts.uri
-  // 自动跳转系统默认浏览器（不用再点按钮）。两家参数名不同：微软 otc / GitHub user_code，
-  // 都带上 —— 不认的参数会被忽略，最坏情况就是用户自己手填（页面上仍显示验证码）。
+  // 自动跳转系统默认浏览器（不用再点按钮）。
+  // ⚠️ 实测：**两家设备页都不支持把码带进链接**（GitHub 用 skip_account_picker=true、
+  //    用户码必须在页面里填；微软同理）⇒ 只能"自动打开 + 自动复制"，用户按 Ctrl+V 粘贴即可。
+  //    若要彻底免手填，需要改成 loopback 回调流（见下方 TODO 注释）。
   if (verificationUri.value && !autoOpenedAuthPage) {
-    const sep = verificationUri.value.includes('?') ? '&' : '?'
-    verificationUri.value += `${sep}otc=${encodeURIComponent(userCode.value)}&user_code=${encodeURIComponent(userCode.value)}`
     autoOpenedAuthPage = true
     void openAuthPage()
     void navigator.clipboard.writeText(userCode.value).catch(() => {})
@@ -333,7 +333,7 @@ onUnmounted(clearTimers)
           3）完成后<strong>本窗口会自动登录</strong>，不用回到这里操作。
           <span v-if="secondsLeft > 0">（{{ Math.floor(secondsLeft / 60) }}:{{ String(secondsLeft % 60).padStart(2, '0') }} 内有效）</span>
         </p>
-        <p class="oauth-auto">已自动用默认浏览器打开授权页，并把验证码复制到了剪贴板。</p>
+        <p class="oauth-auto">授权页已自动打开，验证码已复制到剪贴板 —— 在页面上按 Ctrl+V 粘贴即可（设备页不支持自动带码）。</p>
         <p class="oauth-uri"><a :href="verificationUri" target="_blank" rel="noreferrer">没打开？点这里手动打开授权页</a></p>
         <p class="oauth-uri">{{ verificationUri }}</p>
       </template>
