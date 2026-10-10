@@ -64,22 +64,41 @@ function clearTimers() {
   }
 }
 
-/** 把「发起结果」铺到 UI 并启动倒计时 + 轮询（服务端链路与本机链路共用这段尾巴） */
+/** 把「发起结果」铺到 UI 并启动倒计时 + 轮询（服务端链路与本机链路共用这段尾巴）
+ *
+ * ⚠️ 轮询间隔是**自适应**的（RFC 8628）：收到 slow_down 必须真的放慢（每次 +5s），
+ *    否则 provider 会一直回 slow_down —— 实测 GitHub：固定在 5s 轮询时，用户明明已经
+ *    在浏览器里授权完成，token 也拿不到（一直 slow_down），界面就"卡住"了。
+ *    首轮再留 1s 余量：卡在 interval 边界上（哪怕快 0.01s）同样会被判太快。
+ */
 function armFlow(opts: {
   code: string
   uri: string
   expiresIn: number
   intervalSec: number
-  tick: () => void
+  /** 返回 true 表示 provider 要求放慢（slow_down）→ 下一轮间隔 +5s */
+  tick: () => Promise<boolean | void>
 }) {
   userCode.value = opts.code
   verificationUri.value = opts.uri
   secondsLeft.value = opts.expiresIn
+  let delayMs = Math.max(opts.intervalSec, 5) * 1000 + 1000
   countdownTimer = setInterval(() => {
     secondsLeft.value = Math.max(secondsLeft.value - 1, 0)
     if (secondsLeft.value === 0) fail('验证码已过期，请重新发起')
   }, 1000)
-  pollTimer = setInterval(() => opts.tick(), Math.max(opts.intervalSec, 5) * 1000)
+  const loop = async () => {
+    let slow = false
+    try {
+      slow = (await opts.tick()) === true
+    } catch {
+      /* 单轮异常不致命：等下一轮，过期由倒计时兜住 */
+    }
+    if (slow) delayMs += 5000
+    // 弹窗关闭/过期后 clearTimers 会把 pollTimer 置空：此时不再续期
+    if (pollTimer !== null && secondsLeft.value > 0) pollTimer = setTimeout(loop, delayMs)
+  }
+  pollTimer = setTimeout(loop, delayMs)
 }
 
 async function start() {
@@ -111,7 +130,7 @@ async function start() {
         uri: String(data.verification_uri || 'https://github.com/login/device'),
         expiresIn: Number(data.expires_in) || 900,
         intervalSec: Number(data.interval) || 5,
-        tick: () => void pollGithubLocal(),
+        tick: () => pollGithubLocal(),
       })
       return
     }
@@ -130,7 +149,7 @@ async function start() {
       uri: String(payload.verificationUri || ''),
       expiresIn: Number(payload.expiresIn) || 900,
       intervalSec: Number(payload.interval) || 5,
-      tick: () => void poll(),
+      tick: () => poll(),
     })
   } catch (e) {
     errorText.value = String(e)
@@ -139,9 +158,10 @@ async function start() {
   }
 }
 
-/** GitHub 本机轮询：Rust 去 github.com 换 token；到手后交服务端验证并签发本站会话 */
-async function pollGithubLocal() {
-  if (!ghDeviceCode) return
+/** GitHub 本机轮询：Rust 去 github.com 换 token；到手后交服务端验证并签发本站会话。
+ *  返回 true 表示 provider 要求放慢（slow_down）——由 armFlow 把间隔 +5s。 */
+async function pollGithubLocal(): Promise<boolean> {
+  if (!ghDeviceCode) return false
   pollCount += 1
   try {
     const data = await tauriGithubDeviceToken(props.clientId || '', ghDeviceCode)
@@ -150,19 +170,28 @@ async function pollGithubLocal() {
       console.info('[OAuth] github 已拿到 access token，交给服务端验证')
       clearTimers()
       await exchangeGithubToken(token)
-      return
+      return false
     }
     const err = String(data.error || '')
     // 每次轮询的结果都打出来：这里曾经因为静默吞掉错误，导致「授权完不动」无从定位
     console.info(`[OAuth] github 轮询 #${pollCount}: ${err || '(空响应)'}`)
-    if (err === 'authorization_pending' || err === 'slow_down') return
-    if (err === 'expired_token') return fail('验证码已过期，请重新发起')
-    if (err === 'access_denied') return fail('你取消了授权')
+    if (err === 'slow_down') return true
+    if (err === 'authorization_pending') return false
+    if (err === 'expired_token') {
+      fail('验证码已过期，请重新发起')
+      return false
+    }
+    if (err === 'access_denied') {
+      fail('你取消了授权')
+      return false
+    }
     fail(`授权失败：${String(data.error_description || err || '未知错误')}`)
+    return false
   } catch (e) {
     // 本机请求失败也别吞：连不上 GitHub 时至少要看得见原因（连 4 次失败就把提示摆到界面上）
     console.warn(`[OAuth] github 轮询 #${pollCount} 本机请求失败:`, e)
     if (pollCount >= 4) errorText.value = `本机连接 GitHub 失败：${String(e)}`
+    return false
   }
 }
 
