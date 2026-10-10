@@ -198,17 +198,20 @@ const setPwdValid = computed(
     setPwdNew.value === setPwdConfirm.value,
 )
 
-// ===== 088 人机验证（Cloudflare Turnstile）=====
-// 开关默认关、密钥不齐也算未启用 ⇒ 挂件什么都不渲染，发码行为与接入前完全一致。
-// 渲染/取 token 都在 TurnstileWidget 里（每个发码行一个实例）；这里只保存状态。
+// ===== 人机验证（provider 可切换：Turnstile / 自建滑块）=====
+// 开关默认关、凭据不齐也算未启用 ⇒ 挂件什么都不渲染，发码行为与接入前完全一致。
+// 挂件（TurnstileWidget）自己按 /api/auth/captcha-config 的 provider 渲染对应形态，
+// 并把「要原样塞进发码请求体」的字段整体抛上来（turnstile ⇒ {turnstileToken}；self ⇒ {captchaToken,captchaX,captchaTrack}）。
 const captchaEnabled = ref(false)
-const turnstileToken = ref('')
-function onCaptchaToken(t: string) {
-  turnstileToken.value = t
+const captchaPayload = ref<Record<string, unknown>>({})
+function onCaptchaPayload(p: Record<string, unknown>) {
+  captchaPayload.value = p || {}
 }
 function onCaptchaEnabled(v: boolean) {
   captchaEnabled.value = v
 }
+/** 是否已拿到可提交的验证字段 */
+const captchaDone = computed(() => Object.keys(captchaPayload.value).length > 0)
 
 // ===== Send verification code =====
 async function sendCode() {
@@ -223,18 +226,18 @@ async function sendCode() {
     shakeById('send-code-btn')
     return
   }
-  // 服务端要求人机验证、但 token 还没到手：先提示，别发一个注定 400 的请求
-  if (captchaEnabled.value && !turnstileToken.value) {
+  // 服务端要求人机验证、但验证还没完成：先提示，别发一个注定 400 的请求
+  if (captchaEnabled.value && !captchaDone.value) {
     toast.show(t('captcha_required'), 'error')
     return
   }
   isSendingCode.value = true
   try {
     // 089 起改为 JS 直连（Rust 那条 send_verification_code 只是 POST {phone} 的薄封装，
-    // 行为等价）：这样开启人机验证后能把 turnstileToken 一并带上。
+    // 行为等价）：这样开启人机验证后能把验证字段一并带上。
     const res = await api('POST', '/api/auth/send-code', {
       phone,
-      ...(turnstileToken.value ? { turnstileToken: turnstileToken.value } : {}),
+      ...captchaPayload.value,
     })
     if (!res.ok) {
       toast.show(res.error || '验证码发送失败，请稍后重试', 'error')
@@ -753,7 +756,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
-                <TurnstileWidget @token="onCaptchaToken" @enabled="onCaptchaEnabled" />
+                <TurnstileWidget @payload="onCaptchaPayload" @enabled="onCaptchaEnabled" />
               </div>
               <div class="form-options">
                 <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
@@ -989,7 +992,7 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
-                <TurnstileWidget @token="onCaptchaToken" @enabled="onCaptchaEnabled" />
+                <TurnstileWidget @payload="onCaptchaPayload" @enabled="onCaptchaEnabled" />
                 <div v-if="fieldErrors.regCode" class="field-error">{{ fieldErrors.regCode }}</div>
               </div>
               <div class="form-group">

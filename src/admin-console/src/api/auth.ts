@@ -52,10 +52,10 @@ export async function loginByPassword(payload: {
 }
 
 /** 发送登录验证码（dev 环境为 MVP 固定码，见后端 send-code）；开启人机验证后须带 token */
-export async function sendLoginCode(phone: string, turnstileToken?: string): Promise<void> {
+export async function sendLoginCode(phone: string, captchaPayload?: Record<string, unknown>): Promise<void> {
   await apiPost('/auth/send-code', {
     phone: phone.trim(),
-    ...(turnstileToken ? { turnstileToken } : {}),
+    ...(captchaPayload ?? {}),
   });
 }
 
@@ -64,19 +64,20 @@ export async function sendLoginCode(phone: string, turnstileToken?: string): Pro
  * 刻意**不走 client**：这是登录页首屏的旁路信息，404（后端尚未升级）或断网都必须静默按
  * 「未启用」处理——走拦截器会弹「资源不存在」的 toast，等于把错误挂到登录页上。
  */
-export async function fetchCaptchaConfig(): Promise<{ enabled: boolean; siteKey: string }> {
+export async function fetchCaptchaConfig(): Promise<{ provider: string; enabled: boolean; siteKey: string }> {
   try {
-    const resp = await axios.get<{ enabled?: boolean; siteKey?: string }>(
+    const resp = await axios.get<{ provider?: string; enabled?: boolean; siteKey?: string }>(
       `${API_BASE}/auth/captcha-config`,
       { timeout: 5000 }
     );
     const d = resp.data ?? {};
     return {
+      provider: typeof d.provider === 'string' ? d.provider : d.enabled === true ? 'turnstile' : 'off',
       enabled: d.enabled === true,
       siteKey: typeof d.siteKey === 'string' ? d.siteKey.trim() : '',
     };
   } catch {
-    return { enabled: false, siteKey: '' };
+    return { provider: 'off', enabled: false, siteKey: '' };
   }
 }
 

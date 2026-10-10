@@ -1,3 +1,51 @@
 .box {
   margin-top: 8px;
 }
+
+/* ── 自建滑块（provider=self）──────────────────────────── */
+.sliderWrap {
+  margin-top: 8px;
+  width: 300px;
+  max-width: 100%;
+}
+
+.sliderBg {
+  position: relative;
+  user-select: none;
+  touch-action: none;
+}
+
+.sliderBg img {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.sliderPiece {
+  position: absolute;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+  transition: left 60ms linear;
+}
+
+.sliderPiece[data-done='1'] {
+  box-shadow: 0 0 0 2px #16a34a;
+}
+
+.sliderBar {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.sliderReset {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1677ff;
+  font-size: 12px;
+  cursor: pointer;
+}

@@ -43,7 +43,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>('code');
   const [countdown, setCountdown] = useState(0);
   // 人机验证（088）：默认未启用 ⇒ 挂件不渲染、发码不带 token，与接入前一致
-  const [captcha, setCaptcha] = useState<CaptchaState>({ enabled: false, token: '' });
+  const [captcha, setCaptcha] = useState<CaptchaState>({ enabled: false, payload: {} });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(
@@ -73,7 +73,8 @@ export default function LoginPage() {
   });
 
   const sendCodeMutation = useMutation({
-    mutationFn: ({ phone, token }: { phone: string; token: string }) => sendLoginCode(phone, token),
+    mutationFn: ({ phone, payload }: { phone: string; payload: Record<string, unknown> }) =>
+      sendLoginCode(phone, payload),
     onSuccess: () => {
       void message.success('验证码已发送');
       setCountdown(60);
@@ -258,11 +259,11 @@ export default function LoginPage() {
                         return;
                       }
                       // 服务端要求人机验证时，token 为空就先别发——否则只会换回一个 400
-                      if (captcha.enabled && !captcha.token) {
+                      if (captcha.enabled && Object.keys(captcha.payload).length === 0) {
                         void message.warning('请先完成下方人机验证');
                         return;
                       }
-                      sendCodeMutation.mutate({ phone, token: captcha.token });
+                      sendCodeMutation.mutate({ phone, payload: captcha.payload });
                     }}
                   >
                     {countdown > 0 ? `${countdown}s` : '发送验证码'}
