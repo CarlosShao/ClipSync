@@ -88,7 +88,7 @@ function armFlow(opts: {
   // 都带上 —— 不认的参数会被忽略，最坏情况就是用户自己手填（页面上仍显示验证码）。
   if (verificationUri.value && !autoOpenedAuthPage) {
     const sep = verificationUri.value.includes('?') ? '&' : '?'
-    verificationUri.value += `otc=&user_code=`
+    verificationUri.value += `${sep}otc=${encodeURIComponent(userCode.value)}&user_code=${encodeURIComponent(userCode.value)}`
     autoOpenedAuthPage = true
     void openAuthPage()
     void navigator.clipboard.writeText(userCode.value).catch(() => {})
@@ -121,6 +121,7 @@ async function start() {
   pollToken.value = ''
   ghDeviceCode = ''
   pollCount = 0
+  autoOpenedAuthPage = false // 每次发起都重新允许自动跳转（否则一次之后就不再跳）
   loading.value = true
   try {
     if (props.provider === 'github') {
