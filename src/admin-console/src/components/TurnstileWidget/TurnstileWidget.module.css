@@ -2,6 +2,51 @@
   margin-top: 8px;
 }
 
+/* ── 弹窗模式（open 传值）────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border-radius: 12px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardTitle {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cardClose {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.cardTip {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
 /* ── 自建滑块（provider=self）──────────────────────────── */
 .sliderWrap {
   margin-top: 8px;

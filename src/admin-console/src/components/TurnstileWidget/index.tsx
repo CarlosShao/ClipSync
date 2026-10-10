@@ -16,6 +16,10 @@ export interface CaptchaState {
 
 interface TurnstileWidgetProps {
   onChange: (state: CaptchaState) => void;
+  /** 弹窗模式：true 才渲染遮罩弹窗；不传（undefined）= 行内模式（向后兼容） */
+  open?: boolean;
+  /** 用户关闭弹窗（未完成验证） */
+  onClose?: () => void;
 }
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
@@ -52,7 +56,7 @@ interface SliderChallenge {
   pieceSize: number;
 }
 
-/** 取自建滑块题目。用原生 fetch + 相对路径：旁路信息不走 client 拦截器（免得弹无关 toast） */
+/** 取自建滑块题目。原生 fetch + 相对路径：旁路信息不走 client 拦截器（免得弹无关 toast） */
 async function fetchSliderChallenge(): Promise<SliderChallenge | null> {
   try {
     const resp = await fetch('/api/auth/captcha-challenge', { credentials: 'include' });
@@ -65,76 +69,99 @@ async function fetchSliderChallenge(): Promise<SliderChallenge | null> {
 }
 
 /**
- * 人机验证挂件（管理台登录页发码用）· provider 可切换。
+ * 人机验证挂件（管理台登录页发码用）· provider 可切换 + **弹窗模式**。
  *
- * `GET /api/auth/captcha-config` 给出 provider：
- *  - turnstile：注入官方脚本 → turnstile.render（未配置 siteKey 则不渲染）
- *  - self     ：GET /api/auth/captcha-challenge 取「背景图 + 滑块图 + 签名 token」
- *                → 用户拖动滑块 → onChange({ enabled:true, payload:{ captchaToken, captchaX, captchaTrack } })
- * 未启用（默认）时**不渲染任何东西**，发码行为与接入前完全一致。
+ * 弹窗模式（`:open` 传值，推荐）：点「发送验证码」→ 父组件把 open 置 true → 这里显示遮罩弹窗
+ *   → 用户拖滑块/过 Turnstile → onChange 带上 payload → 父组件关弹窗并**自动发码**。
+ * 行内模式（不传 open）：为兼容保留，行为同以前。
+ *
+ * 未启用（provider=off / 凭据不齐）时什么都不渲染，发码行为与接入前完全一致。
  */
-export function TurnstileWidget({ onChange }: TurnstileWidgetProps) {
+export function TurnstileWidget({ onChange, open, onClose }: TurnstileWidgetProps) {
   const boxRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string>('');
-  // 回调放 ref：父组件每次渲染都传新函数，进依赖数组会把挂件反复卸载重建
+  const providerRef = useRef<string>('off');
+  const siteKeyRef = useRef<string>('');
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const [challenge, setChallenge] = useState<SliderChallenge | null>(null);
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [done, setDone] = useState(false);
+  const [loadingChallenge, setLoadingChallenge] = useState(false);
   const dragRef = useRef({ startX: 0, startOffset: 0, points: 0, startedAt: 0, max: 260 });
   const bgRef = useRef<HTMLDivElement | null>(null);
 
   const loadChallenge = useCallback(async () => {
+    setLoadingChallenge(true);
     const c = await fetchSliderChallenge();
+    setLoadingChallenge(false);
     if (!c) return;
     setChallenge(c);
     setOffsetX(0);
     setDone(false);
     const w = bgRef.current?.clientWidth ?? 300;
-    dragRef.current.max = Math.max(0, w - (c.pieceSize || 44));
+    dragRef.current.max = Math.max(120, w - (c.pieceSize || 44));
   }, []);
 
+  // ① 挂载时只取「要不要验证 + 哪个 provider」（弹窗模式不在此时渲染）
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const cfg = await fetchCaptchaConfig();
       if (cancelled || !cfg.enabled) return;
+      providerRef.current = cfg.provider || (cfg.siteKey ? 'turnstile' : 'off');
+      siteKeyRef.current = cfg.siteKey || '';
       onChangeRef.current({ enabled: true, payload: {} });
-
-      if (cfg.provider === 'self') {
-        await loadChallenge();
-        return;
+      if (open === undefined) {
+        // 行内模式：立刻渲染
+        if (providerRef.current === 'self') await loadChallenge();
+        else await renderTurnstile();
       }
-      if (!cfg.siteKey) return;
-      await loadScriptOnce();
-      const el = boxRef.current;
-      const api = turnstileApi();
-      // StrictMode 下 effect 会跑两遍：widgetIdRef 就是「已渲染过」的哨兵
-      if (cancelled || !el || !api || widgetIdRef.current) return;
-      widgetIdRef.current = api.render(el, {
-        sitekey: cfg.siteKey,
-        callback: (token: string) => onChangeRef.current({ enabled: true, payload: { turnstileToken: token } }),
-        'expired-callback': () => onChangeRef.current({ enabled: true, payload: {} }),
-        'error-callback': () => onChangeRef.current({ enabled: true, payload: {} }),
-      });
     })();
     return () => {
       cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const renderTurnstile = useCallback(async () => {
+    if (providerRef.current !== 'turnstile' || !siteKeyRef.current) return;
+    await loadScriptOnce();
+    const el = boxRef.current;
+    const api = turnstileApi();
+    if (!el || !api || widgetIdRef.current) return;
+    widgetIdRef.current = api.render(el, {
+      sitekey: siteKeyRef.current,
+      callback: (token: string) => onChangeRef.current({ enabled: true, payload: { turnstileToken: token } }),
+      'expired-callback': () => onChangeRef.current({ enabled: true, payload: {} }),
+      'error-callback': () => onChangeRef.current({ enabled: true, payload: {} }),
+    });
+  }, []);
+
+  // ② 弹窗打开时才去取题/渲染
+  useEffect(() => {
+    if (open !== true) return;
+    if (providerRef.current === 'self') void loadChallenge();
+    else void renderTurnstile();
+  }, [open, loadChallenge, renderTurnstile]);
+
+  useEffect(() => {
+    return () => {
       const id = widgetIdRef.current;
       widgetIdRef.current = '';
       if (id) {
         try {
           turnstileApi()?.remove?.(id);
         } catch {
-          /* 卸载失败无所谓：父组件不再读它的 token */
+          /* 卸载失败无所谓 */
         }
       }
     };
-    // loadChallenge 稳定（useCallback 无依赖）
-  }, [loadChallenge]);
+  }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
     if (!challenge || done) return;
@@ -146,23 +173,20 @@ export function TurnstileWidget({ onChange }: TurnstileWidgetProps) {
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
-      /* 捕获失败也能靠 move 事件拖动 */
+      /* 捕获失败也能靠 move 拖动 */
     }
   };
-
   const onPointerMove = (e: React.PointerEvent<HTMLImageElement>) => {
     if (!dragging) return;
     const dx = e.clientX - dragRef.current.startX;
-    const next = Math.min(Math.max(dragRef.current.startOffset + dx, 0), dragRef.current.max);
-    setOffsetX(next);
+    setOffsetX(Math.min(Math.max(dragRef.current.startOffset + dx, 0), dragRef.current.max));
     dragRef.current.points += 1;
   };
-
   const onPointerUp = () => {
     if (!dragging || !challenge) return;
     setDragging(false);
     setDone(true);
-    // 立刻给"已拖动"的视觉反馈；真正判定在服务端（缺口坐标只有它有）
+    // 松手即交卷：父组件收到 payload 后关弹窗并真正发码（服务端做最终判定）
     onChangeRef.current({
       enabled: true,
       payload: {
@@ -172,54 +196,76 @@ export function TurnstileWidget({ onChange }: TurnstileWidgetProps) {
       },
     });
   };
+  const redo = () => {
+    onChangeRef.current({ enabled: true, payload: {} });
+    void loadChallenge();
+  };
 
-  if (!challenge) {
-    // Turnstile（或无验证）路径：只留官方挂件容器
-    return <div ref={boxRef} className={styles.box} />;
+  const body = (
+    <>
+      <div ref={boxRef} />
+      {challenge ? (
+        <div className={styles.sliderWrap}>
+          <div ref={bgRef} className={styles.sliderBg}>
+            <img src={challenge.background} alt="拖动滑块完成验证" draggable={false} />
+            {challenge.piece ? (
+              <img
+                className={styles.sliderPiece}
+                data-done={done ? '1' : '0'}
+                src={challenge.piece}
+                draggable={false}
+                style={{
+                  left: offsetX,
+                  top: challenge.y,
+                  width: challenge.pieceSize,
+                  height: challenge.pieceSize,
+                  cursor: dragging ? 'grabbing' : 'grab',
+                }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+              />
+            ) : null}
+          </div>
+          <div className={styles.sliderBar}>
+            {done ? (
+              <>
+                已交卷，正在发送短信
+                <button type="button" className={styles.sliderReset} onClick={redo}>
+                  重来
+                </button>
+              </>
+            ) : (
+              '按住滑块，拖到图上缺口处'
+            )}
+          </div>
+        </div>
+      ) : providerRef.current === 'self' && loadingChallenge ? (
+        <p className={styles.sliderBar}>正在加载验证题…</p>
+      ) : null}
+    </>
+  );
+
+  // 行内模式
+  if (open === undefined) {
+    return <div className={styles.box}>{body}</div>;
   }
 
+  // 弹窗模式：未打开时不渲染
+  if (!open) return null;
+
   return (
-    <div className={styles.sliderWrap}>
-      <div ref={bgRef} className={styles.sliderBg}>
-        <img src={challenge.background} alt="拖动滑块完成验证" draggable={false} />
-        {challenge.piece ? (
-          <img
-            className={styles.sliderPiece}
-            data-done={done ? '1' : '0'}
-            src={challenge.piece}
-            draggable={false}
-            style={{
-              left: offsetX,
-              top: challenge.y,
-              width: challenge.pieceSize,
-              height: challenge.pieceSize,
-              cursor: dragging ? 'grabbing' : 'grab',
-            }}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-          />
-        ) : null}
-      </div>
-      <div className={styles.sliderBar}>
-        {done ? (
-          <>
-            已拖动，正在提交验证
-            <button
-              type="button"
-              className={styles.sliderReset}
-              onClick={() => {
-                onChangeRef.current({ enabled: true, payload: {} });
-                void loadChallenge();
-              }}
-            >
-              重来
-            </button>
-          </>
-        ) : (
-          '按住滑块拖到缺口处'
-        )}
+    <div className={styles.overlay} onClick={(e) => e.target === e.currentTarget && onCloseRef.current?.()}>
+      <div className={styles.card}>
+        <div className={styles.cardHead}>
+          <span className={styles.cardTitle}>请完成人机验证</span>
+          <button type="button" className={styles.cardClose} onClick={() => onCloseRef.current?.()}>
+            ✕
+          </button>
+        </div>
+        <p className={styles.cardTip}>验证通过后会自动发送短信验证码</p>
+        {body}
       </div>
     </div>
   );

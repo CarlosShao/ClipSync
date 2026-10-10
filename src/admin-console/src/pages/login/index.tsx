@@ -44,6 +44,18 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0);
   // 人机验证（088）：默认未启用 ⇒ 挂件不渲染、发码不带 token，与接入前一致
   const [captcha, setCaptcha] = useState<CaptchaState>({ enabled: false, payload: {} });
+  /** 验证弹窗是否打开（点「发送验证码」且尚未验证时弹出） */
+  const [captchaOpen, setCaptchaOpen] = useState(false);
+  /** 验证完成 ⇒ 关弹窗并**自动发码**（这就是"过了才真发短信"）；手机号取输入框里的值 */
+  const onCaptchaChange = (s: CaptchaState) => {
+    setCaptcha(s);
+    if (s.enabled && Object.keys(s.payload).length > 0) {
+      setCaptchaOpen(false);
+      const phone =
+        (document.getElementById('login-phone-input') as HTMLInputElement | null)?.value ?? '';
+      if (/^\d{11}$/.test(phone)) sendCodeMutation.mutate({ phone, payload: s.payload });
+    }
+  };
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(
@@ -260,7 +272,7 @@ export default function LoginPage() {
                       }
                       // 服务端要求人机验证时，token 为空就先别发——否则只会换回一个 400
                       if (captcha.enabled && Object.keys(captcha.payload).length === 0) {
-                        void message.warning('请先完成下方人机验证');
+                        setCaptchaOpen(true); // 弹窗验证；通过后 onCaptchaChange 自动发码
                         return;
                       }
                       sendCodeMutation.mutate({ phone, payload: captcha.payload });
@@ -270,7 +282,7 @@ export default function LoginPage() {
                   </Button>
                 </div>
               </div>
-              <TurnstileWidget onChange={setCaptcha} />
+              <TurnstileWidget open={captchaOpen} onChange={onCaptchaChange} onClose={() => setCaptchaOpen(false)} />
               <Button
                 className={styles.submit}
                 type="primary"
