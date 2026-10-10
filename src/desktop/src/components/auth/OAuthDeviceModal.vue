@@ -46,8 +46,9 @@ const verificationUri = ref('')
 const pollToken = ref('')
 const secondsLeft = ref(0)
 const errorText = ref('')
-/** GitHub 本机流程用：设备码（轮询密钥，只在本机内存里） */
+/** GitHub 本机流程用：设备码（轮询密钥，只在本机内存里）+ 轮询次数（诊断可见性） */
 let ghDeviceCode = ''
+let pollCount = 0
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -88,6 +89,7 @@ async function start() {
   verificationUri.value = ''
   pollToken.value = ''
   ghDeviceCode = ''
+  pollCount = 0
   loading.value = true
   try {
     if (props.provider === 'github') {
@@ -140,21 +142,27 @@ async function start() {
 /** GitHub 本机轮询：Rust 去 github.com 换 token；到手后交服务端验证并签发本站会话 */
 async function pollGithubLocal() {
   if (!ghDeviceCode) return
+  pollCount += 1
   try {
     const data = await tauriGithubDeviceToken(props.clientId || '', ghDeviceCode)
     const token = typeof data.access_token === 'string' ? data.access_token : ''
     if (token) {
+      console.info('[OAuth] github 已拿到 access token，交给服务端验证')
       clearTimers()
       await exchangeGithubToken(token)
       return
     }
     const err = String(data.error || '')
+    // 每次轮询的结果都打出来：这里曾经因为静默吞掉错误，导致「授权完不动」无从定位
+    console.info(`[OAuth] github 轮询 #${pollCount}: ${err || '(空响应)'}`)
     if (err === 'authorization_pending' || err === 'slow_down') return
     if (err === 'expired_token') return fail('验证码已过期，请重新发起')
     if (err === 'access_denied') return fail('你取消了授权')
     fail(`授权失败：${String(data.error_description || err || '未知错误')}`)
-  } catch {
-    /* 单次抖动不致命：等下一轮，过期由倒计时兜住 */
+  } catch (e) {
+    // 本机请求失败也别吞：连不上 GitHub 时至少要看得见原因（连 4 次失败就把提示摆到界面上）
+    console.warn(`[OAuth] github 轮询 #${pollCount} 本机请求失败:`, e)
+    if (pollCount >= 4) errorText.value = `本机连接 GitHub 失败：${String(e)}`
   }
 }
 
