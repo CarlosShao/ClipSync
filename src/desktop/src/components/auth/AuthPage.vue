@@ -204,14 +204,32 @@ const setPwdValid = computed(
 // 并把「要原样塞进发码请求体」的字段整体抛上来（turnstile ⇒ {turnstileToken}；self ⇒ {captchaToken,captchaX,captchaTrack}）。
 const captchaEnabled = ref(false)
 const captchaPayload = ref<Record<string, unknown>>({})
-function onCaptchaPayload(p: Record<string, unknown>) {
-  captchaPayload.value = p || {}
-}
+/** 验证弹窗是否打开（点「发送验证码」时若未验证则弹出） */
+const captchaOpen = ref(false)
 function onCaptchaEnabled(v: boolean) {
   captchaEnabled.value = v
 }
+/** 验证完成 ⇒ 关弹窗并**自动继续发码**（这就是"验证过了才真发短信"） */
+function onCaptchaPayload(p: Record<string, unknown>) {
+  captchaPayload.value = p || {}
+  if (!captchaDone.value) return
+  captchaOpen.value = false
+  const phone = resolvePhone()
+  if (phone) void doSendCode(phone)
+}
+function onCaptchaClose() {
+  captchaOpen.value = false
+}
 /** 是否已拿到可提交的验证字段 */
 const captchaDone = computed(() => Object.keys(captchaPayload.value).length > 0)
+/** 当前视图对应的手机号（发码/发码前校验共用） */
+function resolvePhone(): string {
+  return authView.value === 'register'
+    ? regPhone.value
+    : authView.value === 'set-password'
+      ? setPwdPhone.value
+      : authPhone.value
+}
 
 // ===== Send verification code =====
 async function sendCode() {
@@ -226,11 +244,16 @@ async function sendCode() {
     shakeById('send-code-btn')
     return
   }
-  // 服务端要求人机验证、但验证还没完成：先提示，别发一个注定 400 的请求
+  // 服务端要求人机验证、但还没验证：**弹出验证弹窗**（通过后 onCaptchaPayload 会自动继续发码）
   if (captchaEnabled.value && !captchaDone.value) {
-    toast.show(t('captcha_required'), 'error')
+    captchaOpen.value = true
     return
   }
+  await doSendCode(phone)
+}
+
+/** 真正发码（验证已通过时才会走到这里） */
+async function doSendCode(phone: string) {
   isSendingCode.value = true
   try {
     // 089 起改为 JS 直连（Rust 那条 send_verification_code 只是 POST {phone} 的薄封装，
@@ -240,6 +263,11 @@ async function sendCode() {
       ...captchaPayload.value,
     })
     if (!res.ok) {
+      // 400 = 验证没过/过期/被判定为脚本 ⇒ 清掉旧验证并重新弹窗
+      if (res.status === 400) {
+        captchaPayload.value = {}
+        captchaOpen.value = true
+      }
       toast.show(res.error || '验证码发送失败，请稍后重试', 'error')
       isSendingCode.value = false
       return
@@ -756,7 +784,12 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
-                <TurnstileWidget @payload="onCaptchaPayload" @enabled="onCaptchaEnabled" />
+                <TurnstileWidget
+                  :open="captchaOpen"
+                  @payload="onCaptchaPayload"
+                  @enabled="onCaptchaEnabled"
+                  @close="onCaptchaClose"
+                />
               </div>
               <div class="form-options">
                 <label class="checkbox-label"><Checkbox v-model="rememberMe" /> {{ t('login_remember') }}</label>
@@ -992,7 +1025,12 @@ const isRegisterView = computed(() => authView.value === 'register')
                     {{ codeCountdown > 0 ? t('code_resend', { s: codeCountdown }) : t('login_send_code') }}
                   </Button>
                 </div>
-                <TurnstileWidget @payload="onCaptchaPayload" @enabled="onCaptchaEnabled" />
+                <TurnstileWidget
+                  :open="captchaOpen"
+                  @payload="onCaptchaPayload"
+                  @enabled="onCaptchaEnabled"
+                  @close="onCaptchaClose"
+                />
                 <div v-if="fieldErrors.regCode" class="field-error">{{ fieldErrors.regCode }}</div>
               </div>
               <div class="form-group">

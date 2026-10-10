@@ -1,35 +1,43 @@
 <script setup lang="ts">
 /**
- * 人机验证挂件（provider 可切换：Cloudflare Turnstile / 自建滑块）
+ * 人机验证挂件（provider 可切换：Cloudflare Turnstile / 自建滑块）+ **弹窗模式**
  *
- * 为什么是组件、而不是往发码按钮旁边插一个 div：
- *  1) 挂件要占一整行。`form-row` 是 flex 且验证码输入框 flex:1，
- *     把挂件塞进去会把输入框挤成一条缝（用户实测的「排版离谱」就是这个）；
- *  2) 登录页 / 注册页是两个 v-if 分支，按 id 找单个按钮只挂得到其中一个，
- *     另一个分支的「发送验证码」在开关打开后会 400（缺 token）。
- * 所以每个发码行各自挂一个实例，各自往上抛 payload。
+ * 交互（owner 明确要求的基础业务逻辑）：
+ *   用户点「发送验证码」→ 若服务端要求人机验证且尚未通过 ⇒ **弹出验证弹窗**
+ *   → 用户完成验证（拖滑块 / 过 Turnstile）→ 弹窗关闭并**自动真正发送短信**。
+ *   ⇒ 父组件把 `open` 传下来控制弹窗；`payload` 上来即表示"验证已完成，可以发码了"。
  *
- * 两个 provider 的差别（服务端 /api/auth/captcha-config 的 provider 字段决定）：
- *  - turnstile：注入官方脚本 → turnstile.render → 抛 { turnstileToken }
- *  - self     ：GET /api/auth/captcha-challenge 取「背景图 + 滑块图 + 签名 token」
- *               → 用户拖动滑块 → 抛 { captchaToken, captchaX, captchaTrack }
- *               （缺口坐标**只在服务端签名 token 里**，前端拿到的是像素图 ⇒ 脚本要过就得做图像识别）
+ * 两种用法：
+ *   - `:open="captchaOpen"`（弹窗模式，推荐）：只在 open=true 时渲染遮罩弹窗
+ *   - 不传 open（行内模式）：挂载后若服务端要求验证就直接渲染在行内（兼容旧用法）
  *
- * 未启用时（provider=off / 凭据不齐 / 拉不到脚本）什么都不渲染、不发 payload，行为与接入前一致。
+ * ⚠️ 响应结构：桌面端 `api()` 返回的是**整包**（`{ok, data: <整个响应体>}`）。
+ *    `/api/auth/captcha-config` 是扁平结构（provider/enabled/siteKey）⇒ 读 `res.data.*`；
+ *    `/api/auth/captcha-challenge` 是包裹结构（`{code, data:{...}}`）⇒ 必须读 `res.data.data.*`。
+ *    （曾因为读错这一层导致挂件静默不渲染 ✗）
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 
+const props = defineProps<{
+  /** 弹窗是否可见；不传 = 行内模式 */
+  open?: boolean
+}>()
+
 const emit = defineEmits<{
-  /** 交给父组件原样塞进发码请求体（未通过时为空对象） */
+  /** 验证完成：把字段原样塞进发码请求体（turnstile ⇒ {turnstileToken}；self ⇒ {captchaToken,captchaX,captchaTrack}） */
   payload: [payload: Record<string, unknown>]
-  /** 服务端是否要求人机验证（父组件据此在发码前提示，而不是发一个注定 400 的请求） */
+  /** 服务端是否要求人机验证 */
   enabled: [enabled: boolean]
+  /** 用户关闭弹窗（未完成验证） */
+  close: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
 let widgetId = ''
 let disposed = false
+let provider = 'off'
+let cfgLoaded = false
 
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 
@@ -37,7 +45,6 @@ interface TurnstileApi {
   render: (el: HTMLElement, options: Record<string, unknown>) => string
   remove?: (id: string) => void
 }
-
 function turnstileApi(): TurnstileApi | undefined {
   return (window as unknown as { turnstile?: TurnstileApi }).turnstile
 }
@@ -62,38 +69,50 @@ const bg = ref('')
 const piece = ref('')
 const pieceSize = ref(44)
 const pieceY = ref(0)
-const offsetX = ref(0) // 滑块当前左偏移
+const offsetX = ref(0)
 const dragging = ref(false)
 const done = ref(false)
+const loadingChallenge = ref(false)
+const challengeError = ref('')
 
 let challengeToken = ''
 let startX = 0
 let startOffset = 0
 let trackPoints = 0
 let trackStartAt = 0
-let maxOffset = 0
+let maxOffset = 260
 
 async function loadChallenge() {
+  loadingChallenge.value = true
+  challengeError.value = ''
   try {
-    const res = await api<{
-      token?: string
-      background?: string
-      piece?: string
-      y?: number
-      pieceSize?: number
-    }>('GET', '/api/auth/captcha-challenge')
-    if (disposed || !res.ok || !res.data?.background || !res.data?.token) return
-    bg.value = res.data.background
-    piece.value = res.data.piece || ''
-    pieceY.value = Number(res.data.y) || 0
-    pieceSize.value = Number(res.data.pieceSize) || 44
-    challengeToken = res.data.token
+    const res = await api<{ code?: number; data?: Record<string, unknown>; background?: string }>(
+      'GET',
+      '/api/auth/captcha-challenge'
+    )
+    // ⚠️ 包裹结构：题目在 res.data.data 里（兼容万一被展平的情况）
+    const d = ((res.data as { data?: Record<string, unknown> })?.data ?? res.data ?? {}) as Record<
+      string,
+      unknown
+    >
+    const background = typeof d?.background === 'string' ? (d.background as string) : ''
+    const token = typeof d?.token === 'string' ? (d.token as string) : ''
+    if (disposed || !res.ok || !background || !token) {
+      challengeError.value = res.error || '获取验证题失败，请重试'
+      return
+    }
+    bg.value = background
+    piece.value = typeof d?.piece === 'string' ? (d.piece as string) : ''
+    pieceY.value = Number(d?.y) || 0
+    pieceSize.value = Number(d?.pieceSize) || 44
+    challengeToken = token
     offsetX.value = 0
     done.value = false
-    // 背景宽度即最大可拖距离（背景图与容器同宽）
-    maxOffset = Math.max(0, (host.value?.clientWidth || 300) - pieceSize.value)
-  } catch {
-    /* 出题失败按未启用处理：不拦发码（服务端未启用时门控也放行） */
+    maxOffset = Math.max(120, (host.value?.clientWidth || 300) - pieceSize.value)
+  } catch (e) {
+    challengeError.value = String(e)
+  } finally {
+    loadingChallenge.value = false
   }
 }
 
@@ -104,34 +123,58 @@ function onPointerDown(e: PointerEvent) {
   startOffset = offsetX.value
   trackPoints = 1
   trackStartAt = Date.now()
-  ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+  try {
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    /* 捕获失败也能靠 move 事件拖动 */
+  }
 }
-
 function onPointerMove(e: PointerEvent) {
   if (!dragging.value) return
   const dx = e.clientX - startX
   offsetX.value = Math.min(Math.max(startOffset + dx, 0), maxOffset)
   trackPoints += 1
 }
-
 function onPointerUp() {
   if (!dragging.value) return
   dragging.value = false
   done.value = true
-  // 立刻给"已拖动"的视觉反馈；真正的判定在服务端（缺口坐标只有它有）
+  // 松手即交卷：父组件收到 payload 后会关闭弹窗并真正发码（服务端做最终判定）
   emit('payload', {
     captchaToken: challengeToken,
     captchaX: Math.round(offsetX.value),
     captchaTrack: { points: trackPoints, durationMs: Date.now() - trackStartAt },
   })
 }
-
-function reset() {
+function redo() {
   emit('payload', {})
   void loadChallenge()
 }
 
-// ───────────────────────── 挂载 ─────────────────────────
+// ───────────────────────── 初始化 ─────────────────────────
+/** 渲染当前 provider 的验证形态（幂等；弹窗打开时才需要 DOM） */
+async function renderProvider() {
+  if (disposed) return
+  if (provider === 'self') {
+    if (!bg.value) await loadChallenge()
+    return
+  }
+  if (!cfgLoaded || provider !== 'turnstile') return
+  await loadScriptOnce()
+  await Promise.resolve()
+  const el = host.value
+  const w = turnstileApi()
+  if (disposed || !el || !w || widgetId) return
+  const siteKey = (globalThis as { __clipsyncTurnstileKey?: string }).__clipsyncTurnstileKey
+  if (!siteKey) return
+  widgetId = w.render(el, {
+    sitekey: siteKey,
+    callback: (token: string) => emit('payload', { turnstileToken: token }),
+    'expired-callback': () => emit('payload', {}),
+    'error-callback': () => emit('payload', {}),
+  })
+}
+
 onMounted(async () => {
   try {
     const res = await api<{ provider?: string; enabled?: boolean; siteKey?: string }>(
@@ -139,30 +182,25 @@ onMounted(async () => {
       '/api/auth/captcha-config'
     )
     if (disposed || !res.ok || !res.data?.enabled) return
-    emit('enabled', true)
-
-    const provider = res.data.provider || (res.data.siteKey ? 'turnstile' : 'off')
-
-    if (provider === 'self') {
-      await loadChallenge()
-      return
+    cfgLoaded = true
+    provider = res.data.provider || (res.data.siteKey ? 'turnstile' : 'off')
+    if (provider === 'turnstile' && res.data.siteKey) {
+      ;(globalThis as { __clipsyncTurnstileKey?: string }).__clipsyncTurnstileKey = res.data.siteKey
     }
-
-    if (!res.data.siteKey) return
-    await loadScriptOnce()
-    const el = host.value
-    const w = turnstileApi()
-    if (disposed || !el || !w || widgetId) return
-    widgetId = w.render(el, {
-      sitekey: res.data.siteKey,
-      callback: (token: string) => emit('payload', { turnstileToken: token }),
-      'expired-callback': () => emit('payload', {}),
-      'error-callback': () => emit('payload', {}),
-    })
+    emit('enabled', true)
+    // 行内模式（未传 open）立即渲染；弹窗模式等 open=true
+    if (props.open === undefined) await renderProvider()
   } catch {
     /* 任何异常都按未启用处理：服务端未启用时门控也放行 */
   }
 })
+
+watch(
+  () => props.open,
+  async (v) => {
+    if (v) await renderProvider()
+  }
+)
 
 onBeforeUnmount(() => {
   disposed = true
@@ -172,18 +210,63 @@ onBeforeUnmount(() => {
     try {
       turnstileApi()?.remove?.(id)
     } catch {
-      /* 卸载失败无所谓：父组件不再读它的 token */
+      /* 卸载失败无所谓 */
     }
   }
 })
 </script>
 
 <template>
-  <div class="captcha-host">
-    <!-- Turnstile 容器（provider=turnstile 时才由脚本填充） -->
-    <div ref="host" />
+  <!-- 弹窗模式：open=false 时什么都不渲染（组件仍挂载，用于上报 enabled） -->
+  <Teleport v-if="open !== undefined && open" to="body">
+    <div class="captcha-overlay" @click.self="emit('close')">
+      <div class="captcha-card">
+        <div class="captcha-head">
+          <span class="captcha-title">请完成人机验证</span>
+          <button type="button" class="captcha-close" @click="emit('close')">✕</button>
+        </div>
+        <p class="captcha-tip">验证通过后会自动发送短信验证码</p>
 
-    <!-- 自建滑块 -->
+        <div ref="host" />
+
+        <div v-if="provider === 'self'" class="slider-wrap">
+          <p v-if="loadingChallenge" class="slider-hint">正在加载验证题…</p>
+          <p v-else-if="challengeError" class="slider-err">
+            {{ challengeError }}
+            <button type="button" class="slider-reset" @click="loadChallenge">重试</button>
+          </p>
+          <template v-else-if="bg">
+            <div class="slider-bg">
+              <img :src="bg" alt="拖动滑块完成验证" draggable="false" />
+              <img
+                v-if="piece"
+                class="slider-piece"
+                :class="{ dragging, done }"
+                :src="piece"
+                :style="{ left: offsetX + 'px', top: pieceY + 'px', width: pieceSize + 'px', height: pieceSize + 'px' }"
+                draggable="false"
+                @pointerdown="onPointerDown"
+                @pointermove="onPointerMove"
+                @pointerup="onPointerUp"
+                @pointercancel="onPointerUp"
+              />
+            </div>
+            <div class="slider-bar">
+              <span v-if="!done">按住滑块，拖到图上缺口处</span>
+              <span v-else>
+                已交卷，正在发送短信
+                <button type="button" class="slider-reset" @click="redo">重来</button>
+              </span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- 行内模式（未传 open） -->
+  <div v-else-if="open === undefined" class="captcha-host">
+    <div ref="host" />
     <div v-if="bg" class="slider-wrap">
       <div class="slider-bg">
         <img :src="bg" alt="拖动滑块完成验证" draggable="false" />
@@ -200,21 +283,57 @@ onBeforeUnmount(() => {
           @pointercancel="onPointerUp"
         />
       </div>
-      <div class="slider-bar">
-        <span v-if="!done" class="slider-hint">按住滑块拖到缺口处</span>
-        <span v-else class="slider-ok">
-          已拖动，正在提交验证
-          <button type="button" class="slider-reset" @click="reset">重来</button>
-        </span>
-      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 独占一行，不参与上面的 flex 行，也不撑宽输入框 */
+.captcha-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.captcha-card {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-surface, #fff);
+  color: var(--text-primary, #111);
+  border-radius: 12px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
+.captcha-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.captcha-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.captcha-close {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-tertiary, #999);
+}
+.captcha-tip {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+/* 行内模式容器 */
 .captcha-host {
   margin-top: 10px;
+}
+/* 滑块 */
+.slider-wrap {
+  margin-top: 4px;
 }
 .slider-bg {
   position: relative;
@@ -249,6 +368,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.slider-hint,
+.slider-err {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+}
+.slider-err {
+  color: var(--danger, #d33);
 }
 .slider-reset {
   background: none;
