@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../db/pool.js';
 import config from '../config.js';
 import { isValidPhone, isValidCode, sanitizeString } from '../validation/validator.js';
-import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed } from '../middleware/rateLimiter.js';
+import { sendCodeLimiter, loginFailedLimiter, clearLoginFailed, strictLimiter } from '../middleware/rateLimiter.js';
 import { sendVerificationCodeEmail } from '../utils/email.js';
 // A4 短信：生产环境真实下发验证码，取代固定码 888888
 import { sendVerificationCodeSms, generateCode } from '../utils/sms.js';
