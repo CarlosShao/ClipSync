@@ -187,6 +187,23 @@ let lazyInitStarted = false;/**
  * 代价：配置好 DSN 后**第一条**错误可能在 init 完成前丢失（第二条起正常），可接受。
  */
 export function captureError(err, context) {
+  // 091：飞书群告警 —— 刻意放在 `if (!sdk)` **之前**：Sentry 没配 DSN 时也要能告警
+  //（未配置 webhook 时 sendFeishuAlert 是 no-op；同键 5 分钟只发一条，故障期间不刷屏）。
+  // 一律 fire-and-forget：告警失败绝不影响错误上报本身。
+  try {
+    const plain = err instanceof Error ? err : new Error(String(err));
+    const lines =
+      context && typeof context === 'object'
+        ? Object.entries(context)
+            .slice(0, 6)
+            .map(([k, v]) => `${k}: ${String(v).slice(0, 120)}`)
+        : [];
+    void import('./feishu.js')
+      .then((m) => m.sendFeishuAlert({ key: 'http_5xx', title: `服务端错误：${plain.message}`, lines }))
+      .catch(() => {});
+  } catch {
+    /* 告警构造过程任何异常都不影响主流程 */
+  }
   if (!sdk) {
     if (!lazyInitStarted) {
       lazyInitStarted = true;

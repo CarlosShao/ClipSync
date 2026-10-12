@@ -61,6 +61,8 @@ import { invalidateSentryConfigCache, initSentry, fetchSentryIssues, invalidateS
 import { invalidateTurnstileConfigCache } from '../../utils/turnstile.js';
 // 090：provider 抽象层缓存（captcha_provider 变更后即时生效）
 import { invalidateCaptchaConfigCache } from '../../utils/captcha.js';
+// 091：飞书告警配置（换 webhook 后即时生效）
+import { invalidateFeishuConfigCache } from '../../utils/feishu.js';
 // 090：provider 抽象层的缓存（captcha_provider 变更后即时生效）
 // 第三方登录（迁移 089）：保存 oauth_* 后失效缓存（下次发起设备码流即用新 Client ID）
 import { invalidateOAuthConfigCache } from '../../services/oauthDevice.js';
@@ -318,6 +320,20 @@ const CONFIG_CATALOG = [
       '唯一开关：off 关闭（默认）/ turnstile Cloudflare（海外友好）/ self 自建滑块（免费·国内可达·无需第三方凭据）。⚠️ 开启前请确认桌面端/移动端也已挂上组件，否则没带 token 的客户端会发不了码',
     consumer: 'src/server/src/utils/captcha.js（captchaGate / checkCaptcha；routes/auth-verify.js / auth.js 三条发码路由）',
   },
+  // —— 091 飞书群机器人告警：留空 = 不发告警（全程 no-op）——
+  {
+    key: 'feishu_webhook_url',
+    name: '飞书告警 Webhook',
+    description:
+      '加密存储；填 https://open.feishu.cn/open-apis/bot/v2/hook/xxxx 后，5xx 突发等告警会推到群里（同键 5 分钟内只发一条）。留空则不发',
+    consumer: 'src/server/src/utils/feishu.js（sendFeishuAlert；utils/sentry.js 捕获错误时调用）',
+  },
+  {
+    key: 'feishu_webhook_secret',
+    name: '飞书告警签名密钥',
+    description: '加密存储；机器人开启「签名校验」时必填，未开则留空',
+    consumer: 'src/server/src/utils/feishu.js（signForFeishu）',
+  },
   // —— 第三方登录（089，设备码流：GitHub / Microsoft）：留空 = 该入口不可用 ——
   {
     key: 'oauth_github_client_id',
@@ -431,7 +447,9 @@ function mapConfigRow(meta, row) {
     meta.key === 'sms_access_key_secret' ||
     meta.key === 'ai_search_api_key_encrypted' ||
     meta.key === 'sentry_api_token' ||
-    meta.key === 'turnstile_secret_key'
+    meta.key === 'turnstile_secret_key' ||
+    meta.key === 'feishu_webhook_url' ||
+    meta.key === 'feishu_webhook_secret'
   ) {
     value = value ? '已配置' : '未配置';
   }
@@ -553,7 +571,9 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       key === 'sms_access_key_secret' ||
       key === 'ai_search_api_key_encrypted' ||
       key === 'sentry_api_token' ||
-      key === 'turnstile_secret_key'
+      key === 'turnstile_secret_key' ||
+      key === 'feishu_webhook_url' ||
+      key === 'feishu_webhook_secret'
         ? encryptField(valueStr)
         : valueStr;
 
@@ -622,13 +642,20 @@ router.patch('/:key', requirePerm('admin.configs.manage'), async (req, res) => {
       invalidateOAuthConfigCache();
     }
 
+    // 091：飞书告警配置写库后失效缓存
+    if (key.startsWith('feishu_')) {
+      invalidateFeishuConfigCache();
+    }
+
     // 审计：admin.config.update（敏感操作，details 含 value 与可选 reason；
     // smtp_pass / sms_access_key_secret 不落明文——审计流水常驻库中，只记录「已更新」占位符）
     const auditValue =
       key === 'smtp_pass' ||
       key === 'sms_access_key_secret' ||
       key === 'sentry_api_token' ||
-      key === 'turnstile_secret_key'
+      key === 'turnstile_secret_key' ||
+      key === 'feishu_webhook_url' ||
+      key === 'feishu_webhook_secret'
         ? '***'
         : valueStr;
     await logAuditEvent({
