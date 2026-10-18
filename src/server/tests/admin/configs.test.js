@@ -139,6 +139,9 @@ describe('GET /api/admin/configs —— 系统参数列表', () => {
       'turnstile_site_key',
       'turnstile_secret_key',
       'captcha_provider',
+      // 091（D1 飞书告警）：群机器人 webhook + 签名密钥（加密落库），utils/feishu.js 消费
+      'feishu_webhook_url',
+      'feishu_webhook_secret',
       // 089：第三方登录（设备码流）——两个 Client ID + Entra 租户，services/oauthDevice.js 消费
       'oauth_github_client_id',
       'oauth_microsoft_client_id',
