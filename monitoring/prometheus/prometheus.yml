@@ -22,7 +22,7 @@ scrape_configs:
   # ClipSync API 服务（自身指标；CO-03 起需要 Bearer token）
   - job_name: 'clipsync-api'
     scrape_interval: 5s
-    metrics_path: '/api/metrics/prometheus'
+    metrics_path: '/api/metrics'
     authorization:
       credentials_file: /etc/prometheus/metrics-token
     static_configs:

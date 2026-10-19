@@ -11,6 +11,7 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/metrics-token:/etc/prometheus/metrics-token:ro
       - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
     command:
@@ -21,6 +22,8 @@ services:
       - '--web.enable-lifecycle'
       - '--web.enable-admin-api'
       - '--storage.tsdb.retention.time=30d'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - clipsync-monitoring-net
     labels:
@@ -59,8 +62,8 @@ services:
     ports:
       - "8060:8060"
     environment:
-      # 替换为你的飞书自定义机器人 Webhook（含 https://open.feishu.cn/open-apis/bot/v2/hook/ 前缀）
-      FEISHU_WEBHOOK_URL: "<FEISHU_WEBHOOK_URL>"
+      # 从 .env 读 FEISHU_WEBHOOK_URL（与 Grafana 密码同款注入方式）；留空则该容器空转不发
+      FEISHU_WEBHOOK_URL: ${FEISHU_WEBHOOK_URL:-}
       # 机器人开启签名校验时填写密钥；未开启则留空
       FEISHU_SECRET: ""
     networks:
@@ -88,7 +91,7 @@ services:
     container_name: clipsync-grafana
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3002:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       # 原为硬编码 clipsync2024（脏状态第 4 条）。改用 .env 注入且强制必填：
